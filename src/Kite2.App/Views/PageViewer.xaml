@@ -5,12 +5,20 @@
     <!-- Область просмотра страницы: серый стол, на нём по центру белый лист.
          Полосы прокрутки тонкие и собственного цвета: на сером столе стандартная
          полоса выглядит чужой полосой. -->
-    <Grid x:Name="Root" Background="{StaticResource Canvas}">
+    <!-- Область просмотра не забирает клавиатурный фокус и не рисует его рамку.
+         Когда страницы нет, щелчок попадает на пустой серый стол, и полоса
+         прокрутки забирала фокус — WPF обводила её пунктиром, будто сломанная. -->
+    <Grid x:Name="Root"
+          Background="{StaticResource Canvas}"
+          Focusable="False"
+          FocusVisualStyle="{x:Null}">
 
         <ScrollViewer x:Name="Scroller"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Auto"
-                      PanningMode="Both">
+                      PanningMode="Both"
+                      Focusable="False"
+                      FocusVisualStyle="{x:Null}">
             <Canvas Background="Transparent">
                 <!-- Лист. Размер задаётся прямо в коде: он равен размеру страницы,
                      умноженному на масштаб. Отдельного масштабирующего преобразования
