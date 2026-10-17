@@ -63,7 +63,7 @@
             </Canvas>
         </ScrollViewer>
 
-        <!-- Ножницы сохраняют выделенное фрагментом. Кнопка стоит у правого нижнего угла
+        <!-- Дискета сохраняет выделенное фрагментом. Кнопка стоит у правого нижнего угла
              рамки и появляется вместе с ней: в режиме просмотра она лишняя,
              а искать её на панели каждый раз незачем.
 
@@ -71,7 +71,7 @@
              лист, а сама кнопка остаётся доступной. С заливкой она перехватывала
              бы щелчки по всему листу. -->
         <Canvas x:Name="Overlay">
-            <Button x:Name="CropScissors"
+            <Button x:Name="FragmentSave"
                     Width="26"
                     Height="26"
                     Visibility="Collapsed"
@@ -91,7 +91,7 @@
                                 CornerRadius="3">
                             <Path x:Name="Glyph"
                                   Style="{StaticResource CommandIconStyle}"
-                                  Data="{StaticResource IconCrop}"
+                                  Data="{StaticResource IconSaveFragment}"
                                   Stroke="#1A1A1A" />
                         </Border>
                         <ControlTemplate.Triggers>

@@ -49,7 +49,13 @@ namespace Kite2.App.Views
         /// <summary>Идёт ли протягивание мышью: листа или выделения.</summary>
         private bool _dragging;
 
-        private Point _dragStart;
+        /// <summary>Текущее перетаскивание двигает лист, а не тянет рамку.</summary>
+        private bool _panning;
+
+        /// <summary>Перетаскивание начато средней кнопкой.</summary>
+        private bool _middleDrag;
+
+        private Point _dragOrigin;
 
         private double _dragLeft;
 
@@ -97,9 +103,9 @@ namespace Kite2.App.Views
             // и выделение не появлялось, а колесо листало область вместо увеличения.
             Root.PreviewMouseWheel += OnMouseWheel;
             Root.SizeChanged += OnRootSizeChanged;
-            Root.PreviewMouseLeftButtonDown += OnMouseLeftButtonDown;
+            Root.PreviewMouseDown += OnMouseDown;
             Root.PreviewMouseMove += OnMouseMove;
-            Root.PreviewMouseLeftButtonUp += OnMouseLeftButtonUp;
+            Root.PreviewMouseUp += OnMouseUp;
         }
 
         private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs args)
@@ -278,15 +284,20 @@ namespace Kite2.App.Views
             e.Handled = true;
         }
 
-        private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        /// <summary>
+        /// Нажатие мыши начинает либо перетаскивание листа, либо выделение.
+        /// Средняя кнопка двигает лист всегда: в режиме выделения ею лист уводят
+        /// из-под себя, не сбивая уже начатую рамку.
+        /// </summary>
+        private void OnMouseDown(object sender, MouseButtonEventArgs e)
         {
             if (Sheet.Visibility != Visibility.Visible)
                 return;
 
-            // Щелчок по кнопке «ножницы» должен дойти до кнопки: этот обработчик
+            // Щелчок по кнопке сохранения должен дойти до кнопки: этот обработчик
             // хватает событие раньше неё и помечает обработанным, и без проверки
             // кнопка просто не срабатывала бы.
-            if (IsOnOverlay(e.OriginalSource))
+            if (e.ChangedButton == MouseButton.Left && IsOnOverlay(e.OriginalSource))
                 return;
 
             // Двойной щелчок возвращает лист в исходный размер и по центру. Событие
@@ -300,7 +311,13 @@ namespace Kite2.App.Views
             }
 
             _dragging = true;
-            _dragStart = e.GetPosition(Sheet);
+            _middleDrag = e.ChangedButton == MouseButton.Middle;
+            _panning = _middleDrag || !_selectionMode;
+
+            // Точка отсчёта берётся от области просмотра, а не от листа: лист под
+            // курсором сам идёт направо, и отсчёт от него каждый раз меняется — лист
+            // трясётся вместо того, чтобы ехать.
+            _dragOrigin = e.GetPosition(Root);
             _dragLeft = Canvas.GetLeft(Sheet);
             _dragTop = Canvas.GetTop(Sheet);
 
@@ -311,49 +328,63 @@ namespace Kite2.App.Views
 
         private void OnMouseMove(object sender, MouseEventArgs e)
         {
-            if (!_dragging)
+            if (!_dragging || !IsDragButtonDown())
                 return;
 
-            if (_dragging && LeftButtonIsDown())
-                ContinueDrag(e.GetPosition(Sheet));
+            ContinueDrag(e.GetPosition(Root));
         }
 
-        private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        private void OnMouseUp(object sender, MouseButtonEventArgs e)
         {
             if (!_dragging)
                 return;
 
             _dragging = false;
+            _panning = false;
 
             if (Root.IsMouseCaptureWithin)
                 Root.ReleaseMouseCapture();
 
-            if (_selectionMode)
-                ShowSelection(_dragStart, e.GetPosition(Sheet));
+            if (_selectionMode && e.ChangedButton == MouseButton.Left)
+                ShowSelection(PointInSheet(_dragOrigin), PointInSheet(e.GetPosition(Root)));
 
             UpdateCursor();
         }
 
         /// <summary>
-        /// Продолжает начатое мышью: в режиме выделения тянет рамку, иначе двигает
-        /// лист. Пока кнопка нажата, тянуть лист можно даже в режиме обрезки —
-        /// так лист уводить из-под себя удобнее, чем возвращаться на панель.
+        /// Продолжает начатое мышью: тянет рамку выделения или двигает лист.
         /// </summary>
         private void ContinueDrag(Point current)
         {
-            if (_selectionMode)
+            if (!_panning)
             {
-                ShowSelection(_dragStart, current);
+                ShowSelection(PointInSheet(_dragOrigin), PointInSheet(current));
                 return;
             }
 
-            double left = _dragLeft + current.X - _dragStart.X;
-            double top = _dragTop + current.Y - _dragStart.Y;
-
-            Canvas.SetLeft(Sheet, left);
-            Canvas.SetTop(Sheet, top);
+            Canvas.SetLeft(Sheet, _dragLeft + current.X - _dragOrigin.X);
+            Canvas.SetTop(Sheet, _dragTop + current.Y - _dragOrigin.Y);
         }
 
+        /// <summary>
+        /// Точка мыши в координатах листа. Пока лист едет, его начало тоже едет, и
+        /// пересчёт идёт каждый раз — иначе рамка тянулась бы с опозданием.
+        /// </summary>
+        private Point PointInSheet(Point point)
+        {
+            Point origin = Sheet.TranslatePoint(new Point(0, 0), Root);
+
+            return new Point(point.X - origin.X, point.Y - origin.Y);
+        }
+
+        /// <summary>Зажата та кнопка, которой начали перетаскивание.</summary>
+        private bool IsDragButtonDown()
+        {
+            if (_middleDrag)
+                return Mouse.MiddleButton == MouseButtonState.Pressed;
+
+            return Mouse.LeftButton == MouseButtonState.Pressed;
+        }
         /// <summary>
         /// Показывает выделение между двумя точками листа. Одиночный щелчок выделения
         /// не оставляет: отмечать участок надо протяжкой, иначе щелчок мимо создаёт
@@ -445,19 +476,19 @@ namespace Kite2.App.Views
 
             // У края окна кнопка переворачивается на другую сторону рамки, иначе
             // она уезжала бы за пределы видимой части.
-            if (left + CropScissors.Width > ActualWidth - 4)
-                left = corner.X - CropScissors.Width - ScissorsGap;
+            if (left + FragmentSave.Width > ActualWidth - 4)
+                left = corner.X - FragmentSave.Width - ScissorsGap;
 
-            if (top + CropScissors.Height > ActualHeight - 4)
-                top = corner.Y - CropScissors.Height - ScissorsGap;
+            if (top + FragmentSave.Height > ActualHeight - 4)
+                top = corner.Y - FragmentSave.Height - ScissorsGap;
 
-            Canvas.SetLeft(CropScissors, Math.Max(0, left));
-            Canvas.SetTop(CropScissors, Math.Max(0, top));
+            Canvas.SetLeft(FragmentSave, Math.Max(0, left));
+            Canvas.SetTop(FragmentSave, Math.Max(0, top));
 
-            CropScissors.Visibility = Visibility.Visible;
+            FragmentSave.Visibility = Visibility.Visible;
         }
 
-        /// <summary>Ножницы нажаты: фрагмент под рамкой выделения запрошен.</summary>
+        /// <summary>Дискета нажата: фрагмент под рамкой выделения запрошен.</summary>
         private void OnCropClick(object sender, RoutedEventArgs e)
         {
             Rect area = SelectionInImagePixels();
@@ -510,12 +541,10 @@ namespace Kite2.App.Views
             HandleBottomLeft.Visibility = Visibility.Collapsed;
             HandleBottomRight.Visibility = Visibility.Collapsed;
 
-            CropScissors.Visibility = Visibility.Collapsed;
+            FragmentSave.Visibility = Visibility.Collapsed;
 
             return had;
         }
-
-        private bool LeftButtonIsDown() => Mouse.LeftButton == MouseButtonState.Pressed;
 
         /// <summary>
         /// Нажатие пришло по кнопке поверх листа, а не по самому листу. Кнопка
