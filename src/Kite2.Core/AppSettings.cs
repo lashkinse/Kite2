@@ -79,7 +79,7 @@ namespace Kite2.Core
         }
 
         /// <summary>Разбирает строку вида «ключ=значение». Комментарии и секции пропускаются.</summary>
-        internal static void Apply(string line)
+        public static void Apply(string line)
         {
             string text = line.Trim();
 

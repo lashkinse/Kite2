@@ -25,6 +25,10 @@ namespace Kite2.App
         {
             base.OnStartup(e);
 
+            // Журнал настраивается первым: с этого момента любая ошибка попадает в файл.
+            Logging.Initialize(e.Args);
+            Logging.CatchBackgroundFailures();
+
             AppSettings.Load();
 
             AppDomain.CurrentDomain.UnhandledException += (sender, args) =>

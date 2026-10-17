@@ -287,20 +287,22 @@ namespace Kite2.Core
             {
                 foreach (string page in pages)
                 {
-                    using (var image = new MagickImage(page))
-                    {
-                        uint width;
-                        uint height;
+                    // Картинка не освобождается после добавления в коллекцию: коллекция
+                    // записывается в файл только в конце, и освобождённая картинка к
+                    // тому моменту уже недоступна.
+                    var image = new MagickImage(page);
 
-                        PageImage.FitInside(image.Width, image.Height, PageA4HalfWidth, PageA4HalfHeight, out width, out height);
+                    uint width;
+                    uint height;
 
-                        image.Format = MagickFormat.Tif;
-                        image.Depth = 8;
-                        image.Settings.SetDefine("tiff:compression", "jpeg");
-                        image.Resize(width, height);
+                    PageImage.FitInside(image.Width, image.Height, PageA4HalfWidth, PageA4HalfHeight, out width, out height);
 
-                        collection.Add(image);
-                    }
+                    image.Format = MagickFormat.Tif;
+                    image.Depth = 8;
+                    image.Settings.SetDefine("tiff:compression", "jpeg");
+                    image.Resize(width, height);
+
+                    collection.Add(image);
                 }
 
                 collection.Write(filePath);
