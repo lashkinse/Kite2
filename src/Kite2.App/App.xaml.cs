@@ -1,9 +1,13 @@
 using System;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Kite2.App.Services;
 using Kite2.App.ViewModels;
 using Kite2.App.Views;
 using Kite2.Core;
+using NLog;
 
 namespace Kite2.App
 {
@@ -49,6 +53,8 @@ namespace Kite2.App
 
             MainWindow = new MainWindow { DataContext = viewModel };
 
+            MainWindow.Icon = ProgramIcon();
+
             // Модель и область просмотра соединяются здесь: ни одна из сторон о другой
             // не знает, и круг между ними не возникнет.
             MainWindow.Connect(viewModel);
@@ -59,6 +65,47 @@ namespace Kite2.App
             MainWindow.Show();
 
             viewModel.Start();
+        }
+
+        /// <summary>
+        /// Значок программы для окна. Берётся из самого файла программы: WPF значок
+        /// из файла не достаёт, и на кнопке панели задач вставало серое окно.
+        /// </summary>
+        private static ImageSource ProgramIcon()
+        {
+            try
+            {
+                using (var icon = System.Drawing.Icon.ExtractAssociatedIcon(ExecutablePath()))
+                {
+                    if (icon == null)
+                        return null;
+
+                    ImageSource image = Imaging.CreateBitmapSourceFromHIcon(
+                        icon.Handle,
+                        Int32Rect.Empty,
+                        BitmapSizeOptions.FromWidthAndHeight(32, 32));
+
+                    image.Freeze();
+
+                    return image;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Без значка программа работает, а из-за него ронять запуск нельзя.
+                LogManager.GetCurrentClassLogger().Warn("Значок программы не загружен: {0}", ex.Message);
+
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Путь к файлу программы: у окна WPF своего <c>ExecutablePath</c> нет.
+        /// </summary>
+        private static string ExecutablePath()
+        {
+            using (var process = System.Diagnostics.Process.GetCurrentProcess())
+                return process.MainModule.FileName;
         }
     }
 }
