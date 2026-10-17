@@ -1,0 +1,25 @@
+## Сборка Visual Studio
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Результаты сборки и промежуточные файлы
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.dll.config
+
+## Журналы и временные файлы программы
+*.log
+*.tmp
+
+## Инструменты
+_ReSharper*/
+*.DotSettings.user
+.vscode/
