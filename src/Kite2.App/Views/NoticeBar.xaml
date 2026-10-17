@@ -55,7 +55,8 @@
                     Cursor="Hand"
                     Foreground="White"
                     Background="#4A4A4A"
-                    BorderThickness="0">
+                    BorderThickness="0"
+                    FocusVisualStyle="{x:Null}">
                 <Button.Template>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Background"
@@ -69,6 +70,10 @@
                                               VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Background" Property="BorderBrush" Value="#8AB4E8" />
+                                <Setter TargetName="Background" Property="BorderThickness" Value="1" />
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Background" Property="Background" Value="#5E5E5E" />
                             </Trigger>

@@ -16,10 +16,17 @@
         <Setter Property="Margin" Value="0,0" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
+        <!-- Своя рамка фокуса вместо системной: у WPF она рисуется мелким
+             пунктиром поверх тёмной панели и выглядит как опечатка. -->
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Plate" Background="{TemplateBinding Background}" CornerRadius="4">
+                    <Border x:Name="Plate"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            CornerRadius="4">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Path Style="{StaticResource CommandIconStyle}"
                                   Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
@@ -39,6 +46,11 @@
                         </StackPanel>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <!-- Рамка клавиатурного фокуса вместо системной: та рисуется
+                             мелким пунктиром и на тёмной панели выглядит опечаткой. -->
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Plate" Property="BorderBrush" Value="#8AB4E8" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Plate" Property="Background" Value="#4A4A4A" />
                         </Trigger>
@@ -60,7 +72,11 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Plate" Background="{StaticResource Accent}" CornerRadius="4">
+                    <Border x:Name="Plate"
+                            Background="{StaticResource Accent}"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            CornerRadius="4">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Path Style="{StaticResource CommandIconStyle}"
                                   Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
@@ -80,6 +96,9 @@
                         </StackPanel>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Plate" Property="BorderBrush" Value="#FFFFFF" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Plate" Property="Background" Value="{StaticResource AccentHover}" />
                         </Trigger>

@@ -10,8 +10,7 @@
         <ScrollViewer x:Name="Scroller"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Auto"
-                      PanningMode="Both"
-                      Focusable="True">
+                      PanningMode="Both">
             <Canvas Background="Transparent">
                 <!-- Лист. Размер задаётся прямо в коде: он равен размеру страницы,
                      умноженному на масштаб. Отдельного масштабирующего преобразования
