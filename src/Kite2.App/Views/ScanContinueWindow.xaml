@@ -12,8 +12,8 @@
 
     <!-- Вопрос после серии сканирования. Раньше здесь были два переключателя и
          кнопка «ОК»: выбор приходилось подтверждать вторым нажатием, и Esc означал
-         не то, чего ждёт. Теперь ответ выбирается сразу одной кнопкой, а подписи
-         подсказывают клавиши. -->
+         не то, чего ждёт. Теперь ответ выбирается сразу одной кнопкой, а клавиша
+         написана на самой кнопке. -->
     <StackPanel Margin="20">
 
         <TextBlock x:Name="Caption"
@@ -32,7 +32,7 @@
 
             <Button Grid.Column="0"
                     x:Name="StopButton"
-                    Content="Завершить"
+                    Content="Завершить  [Enter]"
                     Height="32"
                     FontSize="13"
                     IsDefault="True"
@@ -40,36 +40,10 @@
 
             <Button Grid.Column="2"
                     x:Name="ContinueButton"
-                    Content="Сканировать ещё"
+                    Content="Сканировать ещё  [+]"
                     Height="32"
                     FontSize="13"
                     Click="OnContinueClick" />
-
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-        </Grid>
-
-        <!-- Подсказки о клавишах: те же сочетания работают и на верхней панели. -->
-        <Grid Margin="0,8,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="12" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <TextBlock Grid.Column="0"
-                       Text="[Enter]"
-                       HorizontalAlignment="Center"
-                       Foreground="{StaticResource TextSecondary}"
-                       FontSize="{StaticResource FontSizeSmall}" />
-
-            <TextBlock Grid.Column="2"
-                       Text="[+]"
-                       HorizontalAlignment="Center"
-                       Foreground="{StaticResource TextSecondary}"
-                       FontSize="{StaticResource FontSizeSmall}" />
         </Grid>
     </StackPanel>
 </Window>

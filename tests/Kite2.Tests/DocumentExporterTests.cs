@@ -2,13 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using ImageMagick;
 using Kite2.Core;
 
 namespace Kite2.Tests
 {
     /// <summary>
-    /// Проверки сохранения документа в четырёх форматах.
+    /// Проверки сохранения документа во всех поддерживаемых форматах.
     /// </summary>
     public static class DocumentExporterTests
     {
@@ -123,6 +124,56 @@ namespace Kite2.Tests
 
                 using (var collection = new MagickImageCollection(target))
                     Check.Equal(3, collection.Count, "страниц в TIFF");
+            }
+        }
+
+        [Test("Одна страница сохраняется PNG под запрошенным именем")]
+        public static void SinglePngKeepsRequestedName()
+        {
+            using (var folder = new TemporaryFolder())
+            {
+                string target = folder.File("лист.png");
+
+                DocumentExporter.Export(Pages(folder, 1), target, ScanMode.Greyscale);
+
+                Check.FileExists(target, "PNG");
+
+                // Под именем .png должен лежать настоящий PNG, а не переименованный
+                // JPEG: часть просмотрщиков такие файлы не открывает.
+                using (var image = new MagickImage(target))
+                    Check.Equal(MagickFormat.Png, image.Format, "формат файла");
+            }
+        }
+
+        [Test("Несколько страниц сохраняются отдельными файлами PNG")]
+        public static void SeveralPngsGetNumbers()
+        {
+            using (var folder = new TemporaryFolder())
+            {
+                DocumentExporter.Export(Pages(folder, 2), folder.File("письмо.png"), ScanMode.Greyscale);
+
+                Check.FileExists(folder.File("письмо (1).png"), "первая страница");
+                Check.FileExists(folder.File("письмо (2).png"), "вторая страница");
+            }
+        }
+
+        [Test("Список поддерживаемых форматов совпадает с тем, что сохраняет ядро")]
+        public static void SupportedFormatsAreAllWritable()
+        {
+            using (var folder = new TemporaryFolder())
+            {
+                foreach (string extension in DocumentExporter.SupportedExtensions)
+                {
+                    string target = folder.File("документ" + extension);
+
+                    DocumentExporter.Export(Pages(folder, 1), target, ScanMode.Colour);
+
+                    string produced = Directory.GetFiles(folder.Path, "*" + extension.TrimStart('.'))
+                        .OrderBy(Path.GetFileName)
+                        .FirstOrDefault();
+
+                    Check.FileExists(produced ?? target, "формат " + extension);
+                }
             }
         }
 

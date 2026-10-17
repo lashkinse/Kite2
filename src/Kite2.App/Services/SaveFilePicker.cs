@@ -1,7 +1,5 @@
-using System;
 using System.IO;
 using Microsoft.Win32;
-using Kite2.Core;
 
 namespace Kite2.App.Services
 {
@@ -9,40 +7,51 @@ namespace Kite2.App.Services
     /// Окно сохранения документа.
     /// </summary>
     /// <remarks>
-    /// Список форматов и расширения описаны в ядре: расширение определяет, как именно
-    /// соберётся документ, и разрыв его тут означал бы, что интерфейс и ядро
-    /// расходятся во мнении о том, что вообще можно сохранить.
-    /// </remarks>
+    /// Все форматы перечислены в одном окне. Отдельный список под кнопкой «Сохранить»
+    /// повторял то, что окно и так спрашивает, и требовал второго щелчка; теперь
+    /// Ctrl+S сразу приводит сюда. Расширение определяет, как соберётся документ,
+    /// и список расширений берётся из ядра — иначе интерфейс и ядро разошлись бы
+    /// во мнении о том, что вообще можно сохранить.
+    /// </summary>
     public static class SaveFilePicker
     {
+        /// <summary>Человеческие названия форматов в порядке, показанном в окне.</summary>
+        private static readonly string[] Formats =
+        {
+            "Документ PDF|*.pdf",
+            "Архив ZIP|*.zip",
+            "Изображение TIFF|*.tif",
+            "Изображение JPEG|*.jpg",
+            "Изображение PNG|*.png"
+        };
+
+        /// <summary>Фильтр окна сохранения со всеми форматами.</summary>
+        public static string Filter => string.Join("|", Formats);
+
         /// <summary>
         /// Спрашивает имя файла под указанный формат.
         /// </summary>
-        /// <param name="filter">Фильтр окна сохранения с расширением, например «PDF|*.pdf».</param>
         /// <returns>Путь к файлу или null, если пользователь отказался.</returns>
-        public static string Ask(string filter)
+        public static string Ask(string defaultExtension)
         {
             var dialog = new SaveFileDialog
             {
                 AddExtension = true,
                 RestoreDirectory = true,
-                Filter = filter,
-                DefaultExt = Path.GetExtension(filter.Split('|')[1].Trim('*'))
+                Filter = Filter,
+                DefaultExt = defaultExtension
             };
 
+            // Выбранный по умолчанию формат задан расширением: порядок строк фильтра
+            // выбирает первый, а без заданного расширения окно открывалось с «Все
+            // файлы» и про формат приходилось гадать.
             return dialog.ShowDialog() == true ? dialog.FileName : null;
         }
 
-        /// <summary>Фильтр «Документ PDF» для окна сохранения.</summary>
-        public const string FilterPdf = "Документ PDF|*.pdf";
-
-        /// <summary>Фильтр «Архив ZIP» для окна сохранения.</summary>
-        public const string FilterZip = "Архив ZIP|*.zip";
-
-        /// <summary>Фильтр «Изображение JPEG» для окна сохранения.</summary>
-        public const string FilterJpg = "Изображение JPEG|*.jpg";
-
-        /// <summary>Фильтр «Изображение TIFF» для окна сохранения.</summary>
-        public const string FilterTiff = "Изображение TIFF|*.tif";
+        /// <summary>
+        /// Расширение из выбранного фильтра. Нужно, чтобы имя нового документа
+        /// получило расширение заранее, а не дописывалось молча.
+        /// </summary>
+        public static string ExtensionOf(string fileName) => Path.GetExtension(fileName);
     }
 }

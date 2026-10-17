@@ -49,6 +49,9 @@
                     MinWidth="80"
                     Height="26"
                     VerticalAlignment="Center"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Padding="10,0"
                     Cursor="Hand"
                     Foreground="White"
                     Background="#4A4A4A"
@@ -58,8 +61,12 @@
                         <Border x:Name="Background"
                                 Background="{TemplateBinding Background}"
                                 CornerRadius="3"
-                                Padding="10,0">
-                            <ContentPresenter HorizontalAlignment="Center" />
+                                Padding="{TemplateBinding Padding}">
+                            <!-- Выравнивание по центру задано явно и по обеим осям:
+                                 без него надпись прижималась к левому краю кнопки,
+                                 а оставалось свободное место справа. -->
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">

@@ -28,6 +28,10 @@
     <!-- Текст -->
     <SolidColorBrush x:Key="TextOnBar" Color="#FFFFFF" />
     <SolidColorBrush x:Key="TextOnAccent" Color="#FFFFFF" />
+  <!-- Подсказка с сочетанием клавиш на панели команд. На тёмном фоне и на
+       акцентном она разная: серая на синем читалась плохо. -->
+  <SolidColorBrush x:Key="TextOnBarHint" Color="#9A9A9A" />
+  <SolidColorBrush x:Key="TextOnAccentHint" Color="#CFE3FB" />
     <SolidColorBrush x:Key="TextPrimary" Color="#1A1A1A" />
     <SolidColorBrush x:Key="TextSecondary" Color="#6E6E6E" />
     <SolidColorBrush x:Key="TextDisabled" Color="#8C8C8C" />

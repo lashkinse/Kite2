@@ -19,7 +19,7 @@ namespace Kite2.Core
         private const uint PageA4HalfHeight = 1754;
 
         /// <summary>Поддерживаемые форматы с их расширениями.</summary>
-        public static readonly IReadOnlyList<string> SupportedExtensions = new[] { ".pdf", ".zip", ".tif", ".jpg" };
+        public static readonly IReadOnlyList<string> SupportedExtensions = new[] { ".pdf", ".zip", ".tif", ".jpg", ".png" };
 
         /// <summary>
         /// Собирает документ и кладёт его под запрошенным именем.
@@ -102,8 +102,9 @@ namespace Kite2.Core
                 SaveAsZip(pages, filePath);
             else if (string.Equals(extension, ".tif", StringComparison.OrdinalIgnoreCase))
                 SaveAsTiff(pages, filePath);
-            else if (string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase))
-                SaveAsJpg(pages, filePath);
+            else if (string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase))
+                SaveAsPictures(pages, filePath, extension);
         }
 
         private static void TryDelete(string folder, string pattern)
@@ -314,11 +315,21 @@ namespace Kite2.Core
         /// не помещаются. Для одной страницы остаётся запрошенное имя, для нескольких
         /// к имени добавляется номер.
         /// </summary>
-        private static void SaveAsJpg(IReadOnlyList<string> pages, string filePath)
+        /// <remarks>
+        /// PNG не принимает переиспользование JPEG: файл страницы перекодируется, иначе
+        /// под именем .png лежал бы JPEG, а такие файлы некоторые просмотрщики не открывают.
+        /// </remarks>
+        private static void SaveAsPictures(IReadOnlyList<string> pages, string filePath, string extension)
         {
+            bool convert = !string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase);
+
             if (pages.Count == 1)
             {
-                File.Copy(pages[0], filePath, true);
+                if (convert)
+                    SavePicture(pages[0], filePath);
+                else
+                    File.Copy(pages[0], filePath, true);
+
                 return;
             }
 
@@ -326,7 +337,29 @@ namespace Kite2.Core
             string baseName = Path.GetFileNameWithoutExtension(filePath);
 
             for (int i = 0; i < pages.Count; i++)
-                File.Copy(pages[i], Path.Combine(folder, baseName + " (" + (i + 1) + ").jpg"), true);
+            {
+                string target = Path.Combine(folder, baseName + " (" + (i + 1) + ")" + extension);
+
+                if (convert)
+                    SavePicture(pages[i], target);
+                else
+                    File.Copy(pages[i], target, true);
+            }
+        }
+
+        /// <summary>Перекодирует страницу в заданный формат без потерь.</summary>
+        private static void SavePicture(string source, string target)
+        {
+            ImageMagickSetup.EnsureStarted();
+
+            using (var image = new MagickImage(source))
+            {
+                image.Format = string.Equals(Path.GetExtension(target), ".png", StringComparison.OrdinalIgnoreCase)
+                    ? MagickFormat.Png
+                    : MagickFormat.Jpeg;
+
+                image.Write(target);
+            }
         }
     }
 }

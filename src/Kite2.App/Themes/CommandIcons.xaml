@@ -32,9 +32,13 @@
     <!-- Стрелка вниз: страница ниже -->
     <Geometry x:Key="IconDown">M 8,9.5 L 12,14 L 16,9.5</Geometry>
 
-    <!-- Круговая стрелка: поворот страницы -->
-    <Geometry x:Key="IconRotate">M 19.5,12 A 7.5,7.5 0 1 1 16.7,6.1 M 16.7,6.1 V 2.6 M 16.7,6.1 H 20.5</Geometry>
+    <!-- Круговая стрелка: дуга идёт от верхней точки по часовой стрелке на три четверти
+         и обрывается справа, где наконечник. Дуга с двумя концами рядом и
+         разорванная посередине читалась как сломанная. -->
+    <Geometry x:Key="IconRotate">M 7.5,6.5 A 7,7 0 1 1 16.5,6.5 M 14.7,7.1 L 16.5,4.1 L 18.3,7.1</Geometry>
 
+    <!-- Значки нарисованы на сетке 24 на 24 и увеличиваются преобразованием:
+         так сетка остаётся целой, а размер значка меняется в одном месте. -->
     <Style x:Key="CommandIconStyle" TargetType="Path">
         <Setter Property="Width" Value="24" />
         <Setter Property="Height" Value="24" />
@@ -43,6 +47,11 @@
         <Setter Property="StrokeEndLineCap" Value="Round" />
         <Setter Property="StrokeLineJoin" Value="Round" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="LayoutTransform">
+            <Setter.Value>
+                <ScaleTransform ScaleX="1.17" ScaleY="1.17" />
+            </Setter.Value>
+        </Setter>
     </Style>
 
 </ResourceDictionary>

@@ -23,8 +23,22 @@ namespace Kite2.App.ViewModels
         /// <summary>Путь к файлу страницы на диске.</summary>
         public string FilePath { get; }
 
-        /// <summary>Номер страницы, начиная с единицы.</summary>
-        public int Number { get; }
+        private int _number;
+
+        /// <summary>
+        /// Номер страницы, начиная с единицы. Принадлежит позиции в документе, а не
+        /// самой странице: после удаления или перестановки номера должны сойтись
+        /// снова, иначе в колонке остаются пропуски и повторы.
+        /// </summary>
+        public int Number
+        {
+            get => _number;
+            set
+            {
+                if (SetProperty(ref _number, value))
+                    OnPropertyChanged(nameof(Caption));
+            }
+        }
 
         /// <summary>Номер страницы подписью.</summary>
         public string Caption => Number.ToString();

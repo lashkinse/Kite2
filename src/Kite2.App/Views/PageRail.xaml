@@ -21,9 +21,12 @@
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  HorizontalContentAlignment="Center"
                  Padding="0,10">
+            <!-- Панель элементов — простой список, а не перенос строк. Перенос
+                 выравнивал миниатюры по левому краю и ровнял их в несколько
+                 столбцов: колонка страниц от этого переставала быть колонкой. -->
             <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>
-                    <WrapPanel />
+                    <StackPanel />
                 </ItemsPanelTemplate>
             </ListBox.ItemsPanel>
 
@@ -59,14 +62,17 @@
 
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <StackPanel>
-                        <!-- Размеры заданы явно: картинка должна занимать одно и то же
-                             место и при пустой колонке, иначе список прыгает. -->
+                    <!-- Ширина задана явно, равная ширине колонки: миниатюра и её номер
+                         встают по центру, а не по левому краю. Размеры миниатюры
+                         заданы тоже явно — картинка должна занимать одно и то же
+                         место и при пустой колонке, иначе список прыгает. -->
+                    <StackPanel Width="150" HorizontalAlignment="Center">
                         <Border Background="White"
                                 BorderBrush="{StaticResource PageBorder}"
                                 BorderThickness="1"
                                 Width="110"
-                                Height="156">
+                                Height="156"
+                                HorizontalAlignment="Center">
                             <Image Source="{Binding Thumbnail}" Stretch="Uniform" />
                         </Border>
                         <TextBlock Text="{Binding Caption}"

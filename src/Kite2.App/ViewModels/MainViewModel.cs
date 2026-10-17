@@ -39,7 +39,6 @@ namespace Kite2.App.ViewModels
         private readonly ObservableCollection<PageViewModel> _pages = new ObservableCollection<PageViewModel>();
         private PageViewModel _selectedPage;
         private bool _busy;
-        private bool _isSaveMenuOpen;
         private bool _noticeVisible;
         private bool _noticeIsResult;
         private bool _cancelWanted;
@@ -49,11 +48,7 @@ namespace Kite2.App.ViewModels
         public MainViewModel()
         {
             NewDocumentCommand = new RelayCommand(NewDocument, () => !IsBusy);
-            SaveCommand = new RelayCommand(BeginSave, () => !IsBusy && _pages.Count > 0);
-            SaveAsPdfCommand = new RelayCommand(() => Save(SaveFilePicker.FilterPdf), () => !IsBusy && _pages.Count > 0);
-            SaveAsZipCommand = new RelayCommand(() => Save(SaveFilePicker.FilterZip), () => !IsBusy && _pages.Count > 0);
-            SaveAsJpgCommand = new RelayCommand(() => Save(SaveFilePicker.FilterJpg), () => !IsBusy && _pages.Count > 0);
-            SaveAsTiffCommand = new RelayCommand(() => Save(SaveFilePicker.FilterTiff), () => !IsBusy && _pages.Count > 0);
+            SaveCommand = new RelayCommand(Save, () => !IsBusy && _pages.Count > 0);
             ScanMonoCommand = new RelayCommand(() => ScanAsync(CaptureColour.BlackAndWhite), () => !IsBusy);
             ScanColourCommand = new RelayCommand(() => ScanAsync(CaptureColour.Colour), () => !IsBusy);
             SettingsCommand = new RelayCommand(ChooseSource, () => !IsBusy);
@@ -65,8 +60,7 @@ namespace Kite2.App.ViewModels
 
             _commands = new[]
             {
-                NewDocumentCommand, SaveCommand, SaveAsPdfCommand, SaveAsZipCommand, SaveAsJpgCommand,
-                SaveAsTiffCommand, ScanMonoCommand, ScanColourCommand, SettingsCommand, DeletePageCommand,
+                NewDocumentCommand, SaveCommand, ScanMonoCommand, ScanColourCommand, SettingsCommand, DeletePageCommand,
                 MovePageUpCommand, MovePageDownCommand, RotatePageCommand
             };
         }
@@ -86,17 +80,6 @@ namespace Kite2.App.ViewModels
                 if (SetProperty(ref _selectedPage, value))
                     RefreshCommands();
             }
-        }
-
-        /// <summary>
-        /// Открыт ли список форматов сохранения. Список живёт рядом с кнопкой
-        /// «Сохранить» и открывается под ней же: список от левого края панели
-        /// уезжал в сторону и тянулся до кнопки искать.
-        /// </summary>
-        public bool IsSaveMenuOpen
-        {
-            get => _isSaveMenuOpen;
-            set => SetProperty(ref _isSaveMenuOpen, value);
         }
 
         /// <summary>Идёт ли операция: команды на это время заблокированы.</summary>
@@ -143,16 +126,11 @@ namespace Kite2.App.ViewModels
         /// <summary>Создаёт новый документ.</summary>
         public RelayCommand NewDocumentCommand { get; }
 
-        /// <summary>Открывает список форматов сохранения.</summary>
+        /// <summary>
+        /// Сохраняет документ. Формат выбирается в окне сохранения, отдельного
+        /// списка под кнопкой нет.
+        /// </summary>
         public RelayCommand SaveCommand { get; }
-
-        public RelayCommand SaveAsPdfCommand { get; }
-
-        public RelayCommand SaveAsZipCommand { get; }
-
-        public RelayCommand SaveAsJpgCommand { get; }
-
-        public RelayCommand SaveAsTiffCommand { get; }
 
         public RelayCommand ScanMonoCommand { get; }
 
@@ -341,6 +319,7 @@ namespace Kite2.App.ViewModels
             if (_pages.Count > 0)
                 SelectedPage = _pages[_pages.Count - 1];
 
+            RenumberPages();
             RefreshCommands();
 
             // Показано число страниц в этой серии, а не в документе: после вопроса о
@@ -349,20 +328,23 @@ namespace Kite2.App.ViewModels
                 ShowNotice(Messages.PagesAdded(added), result: true, cancel: false);
         }
 
+        /// <summary>
+        /// Проставляет номера по нынешнему порядку страниц. Номера присваиваются не
+        /// при создании, а здесь: иначе после удаления первой страницы колонка
+        /// начинается с двойки, а после перестановки идёт 1, 3, 2.
+        /// </summary>
+        private void RenumberPages()
+        {
+            for (int i = 0; i < _pages.Count; i++)
+                _pages[i].Number = i + 1;
+        }
+
         // --- Сохранение -------------------------------------------------------
 
-        /// <summary>Открывает список форматов сохранения.</summary>
-        private void BeginSave() => IsSaveMenuOpen = !IsSaveMenuOpen;
-
-        private async void Save(string filter)
+        /// <summary>Спрашивает имя файла и сохраняет документ в выбранном формате.</summary>
+        private async void Save()
         {
-            IsSaveMenuOpen = false;
-
-            Log.Info("Сохранение: запрошен фильтр {0}", filter);
-
-            string path = SaveFilePicker.Ask(filter);
-
-            Log.Info("Сохранение: имя файла {0}", path ?? "(отменено)");
+            string path = SaveFilePicker.Ask(".pdf");
 
             if (string.IsNullOrEmpty(path))
                 return;
@@ -379,10 +361,10 @@ namespace Kite2.App.ViewModels
             {
                 await Task.Run(() => DocumentExporter.Export(files, path, mode));
 
-                // Время и размер в журнал: по одному «экспорт запущен» не понять,
-                // появился файл или нет, а ожидание большого документа иначе
-                // выглядит как зависание.
-                Log.Info("Экспорт завершён: {0}, байт={1}, мс={2}", path, new FileInfo(path).Length, watch.ElapsedMilliseconds);
+                // В журнал пишется то, что действительно появилось на диске. У картинок
+                // это не запрошенное имя, а отдельные файлы с номерами страниц, поэтому
+                // размер запрошенного пути мог бы и не существовать.
+                Log.Info("Экспорт завершён: {0}, мс={1}, файлов={2}", path, watch.ElapsedMilliseconds, Describe(path));
 
                 ShowNotice(Messages.Saved + " " + Path.GetFileName(path), result: true, cancel: false);
             }
@@ -395,6 +377,31 @@ namespace Kite2.App.ViewModels
             {
                 SetBusy(false);
             }
+        }
+
+        /// <summary>
+        /// Описание того, что лежит на диске после сохранения: имя файла и его размер.
+        /// Для картинок в запрошенном имени может не быть ничего — вместо него
+        /// появляются файлы с номерами страниц.
+        /// </summary>
+        private static string Describe(string requestedPath)
+        {
+            if (File.Exists(requestedPath))
+            {
+                FileInfo single = new FileInfo(requestedPath);
+                return single.Name + " (" + single.Length + " байт)";
+            }
+
+            string folder = Path.GetDirectoryName(requestedPath);
+            string baseName = Path.GetFileNameWithoutExtension(requestedPath);
+
+            FileInfo[] written = new DirectoryInfo(folder)
+                .GetFiles(baseName + "*.???")
+                .Where(file => file.Extension.Equals(Path.GetExtension(requestedPath), StringComparison.OrdinalIgnoreCase))
+                .OrderBy(file => file.Name)
+                .ToArray();
+
+            return string.Join(", ", written.Select(file => file.Name + " (" + file.Length + " байт)"));
         }
 
         // --- Работа со страницами --------------------------------------------
@@ -436,6 +443,7 @@ namespace Kite2.App.ViewModels
                 ? null
                 : _pages[Math.Min(index, _pages.Count - 1)];
 
+            RenumberPages();
             RefreshCommands();
         }
 
@@ -452,6 +460,8 @@ namespace Kite2.App.ViewModels
                 return;
 
             _pages.Move(index, target);
+
+            RenumberPages();
         }
 
         /// <summary>
