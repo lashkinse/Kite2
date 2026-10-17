@@ -12,6 +12,9 @@ namespace Kite2.Core
 
         public const string Saved = "Сохранено:";
 
+        /// <summary>Сообщение о добавленных страницах.</summary>
+        public static string PagesAdded(int count) => "Добавлено страниц: " + count;
+
         public const string ChooseSource = "Источник сканирования не выбран. Откройте «Параметры» и укажите источник.";
 
         public const string NoSources = "Источники сканирования не найдены. Проверьте, подключён ли сканер и установлен ли его драйвер.";

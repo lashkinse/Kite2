@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Kite2.App</RootNamespace>
+    <AssemblyName>Kite2</AssemblyName>
+    <!-- 64-разрядная сборка: нативная библиотека ImageMagick своя для каждого
+         варианта, и под Windows 7 она доступна только под x64. -->
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifiers>win;win-x64</RuntimeIdentifiers>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyTitle>Kite2</AssemblyTitle>
+    <Product>Kite2</Product>
+    <Description>Сканирование документов</Description>
+    <Version>1.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <SatelliteResourceLanguages>ru</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Kite2.Core\Kite2.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="NLog" Version="5.5.1" />
+  </ItemGroup>
+
+</Project>

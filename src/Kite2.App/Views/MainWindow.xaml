@@ -1,0 +1,104 @@
+<Window x:Class="Kite2.App.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:Kite2.App.Views"
+        Title="Kite2"
+        Width="1000"
+        Height="600"
+        MinWidth="900"
+        MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Bar}"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display">
+
+    <!-- Главное окно: тёмная панель команд сверху, под ней рабочая область —
+         колонка страниц слева и просмотр выбранной страницы справа. -->
+
+    <!-- Горячие клавиши. Заданы на окне, а не на кнопках: работают при любом фокусе
+         внутри программы, в том числе на колонке страниц и на листе. -->
+    <Window.InputBindings>
+        <KeyBinding Key="N" Modifiers="Control" Command="{Binding NewDocumentCommand}" />
+        <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveAsPdfCommand}" />
+        <KeyBinding Key="R" Modifiers="Control" Command="{Binding RotatePageCommand}" />
+        <KeyBinding Key="Delete" Command="{Binding DeletePageCommand}" />
+        <KeyBinding Key="Up" Modifiers="Control" Command="{Binding MovePageUpCommand}" />
+        <KeyBinding Key="Down" Modifiers="Control" Command="{Binding MovePageDownCommand}" />
+        <KeyBinding Key="Add" Command="{Binding ScanMonoCommand}" />
+        <KeyBinding Key="OemPlus" Command="{Binding ScanMonoCommand}" />
+    </Window.InputBindings>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Панель команд. Кнопки перечислены в порядке работы с документом:
+             создать, сохранить, отсканировать, выбрать источник, править страницы. -->
+        <Border Grid.Row="0" Background="{StaticResource Bar}" Height="76">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+
+                <Button Style="{StaticResource CommandButtonStyle}" Content="Создать" Tag="{StaticResource IconNew}"
+                        ToolTip="Создать новый документ (Ctrl+N)" Command="{Binding NewDocumentCommand}" />
+
+                <Button x:Name="SaveButton" Style="{StaticResource AccentCommandButtonStyle}" Content="Сохранить"
+                        Tag="{StaticResource IconSave}" ToolTip="Сохранить документ (Ctrl+S)"
+                        Command="{Binding SaveCommand}">
+                    <Button.ContextMenu>
+                        <!-- Список форматов открывается под самой кнопкой. Ссылка на
+                             кнопку идёт через PlacementTarget самого меню: меню живёт в
+                             отдельном дереве, и поиск по имени элемента оттуда не работает. -->
+                        <ContextMenu IsOpen="{Binding IsSaveMenuOpen, Mode=TwoWay}"
+                                     Placement="Bottom"
+                                     PlacementTarget="{Binding PlacementTarget, RelativeSource={RelativeSource Self}}">
+                            <MenuItem Header="PDF" Command="{Binding SaveAsPdfCommand}" />
+                            <MenuItem Header="ZIP" Command="{Binding SaveAsZipCommand}" />
+                            <MenuItem Header="JPEG" Command="{Binding SaveAsJpgCommand}" />
+                            <MenuItem Header="TIFF" Command="{Binding SaveAsTiffCommand}" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
+
+                <Rectangle Style="{StaticResource ToolBarSeparatorStyle}" />
+
+                <Button Style="{StaticResource CommandButtonStyle}" Content="Ч/Б" Tag="{StaticResource IconScanMono}"
+                        ToolTip="Сканировать в чёрно-белом режиме (+)" Command="{Binding ScanMonoCommand}" />
+
+                <Button Style="{StaticResource CommandButtonStyle}" Content="Цветное" Tag="{StaticResource IconScanColour}"
+                        ToolTip="Сканировать в цветном режиме (+)" Command="{Binding ScanColourCommand}" />
+
+                <Button Style="{StaticResource CommandButtonStyle}" Content="Параметры" Tag="{StaticResource IconSettings}"
+                        ToolTip="Выбрать источник сканирования" Command="{Binding SettingsCommand}" />
+
+                <Rectangle Style="{StaticResource ToolBarSeparatorStyle}" />
+
+                <Button Style="{StaticResource CommandButtonStyle}" Content="Удалить" Tag="{StaticResource IconDelete}"
+                        ToolTip="Удалить выбранную страницу (Del)" Command="{Binding DeletePageCommand}" />
+
+                <Button Style="{StaticResource CommandButtonStyle}" Content="Вверх" Tag="{StaticResource IconUp}"
+                        ToolTip="Переместить страницу выше (Ctrl+↑)" Command="{Binding MovePageUpCommand}" />
+
+                <Button Style="{StaticResource CommandButtonStyle}" Content="Вниз" Tag="{StaticResource IconDown}"
+                        ToolTip="Переместить страницу ниже (Ctrl+↓)" Command="{Binding MovePageDownCommand}" />
+
+                <Button Style="{StaticResource CommandButtonStyle}" Content="Повернуть" Tag="{StaticResource IconRotate}"
+                        ToolTip="Повернуть страницу на 180° (Ctrl+R)" Command="{Binding RotatePageCommand}" />
+            </StackPanel>
+        </Border>
+
+        <!-- Рабочая область -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <views:PageRail Grid.Column="0" />
+            <views:PageViewer Grid.Column="1" />
+
+            <!-- Плашка сообщения поверх рабочей области, в её правом нижнем углу. -->
+            <views:NoticeBar Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" />
+        </Grid>
+    </Grid>
+</Window>
