@@ -29,6 +29,12 @@ namespace Kite2.App
             Logging.Initialize(e.Args);
             Logging.CatchBackgroundFailures();
 
+            Logging.WriteStartup(
+                $"Kite2, версия {typeof(App).Assembly.GetName().Version}",
+                $"Ключи запуска: {Logging.StartupArguments}",
+                $"Каталог данных: {AppPaths.Data}",
+                $"Разрядность процесса: {(Environment.Is64BitProcess ? "64" : "32")} бита");
+
             AppSettings.Load();
 
             AppDomain.CurrentDomain.UnhandledException += (sender, args) =>

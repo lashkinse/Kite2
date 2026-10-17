@@ -95,6 +95,20 @@ namespace Kite2.Core
         }
 
         /// <summary>
+        /// Записывает несколько строк в журнал. Используется при запуске, когда ещё
+        /// нечего показывать пользователю, но уже нужно знать, чем он запущен.
+        /// </summary>
+        public static void WriteStartup(params string[] lines)
+        {
+            var log = LogManager.GetLogger(ProgramLogger);
+
+            foreach (string line in lines)
+                log.Info(line);
+
+            LogManager.Flush();
+        }
+
+        /// <summary>
         /// Подписывает журнал на сбои фоновых потоков. Без этого падение в потоке
         /// выглядит как молча пропавший процесс.
         /// </summary>
