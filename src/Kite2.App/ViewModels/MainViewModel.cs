@@ -577,7 +577,7 @@ namespace Kite2.App.ViewModels
                 return;
             }
 
-            int chosen = SourcePicker.Ask(sources, AppSettings.ScanSourceIndex);
+            int chosen = SourcePicker.Ask(Application.Current.MainWindow, sources, AppSettings.ScanSourceIndex);
 
             if (chosen < 0)
                 return;

@@ -18,10 +18,13 @@ namespace Kite2.App.Services
         /// <summary>
         /// Показывает окно и ждёт выбора.
         /// </summary>
+        /// <param name="owner">Окно, поверх которого открывается выбор. Без владельца
+        /// <see cref="WindowStartupLocation.CenterOwner"/> не на что опереться, и
+        /// окно встаёт по центру экрана — мимо программы.</param>
         /// <param name="sources">Названия доступных источников.</param>
         /// <param name="current">Индекс источника из настроек.</param>
         /// <returns>Индекс выбранного источника или -1, если пользователь закрыл окно.</returns>
-        public static int Ask(IReadOnlyList<string> sources, int current)
+        public static int Ask(Window owner, IReadOnlyList<string> sources, int current)
         {
             var list = new ListBox
             {
@@ -71,7 +74,12 @@ namespace Kite2.App.Services
                 SizeToContent = SizeToContent.WidthAndHeight,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 ResizeMode = ResizeMode.NoResize,
-                ShowInTaskbar = false
+                ShowInTaskbar = false,
+
+                // Владелец ставится в конструкторе окна, а не в списке инициализаторов:
+                // иначе WPF успевает показать окно, и следующая попытка задать
+                // владельца падает с ошибкой.
+                Owner = owner
             };
 
             accept.Click += (sender, e) => window.DialogResult = true;
