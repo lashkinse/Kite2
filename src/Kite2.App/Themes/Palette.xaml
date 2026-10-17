@@ -25,6 +25,9 @@
     <SolidColorBrush x:Key="AccentPressed" Color="#0C5FC2" />
     <SolidColorBrush x:Key="Selection" Color="#CFE3FB" />
 
+    <!-- Ошибка: значок окна сообщения и подсветка полосы уведомления -->
+    <SolidColorBrush x:Key="Danger" Color="#C42B1C" />
+
     <!-- Текст -->
     <SolidColorBrush x:Key="TextOnBar" Color="#FFFFFF" />
     <SolidColorBrush x:Key="TextOnAccent" Color="#FFFFFF" />

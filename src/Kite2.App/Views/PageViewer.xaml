@@ -77,27 +77,25 @@
                     Visibility="Collapsed"
                     Focusable="False"
                     Cursor="Hand"
-                    Background="White"
-                    BorderBrush="#BFBFBF"
-                    BorderThickness="1"
                     ToolTip="Сохранить выделенный участок страницы файлом PNG"
                     Click="OnCropClick">
                 <Button.Template>
                     <ControlTemplate TargetType="Button">
+                        <!-- Подложки нет: на белом листе белый квадрат выглядел бы
+                             дырой. Значок стоит прямо на странице, а при наведении
+                             под ним появляется лёгкая подсветка — видно, что на него
+                             можно нажать. -->
                         <Border x:Name="Plate"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Background="Transparent"
                                 CornerRadius="3">
                             <Path x:Name="Glyph"
                                   Style="{StaticResource CommandIconStyle}"
                                   Data="{StaticResource IconSaveFragment}"
-                                  Stroke="#1A1A1A" />
+                                  Stroke="#1A6FC4" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Plate" Property="Background" Value="#E8F1FC" />
-                                <Setter TargetName="Glyph" Property="Stroke" Value="#1473E6" />
+                                <Setter TargetName="Plate" Property="Background" Value="#DCEAFC" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using Kite2.App.Views;
 using Kite2.Core;
 using NLog;
 
@@ -35,7 +36,9 @@ namespace Kite2.App.Services
         /// <summary>Вопрос с двумя ответами. true — согласие пользователя.</summary>
         public static bool Confirm(string title, string message, string yes = "Да", string no = "Нет")
         {
-            return MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+            Log.Info("Вопрос пользователю: {0}", message);
+
+            return MessageWindow.Ask(OwnerWindow(), title, message, yes, no);
         }
 
         /// <summary>Сообщение об ошибке с понятным пользователю текстом.</summary>
@@ -43,7 +46,7 @@ namespace Kite2.App.Services
         {
             Log.Error(message);
 
-            MessageBox.Show(message, ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageWindow.Show(OwnerWindow(), ErrorTitle, message, MessageKind.Error);
         }
 
         /// <summary>
@@ -61,11 +64,19 @@ namespace Kite2.App.Services
 
             Log.Error(exception, "Необработанная ошибка");
 
-            MessageBox.Show(
-                string.IsNullOrWhiteSpace(exception.Message) ? ErrorUnexpected : exception.Message,
+            MessageWindow.Show(
+                OwnerWindow(),
                 ErrorTitle,
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                string.IsNullOrWhiteSpace(exception.Message) ? ErrorUnexpected : exception.Message,
+                MessageKind.Error);
+        }
+
+        /// <summary>
+        /// Главное окно программы: сообщение встаёт по центру его, а не экрана.
+        /// </summary>
+        private static Window OwnerWindow()
+        {
+            return Application.Current != null ? Application.Current.MainWindow : null;
         }
     }
 }
