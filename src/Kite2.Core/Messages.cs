@@ -12,6 +12,10 @@ namespace Kite2.Core
 
         public const string Saved = "Сохранено:";
 
+        public const string FragmentSaved = "Фрагмент сохранён:";
+
+        public const string NothingSelected = "Сначала выделите участок страницы";
+
         /// <summary>Сообщение о добавленных страницах.</summary>
         public static string PagesAdded(int count) => "Добавлено страниц: " + count;
 

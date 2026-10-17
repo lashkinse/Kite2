@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Сканирование"
-        SizeToContent="WidthAndHeight"
+        Width="470"
+        SizeToContent="Height"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
@@ -10,16 +11,14 @@
         FontFamily="{StaticResource UiFont}"
         FontSize="{StaticResource FontSizeUi}">
 
-    <!-- Вопрос после серии сканирования. Раньше здесь были два переключателя и
-         кнопка «ОК»: выбор приходилось подтверждать вторым нажатием, и Esc означал
-         не то, чего ждёт. Теперь ответ выбирается сразу одной кнопкой, а клавиша
-         написана на самой кнопке. -->
+    <!-- Ширина окна задана явно, а высота подбирается по содержимому. С SizeToContent
+         по обеим осям ширина считалась по содержимому, колонки кнопок растягивались
+         мимо окна, и справа оставалась чёрная полоса. -->
     <StackPanel Margin="20">
 
         <TextBlock x:Name="Caption"
                    Text="Укажите, завершено ли сканирование, или нужно отсканировать дополнительные страницы, чтобы закончить этот документ"
                    TextWrapping="Wrap"
-                   MaxWidth="420"
                    Foreground="{StaticResource TextPrimary}"
                    HorizontalAlignment="Left" />
 

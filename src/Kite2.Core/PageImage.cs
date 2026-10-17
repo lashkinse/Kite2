@@ -120,6 +120,46 @@ namespace Kite2.Core
         }
 
         /// <summary>
+        /// Сохраняет выделенный участок страницы отдельным файлом PNG. Сама
+        /// страница не меняется: фрагмент уходит рядом, документ остаётся прежним.
+        /// </summary>
+        /// <param name="sourcePath">Файл страницы-источника.</param>
+        /// <param name="left">Отступ слева, в пикселях изображения.</param>
+        /// <param name="top">Отступ сверху, в пикселях изображения.</param>
+        /// <param name="width">Ширина фрагмента, в пикселях.</param>
+        /// <param name="height">Высота фрагмента, в пикселях.</param>
+        /// <param name="targetPath">Файл фрагмента.</param>
+        public static void SaveFragment(string sourcePath, int left, int top, int width, int height, string targetPath)
+        {
+            if (width < 1 || height < 1)
+                throw new ArgumentOutOfRangeException(nameof(width), "Фрагмент нулевой ширины или высоты.");
+
+            ImageMagickSetup.EnsureStarted();
+
+            using (var image = new MagickImage(sourcePath))
+            {
+                Density density = image.Density;
+
+                // Рамка, вычерченная мышью с одного пикселя, уходит за лист:
+                // фрагмент урезается по краю, а не выходит за границы страницы.
+                int x = Math.Max(0, Math.Min(left, (int)image.Width - 1));
+                int y = Math.Max(0, Math.Min(top, (int)image.Height - 1));
+
+                int w = Math.Max(1, Math.Min(width, (int)image.Width - x));
+                int h = Math.Max(1, Math.Min(height, (int)image.Height - y));
+
+                image.Crop(new MagickGeometry(x, y, (uint)w, (uint)h));
+
+                image.Density = density;
+
+                // PNG хранит то, что отдали, без потерь: фрагмент обычно идёт в
+                // документ или в сообщение, где JPEG ухудшил бы мелкий текст.
+                image.Format = MagickFormat.Png;
+                image.Write(targetPath);
+            }
+        }
+
+        /// <summary>
         /// Размер, в который изображение уменьшается целиком, чтобы поместиться в рамку.
         /// </summary>
         public static void FitInside(uint width, uint height, uint boundWidth, uint boundHeight, out uint resultWidth, out uint resultHeight)

@@ -49,6 +49,10 @@ namespace Kite2.App
 
             MainWindow = new MainWindow { DataContext = viewModel };
 
+            // Модель и область просмотра соединяются здесь: ни одна из сторон о другой
+            // не знает, и круг между ними не возникнет.
+            MainWindow.Connect(viewModel);
+
             if (testMode)
                 MainWindow.Title += " (тестовый режим)";
 

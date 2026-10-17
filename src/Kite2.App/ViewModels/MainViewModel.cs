@@ -42,6 +42,7 @@ namespace Kite2.App.ViewModels
         private bool _noticeVisible;
         private bool _noticeIsResult;
         private bool _cancelWanted;
+        private bool _selectionMode;
         private string _noticeText = string.Empty;
         private CancellationTokenSource _scanCancellation;
 
@@ -57,11 +58,12 @@ namespace Kite2.App.ViewModels
             MovePageDownCommand = new RelayCommand(() => MovePage(1), () => !IsBusy && SelectedPage != null);
             RotatePageCommand = new RelayCommand(RotatePage, () => !IsBusy && SelectedPage != null);
             CancelNoticeCommand = new RelayCommand(CancelOperation);
+            SelectionModeCommand = new RelayCommand(ToggleSelectionMode, () => !IsBusy && SelectedPage != null);
 
             _commands = new[]
             {
                 NewDocumentCommand, SaveCommand, ScanMonoCommand, ScanColourCommand, SettingsCommand, DeletePageCommand,
-                MovePageUpCommand, MovePageDownCommand, RotatePageCommand
+                MovePageUpCommand, MovePageDownCommand, RotatePageCommand, SelectionModeCommand
             };
         }
 
@@ -145,6 +147,19 @@ namespace Kite2.App.ViewModels
         public RelayCommand MovePageDownCommand { get; }
 
         public RelayCommand RotatePageCommand { get; }
+
+        /// <summary>
+        /// Включён ли режим выделения. В нём протягивание мышью отмечает участок
+        /// страницы, обычно лист двигают по экрану.
+        /// </summary>
+        public bool IsSelectionMode
+        {
+            get => _selectionMode;
+            private set => SetProperty(ref _selectionMode, value);
+        }
+
+        /// <summary>Включает и выключает режим выделения фрагмента.</summary>
+        public RelayCommand SelectionModeCommand { get; }
 
         /// <summary>Отменяет текущую операцию, если она её допускает.</summary>
         public RelayCommand CancelNoticeCommand { get; }
@@ -472,6 +487,68 @@ namespace Kite2.App.ViewModels
         /// документ такой, какой лежит на диске, и иначе после сохранения она была бы
         /// повёрнута не так, как показано.
         /// </remarks>
+        /// <summary>
+        /// Включает и выключает режим выделения. В нём протягивание мышью
+        /// отмечает участок страницы, а у рамки появляются ножницы.
+        /// </summary>
+        private void ToggleSelectionMode()
+        {
+            IsSelectionMode = !IsSelectionMode;
+
+            Log.Info("Режим выделения: {0}", IsSelectionMode ? "включён" : "выключен");
+        }
+
+        /// <summary>
+        /// Сохраняет выделенный участок страницы отдельным файлом PNG. Прямоугольник
+        /// присылает область просмотра и задаёт его в пикселях картинки, а не на
+        /// экране.
+        /// </summary>
+        public async void SaveSelectedFragment(Rect area)
+        {
+            PageViewModel page = SelectedPage;
+
+            if (page == null)
+                return;
+
+            if (area.Width < 1 || area.Height < 1)
+            {
+                UserDialogs.Error(Messages.NothingSelected);
+                return;
+            }
+
+            string target = SaveFilePicker.AskFragment();
+
+            if (string.IsNullOrEmpty(target))
+                return;
+
+            string source = page.FilePath;
+
+            SetBusy(true);
+
+            try
+            {
+                var watch = Stopwatch.StartNew();
+
+                await Task.Run(() => PageImage.SaveFragment(
+                    source, (int)area.X, (int)area.Y, (int)area.Width, (int)area.Height, target));
+
+                Log.Info(
+                    "Фрагмент сохранён: {0}, {1} x {2} пикселей, мс={3}, байт={4}",
+                    target, (int)area.Width, (int)area.Height,
+                    watch.ElapsedMilliseconds, new FileInfo(target).Length);
+
+                ShowNotice(Messages.FragmentSaved + " " + Path.GetFileName(target), result: true, cancel: false);
+            }
+            catch (Exception ex)
+            {
+                UserDialogs.Error(ex);
+            }
+            finally
+            {
+                SetBusy(false);
+            }
+        }
+
         private void RotatePage()
         {
             PageViewModel page = SelectedPage;
@@ -561,10 +638,17 @@ namespace Kite2.App.ViewModels
         /// Обновляет доступность всех команд разом. Список команд короткий и
         /// общий, а отслеживать зависимости каждой отдельно — лишняя работа.
         /// </summary>
+        /// <summary>
+        /// Пересчитывает доступность команд. Список нужен для явного обновления,
+        /// а общий запрос WPF — страховка: команда, забытая в списке, иначе осталась
+        /// бы выключенной навсегда, и об её поломке узнаёшь только по кнопке.
+        /// </summary>
         private void RefreshCommands()
         {
             foreach (RelayCommand command in _commands)
                 command.NotifyCanExecuteChanged();
+
+            CommandManager.InvalidateRequerySuggested();
         }
     }
 }

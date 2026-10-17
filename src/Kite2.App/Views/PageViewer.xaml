@@ -25,7 +25,7 @@
                      здесь нет намеренно — вместе с размером оно давало бы квадрат
                      масштаба, и лист схлопывался бы в угол.
 
-                     Слой рамки поверх листа ловит щелчки и рисует выделение: иначе
+                     Слой выделения поверх листа ловит щелчки и рисует рамку: иначе
                      события мыши доходили бы до картинки, а не до области просмотра,
                      и выделение жило бы в другом элементе. -->
                 <Border x:Name="Sheet"
@@ -62,6 +62,48 @@
                 </Border>
             </Canvas>
         </ScrollViewer>
+
+        <!-- Ножницы сохраняют выделенное фрагментом. Кнопка стоит у правого нижнего угла
+             рамки и появляется вместе с ней: в режиме просмотра она лишняя,
+             а искать её на панели каждый раз незачем.
+
+             Полотно без заливки: пустые его места щелчок пропускают дальше, на
+             лист, а сама кнопка остаётся доступной. С заливкой она перехватывала
+             бы щелчки по всему листу. -->
+        <Canvas x:Name="Overlay">
+            <Button x:Name="CropScissors"
+                    Width="26"
+                    Height="26"
+                    Visibility="Collapsed"
+                    Focusable="False"
+                    Cursor="Hand"
+                    Background="White"
+                    BorderBrush="#BFBFBF"
+                    BorderThickness="1"
+                    ToolTip="Сохранить выделенный участок страницы файлом PNG"
+                    Click="OnCropClick">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Plate"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3">
+                            <Path x:Name="Glyph"
+                                  Style="{StaticResource CommandIconStyle}"
+                                  Data="{StaticResource IconCrop}"
+                                  Stroke="#1A1A1A" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Plate" Property="Background" Value="#E8F1FC" />
+                                <Setter TargetName="Glyph" Property="Stroke" Value="#1473E6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+        </Canvas>
 
         <!-- Подсказка, когда страниц нет: пустой стол сам по себе ничего не объясняет. -->
         <TextBlock x:Name="Placeholder"

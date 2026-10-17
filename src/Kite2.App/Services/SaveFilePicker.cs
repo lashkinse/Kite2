@@ -34,11 +34,27 @@ namespace Kite2.App.Services
         /// <returns>Путь к файлу или null, если пользователь отказался.</returns>
         public static string Ask(string defaultExtension)
         {
+            return Show(Filter, defaultExtension);
+        }
+
+        /// <summary>
+        /// Спрашивает имя файла для фрагмента страницы. Формат здесь один — PNG:
+        /// фрагмент обычно идёт в документ или в сообщение, где сжатие JPEG
+        /// испортило бы мелкий текст, а остальные форматы для куска страницы
+        /// не годятся вовсе.
+        /// </summary>
+        public static string AskFragment()
+        {
+            return Show("Изображение PNG|*.png", ".png");
+        }
+
+        private static string Show(string filter, string defaultExtension)
+        {
             var dialog = new SaveFileDialog
             {
                 AddExtension = true,
                 RestoreDirectory = true,
-                Filter = Filter,
+                Filter = filter,
                 DefaultExt = defaultExtension
             };
 
