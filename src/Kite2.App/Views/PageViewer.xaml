@@ -12,15 +12,14 @@
                       HorizontalScrollBarVisibility="Auto"
                       PanningMode="Both">
             <Canvas Background="Transparent">
+                <!-- Лист. Размер задаётся прямо в коде: он равен размеру страницы, умноженному
+                     на масштаб. Отдельного масштабирующего преобразования здесь нет
+                     намеренно — вместе с размером оно давало бы квадрат масштаба,
+                     и лист схлопывался бы в угол. -->
                 <Border x:Name="Sheet"
                         Background="{StaticResource Page}"
                         BorderBrush="{StaticResource PageBorder}"
-                        BorderThickness="1"
-                        RenderTransformOrigin="0,0">
-                    <Border.RenderTransform>
-                        <ScaleTransform x:Name="Zoom" ScaleX="1" ScaleY="1" />
-                    </Border.RenderTransform>
-
+                        BorderThickness="1">
                     <Image x:Name="Picture" Stretch="Fill" />
                 </Border>
             </Canvas>

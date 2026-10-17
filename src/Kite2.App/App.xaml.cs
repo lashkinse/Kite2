@@ -29,11 +29,16 @@ namespace Kite2.App
             Logging.Initialize(e.Args);
             Logging.CatchBackgroundFailures();
 
+            // Тестовый режим включается ключом запуска: страницы рисует программа. В заголовке
+            // окна он помечен, чтобы тестовый лист не приняли за настоящий документ.
+            bool testMode = FakeScanner.EnableFromArguments(e.Args);
+
             Logging.WriteStartup(
                 $"Kite2, версия {typeof(App).Assembly.GetName().Version}",
                 $"Ключи запуска: {Logging.StartupArguments}",
                 $"Каталог данных: {AppPaths.Data}",
-                $"Разрядность процесса: {(Environment.Is64BitProcess ? "64" : "32")} бита");
+                $"Разрядность процесса: {(Environment.Is64BitProcess ? "64" : "32")} бита",
+                $"Тестовый режим: {(testMode ? "включён" : "выключен")}");
 
             AppSettings.Load();
 
@@ -43,6 +48,10 @@ namespace Kite2.App
             var viewModel = new MainViewModel();
 
             MainWindow = new MainWindow { DataContext = viewModel };
+
+            if (testMode)
+                MainWindow.Title += " (тестовый режим)";
+
             MainWindow.Show();
 
             viewModel.Start();

@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using System.Windows.Input;
 using System.Windows.Media;
 using Kite2.App.ViewModels;
@@ -14,7 +15,7 @@ namespace Kite2.App.Views
     public partial class PageViewer : UserControl
     {
         /// <summary>Наименьший масштаб: ниже лист превращается в пятно.</summary>
-        private const double MinZoom = 0.2;
+        private const double MinZoom = 0.05;
 
         /// <summary>Наибольший масштаб: зачем показывать пиксель во весь экран.</summary>
         private const double MaxZoom = 3.0;
@@ -28,7 +29,8 @@ namespace Kite2.App.Views
         /// </summary>
         private const double PageMargin = 24;
 
-        private bool _fittedForCurrentPage;
+        /// <summary>Текущий масштаб листа. Задаёт и размер, и положение.</summary>
+        private double CurrentZoom { get; set; } = 1.0;
 
         public PageViewer()
         {
@@ -58,9 +60,9 @@ namespace Kite2.App.Views
         }
 
         /// <summary>
-        /// Показывает выбранную страницу. Первый показ новой страницы вписывает её в
-        /// окно целиком, дальше масштаб сохраняется: возвращаясь к прежней странице,
-        /// пользователь ожидает увидеть её в том же размере.
+        /// Показывает выбранную страницу. Подгонка размера отложена до следующего
+        /// прохода разметки: в момент смены страницы элемент ещё не получил размера,
+        /// и лист уезжал в угол крошечным пятном.
         /// </summary>
         private void ShowPage()
         {
@@ -77,9 +79,7 @@ namespace Kite2.App.Views
 
             Picture.Source = page.Page;
 
-            _fittedForCurrentPage = false;
-
-            FitPage();
+            Dispatcher.BeginInvoke(new Action(FitPage), DispatcherPriority.Loaded);
         }
 
         /// <summary>Вписывает лист в окно целиком, с полями по краям.</summary>
@@ -88,7 +88,9 @@ namespace Kite2.App.Views
             var model = DataContext as MainViewModel;
             var page = model?.SelectedPage;
 
-            if (page?.Page == null || _fittedForCurrentPage || ActualWidth <= 0 || ActualHeight <= 0)
+            // Пока у элемента нет настоящего размера, подгонять нечего: масштаб вышел бы
+            // из расчёта «ширина окна равна нулю» и лист схлопнулся бы в точку.
+            if (page?.Page == null || ActualWidth < 100 || ActualHeight < 100)
                 return;
 
             double availableWidth = Math.Max(1, ActualWidth - PageMargin * 2);
@@ -98,12 +100,9 @@ namespace Kite2.App.Views
                 availableWidth / page.Page.Width,
                 availableHeight / page.Page.Height);
 
-            Zoom.ScaleX = scale;
-            Zoom.ScaleY = scale;
+            CurrentZoom = scale;
 
             LayoutSheet(scale);
-
-            _fittedForCurrentPage = true;
         }
 
         /// <summary>
@@ -136,10 +135,10 @@ namespace Kite2.App.Views
             if (e.Delta == 0)
                 return;
 
-            double next = Zoom.ScaleX + (e.Delta > 0 ? ZoomStep : -ZoomStep);
+            double next = CurrentZoom + (e.Delta > 0 ? ZoomStep : -ZoomStep);
             next = Math.Max(MinZoom, Math.Min(MaxZoom, next));
 
-            if (Math.Abs(next - Zoom.ScaleX) < 0.001)
+            if (Math.Abs(next - CurrentZoom) < 0.001)
                 return;
 
             var model = DataContext as MainViewModel;
@@ -153,8 +152,7 @@ namespace Kite2.App.Views
             double centreX = Canvas.GetLeft(Sheet) + Sheet.Width / 2;
             double centreY = Canvas.GetTop(Sheet) + Sheet.Height / 2;
 
-            Zoom.ScaleX = next;
-            Zoom.ScaleY = next;
+            CurrentZoom = next;
 
             LayoutSheet(next);
 

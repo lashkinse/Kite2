@@ -30,6 +30,11 @@ namespace Kite2.Core
         /// </summary>
         public static IReadOnlyList<string> GetSources()
         {
+            // В тестовом режиме драйвер не открывается вовсе: источник один и он
+            // выдуманный, а настоящий сканер под рукой может и не оказаться.
+            if (FakeScanner.Enabled)
+                return FakeScanner.GetSources();
+
             var sources = new List<string>();
 
             try
@@ -79,6 +84,14 @@ namespace Kite2.Core
         {
             if (request.SourceIndex == AppSettings.NotSelected)
                 throw new InvalidOperationException(Messages.ChooseSource);
+
+            // В тестовом режиме страницы рисует программа: драйвер не запускается,
+            // иначе проверка пути от захвата до просмотра требовала бы сканера.
+            if (FakeScanner.Enabled)
+            {
+                FakeScanner.Capture(request, cancellationToken);
+                return new string[0];
+            }
 
             var pages = new List<string>();
 

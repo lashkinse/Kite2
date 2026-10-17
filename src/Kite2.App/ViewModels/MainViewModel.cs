@@ -6,10 +6,12 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kite2.App.Services;
+using Kite2.App.Views;
 using Kite2.Core;
 using NLog;
 
@@ -211,46 +213,30 @@ namespace Kite2.App.ViewModels
         /// </remarks>
         private async void ScanAsync(CaptureColour colour)
         {
-            if (AppSettings.ScanSourceIndex == AppSettings.NotSelected)
+            if (!FakeScanner.Enabled && AppSettings.ScanSourceIndex == AppSettings.NotSelected)
             {
                 UserDialogs.Error(Messages.ChooseSource);
                 return;
             }
 
+            CurrentColour = colour;
+
             var cancellation = new CancellationTokenSource();
             _scanCancellation = cancellation;
 
-            SetBusy(true);
-            ShowNotice(Messages.Scanning, result: false, cancel: true);
-
             try
             {
-                var request = new ScanRequest
+                // Серии повторяются, пока пользователь не скажет «завершить». Вопрос
+                // задаётся между сериями, а не после каждой: один сеанс работы со
+                // сканером — это обычно несколько серий подряд.
+                do
                 {
-                    SourceIndex = AppSettings.ScanSourceIndex,
-                    Dpi = ScanDpi,
-                    Colour = colour
-                };
+                    SetBusy(true);
+                    ShowNotice(Messages.Scanning, result: false, cancel: true);
 
-                CurrentScanMode = request.Mode;
-
-                await Task.Run(() =>
-                {
-                    // Проверка источника идёт здесь же: она занимает время, а к моменту
-                    // разговора с драйвером устройство вполне могло исчезнуть.
-                    if (!ScannerService.IsSourceAvailable(request.SourceIndex))
-                        throw new SourceNotAvailableException();
-
-                    ScannerService.Capture(request, cancellation.Token);
-
-                    cancellation.Token.ThrowIfCancellationRequested();
-
-                    return PageImage.ComposeDirectory(request, PageQuality);
-                }, cancellation.Token);
-
-                var pages = await Task.Run(() => BuildPages(request.Directory), cancellation.Token);
-
-                AddPages(pages);
+                    await ScanOnce(colour, cancellation.Token);
+                }
+                while (AskToContinue());
             }
             catch (OperationCanceledException)
             {
@@ -275,6 +261,60 @@ namespace Kite2.App.ViewModels
             }
         }
 
+        /// <summary>Режим цвета последней серии: он определяет кодировку страниц.</summary>
+        private CaptureColour CurrentColour { get; set; } = CaptureColour.BlackAndWhite;
+
+        /// <summary>
+        /// Одна серия: захват и превращение результата в страницы документа.
+        /// </summary>
+        private async Task ScanOnce(CaptureColour colour, CancellationToken cancellationToken)
+        {
+            var request = new ScanRequest
+            {
+                SourceIndex = FakeScanner.Enabled ? 0 : AppSettings.ScanSourceIndex,
+                Dpi = ScanDpi,
+                Colour = colour
+            };
+
+            CurrentScanMode = request.Mode;
+
+            await Task.Run(() =>
+            {
+                // Проверка источника идёт здесь же: она занимает время, а к моменту
+                // разговора с драйвером устройство вполне могло исчезнуть.
+                if (!ScannerService.IsSourceAvailable(request.SourceIndex))
+                    throw new SourceNotAvailableException();
+
+                ScannerService.Capture(request, cancellationToken);
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                return PageImage.ComposeDirectory(request, PageQuality);
+            }, cancellationToken);
+
+            // Пока серия идёт, каталог наполняется; страницы забираются сразу, иначе
+            // следующая серия очистит каталог вместе с только что отсканированным.
+            var pages = await Task.Run(() => BuildPages(request.Directory), cancellationToken);
+
+            AddPages(pages);
+        }
+
+        /// <summary>
+        /// Спрашивает, сканировать ли ещё. В тестовом режиме вопрос не задаётся:
+        /// там всё равно никто не сидит перед окном, а окно остановит и прогон, и
+        /// автоматическую проверку.
+        /// </summary>
+        private bool AskToContinue()
+        {
+            if (FakeScanner.Enabled && !FakeScanner.AlwaysAsk)
+            {
+                Log.Debug("Вопрос о продолжении пропущен: тестовый режим");
+                return false;
+            }
+
+            return ScanContinueWindow.Ask(Application.Current.MainWindow);
+        }
+
         /// <summary>Собирает модели страниц по файлам, отсортированным по имени.</summary>
         private List<PageViewModel> BuildPages(string directory)
         {
@@ -290,16 +330,23 @@ namespace Kite2.App.ViewModels
 
         private void AddPages(IEnumerable<PageViewModel> pages)
         {
+            int added = 0;
+
             foreach (PageViewModel page in pages)
+            {
                 _pages.Add(page);
+                added++;
+            }
 
             if (_pages.Count > 0)
                 SelectedPage = _pages[_pages.Count - 1];
 
             RefreshCommands();
 
-            if (_pages.Count > 0)
-                ShowNotice(Messages.PagesAdded(_pages.Count), result: true, cancel: false);
+            // Показано число страниц в этой серии, а не в документе: после вопроса о
+            // продолжении «добавлено 3» относилось бы к предыдущему захвату.
+            if (added > 0)
+                ShowNotice(Messages.PagesAdded(added), result: true, cancel: false);
         }
 
         // --- Сохранение -------------------------------------------------------
@@ -311,7 +358,11 @@ namespace Kite2.App.ViewModels
         {
             IsSaveMenuOpen = false;
 
+            Log.Info("Сохранение: запрошен фильтр {0}", filter);
+
             string path = SaveFilePicker.Ask(filter);
+
+            Log.Info("Сохранение: имя файла {0}", path ?? "(отменено)");
 
             if (string.IsNullOrEmpty(path))
                 return;
