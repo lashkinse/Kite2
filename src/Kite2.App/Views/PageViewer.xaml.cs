@@ -38,7 +38,7 @@ namespace Kite2.App.Views
         private const double HandleSize = 6;
 
         /// <summary>На сколько пикселей кнопка сохранения отходит от угла выделения.</summary>
-        private const double ScissorsGap = 8;
+        private const double SaveGap = 8;
 
         /// <summary>На сколько пикселей подсказка отходит от угла выделения.</summary>
         private const double HintGap = 6;
@@ -474,9 +474,9 @@ namespace Kite2.App.Views
             Place(HandleBottomLeft, left, bottom);
             Place(HandleBottomRight, right, bottom);
 
-            // Ножницы стоят у правого нижнего угла рамки, но не на самом углу:
-            // иначе они закрывают точку, за которую рамку тянут.
-            PlaceScissors(right, bottom);
+            // Кнопка сохранения стоит у правого нижнего угла рамки, но не на самом
+            // углу: иначе она закрывает точку, за которую рамку тянут.
+            PlaceSaveButton(right, bottom);
 
             PlaceHint(left, top);
         }
@@ -499,12 +499,12 @@ namespace Kite2.App.Views
         /// переводится из одного пространства в другое. Никаких зажимов: у края
         /// окна кнопка уезжает за него вместе со своим углом, но не прилипает к краю.
         /// </summary>
-        private void PlaceScissors(double right, double bottom)
+        private void PlaceSaveButton(double right, double bottom)
         {
             Point corner = Sheet.TranslatePoint(new Point(right, bottom), Overlay);
 
-            Canvas.SetLeft(FragmentSave, corner.X + ScissorsGap);
-            Canvas.SetTop(FragmentSave, corner.Y + ScissorsGap);
+            Canvas.SetLeft(FragmentSave, corner.X + SaveGap);
+            Canvas.SetTop(FragmentSave, corner.Y + SaveGap);
 
             FragmentSave.Visibility = Visibility.Visible;
         }
