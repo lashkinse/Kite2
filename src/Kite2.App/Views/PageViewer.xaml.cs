@@ -494,37 +494,36 @@ namespace Kite2.App.Views
         }
 
         /// <summary>
-        /// Ставит кнопку обрезки у рамки выделения. Координаты рамки заданы в листе,
-        /// а полотно лежит поверх окна просмотра, поэтому точка переводится из одного
-        /// пространства в другое.
+        /// Ставит кнопку сохранения у нижнего правого угла рамки. Координаты рамки
+        /// заданы в листе, а полотно лежит поверх окна просмотра, поэтому точка
+        /// переводится из одного пространства в другое. Никаких зажимов: у края
+        /// окна кнопка уезжает за него вместе со своим углом, но не прилипает к краю.
         /// </summary>
         private void PlaceScissors(double right, double bottom)
         {
             Point corner = Sheet.TranslatePoint(new Point(right, bottom), Overlay);
 
-            Canvas.SetLeft(FragmentSave, Math.Max(0, corner.X + ScissorsGap));
-            Canvas.SetTop(FragmentSave, Math.Max(0, corner.Y + ScissorsGap));
+            Canvas.SetLeft(FragmentSave, corner.X + ScissorsGap);
+            Canvas.SetTop(FragmentSave, corner.Y + ScissorsGap);
 
             FragmentSave.Visibility = Visibility.Visible;
         }
 
         /// <summary>
-        /// Ставит подсказку «Esc — отменить» у левого верхнего угла рамки. Положение
-        /// задаётся один раз, когда появляется выделение: дальше ни перенос листа, ни
-        /// прокрутка их не двигают.
+        /// Ставит подсказку «Esc — отменить» над левым верхним углом рамки. Никаких
+        /// зажимов: у верхнего и левого края окна подсказка уезжает за них вместе со
+        /// своим углом, но не прилипает к краю.
         /// </summary>
         private void PlaceHint(double left, double top)
         {
             Point corner = Sheet.TranslatePoint(new Point(left, top), Overlay);
 
             // Пока элемент свёрнут, его высота нулевая, поэтому подсказку сначала
-            // показываем, а потом уже смотрим, влезает ли она над рамкой.
+            // показываем, а потом уже меряем её высоту.
             SelectionHint.Visibility = Visibility.Visible;
 
-            double y = corner.Y - SelectionHint.ActualHeight - HintGap;
-
-            Canvas.SetLeft(SelectionHint, Math.Max(0, corner.X - HintGap));
-            Canvas.SetTop(SelectionHint, Math.Max(0, y));
+            Canvas.SetLeft(SelectionHint, corner.X - HintGap);
+            Canvas.SetTop(SelectionHint, corner.Y - SelectionHint.ActualHeight - HintGap);
         }
 
         /// <summary>
