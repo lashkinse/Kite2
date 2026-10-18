@@ -82,12 +82,12 @@
         </Setter>
     </Style>
 
-    <!-- Значок на кнопке поверх страницы: та же сетка, но знак меньше — иначе он
-         занимал бы всю кнопку вплотную и не оставалось бы полей. -->
+    <!-- Значок на кнопке поверх страницы: та же сетка, но знак во всю кнопку —
+         иначе он заметно меньше подложки и выглядит непоставленным. -->
     <Style x:Key="ChipIconStyle" TargetType="Path" BasedOn="{StaticResource CommandIconStyle}">
         <Setter Property="RenderTransform">
             <Setter.Value>
-                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
+                <ScaleTransform ScaleX="1" ScaleY="1" />
             </Setter.Value>
         </Setter>
     </Style>

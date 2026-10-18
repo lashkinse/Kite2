@@ -31,6 +31,21 @@ namespace Kite2.App.Views
         public void Connect(MainViewModel model)
         {
             Viewer.FragmentRequested += (sender, area) => model.SaveSelectedFragment(area);
+
+            // Панель команд над страницей нужна, когда есть выбранная страница, и
+            // исчезает, пока лист едет: под панелью в этот момент сам лист.
+            Viewer.SheetDragChanged += (sender, dragging) => UpdateActions(model, dragging);
+            model.Pages.CollectionChanged += (sender, args) => UpdateActions(model);
+
+            UpdateActions(model);
+        }
+
+        /// <summary>Показывает или прячет панель команд над страницей.</summary>
+        private void UpdateActions(MainViewModel model, bool sheetDragging = false)
+        {
+            Actions.Visibility = sheetDragging || model.Pages.Count == 0
+                ? Visibility.Collapsed
+                : Visibility.Visible;
         }
 
         /// <summary>

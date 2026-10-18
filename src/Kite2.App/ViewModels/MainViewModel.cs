@@ -58,6 +58,7 @@ namespace Kite2.App.ViewModels
             SaveCommand = new RelayCommand(Save, () => !IsBusy && _pages.Count > 0);
             ScanMonoCommand = new RelayCommand(() => ScanAsync(CaptureColour.BlackAndWhite), () => !IsBusy);
             ScanColourCommand = new RelayCommand(() => ScanAsync(CaptureColour.Colour), () => !IsBusy);
+            ScanAgainCommand = new RelayCommand(ScanAgain, () => !IsBusy);
             SettingsCommand = new RelayCommand(ChooseSource, () => !IsBusy);
             DeletePageCommand = new RelayCommand(DeletePage, () => !IsBusy && SelectedPage != null);
             MovePageUpCommand = new RelayCommand(() => MovePage(-1), () => !IsBusy && SelectedPage != null);
@@ -67,7 +68,7 @@ namespace Kite2.App.ViewModels
 
             _commands = new[]
             {
-                NewDocumentCommand, SaveCommand, ScanMonoCommand, ScanColourCommand, SettingsCommand, DeletePageCommand,
+                NewDocumentCommand, SaveCommand, ScanMonoCommand, ScanColourCommand, ScanAgainCommand, SettingsCommand, DeletePageCommand,
                 MovePageUpCommand, MovePageDownCommand, RotatePageCommand
             };
 
@@ -147,6 +148,12 @@ namespace Kite2.App.ViewModels
         public RelayCommand ScanMonoCommand { get; }
 
         public RelayCommand ScanColourCommand { get; }
+
+        /// <summary>
+        /// Повторное сканирование клавишей «+» — в том режиме, в каком шло
+        /// предыдущее.
+        /// </summary>
+        public RelayCommand ScanAgainCommand { get; }
 
         public RelayCommand SettingsCommand { get; }
 
@@ -257,6 +264,16 @@ namespace Kite2.App.ViewModels
 
         /// <summary>Режим цвета последней серии: он определяет кодировку страниц.</summary>
         private CaptureColour CurrentColour { get; set; } = CaptureColour.BlackAndWhite;
+
+        /// <summary>
+        /// Клавиша «+» повторяет предыдущий режим, а не всегда чёрно-белый:
+        /// иначе после цветной серии «+» тихо переключал бы программу в другой
+        /// режим, и страницы выходили бы не те, что человек ожидал.
+        /// </summary>
+        private void ScanAgain()
+        {
+            ScanAsync(CurrentColour);
+        }
 
         /// <summary>
         /// Одна серия: захват и превращение результата в страницы документа.

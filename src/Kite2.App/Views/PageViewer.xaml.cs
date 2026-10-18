@@ -11,12 +11,11 @@ namespace Kite2.App.Views
 {
     /// <summary>
     /// Область просмотра выбранной страницы: лист по центру, масштаб колесом мыши,
-    /// перетаскивание листа и выделение участка для обрезки.
+    /// перетаскивание листа и выделение участка страницы.
     /// </summary>
     /// <remarks>
-    /// Два разных занятия мыши, переключаемые кнопкой «Обрезать»: обычно лист
-    /// таскают по экрану, а в режиме обрезки выделяют прямоугольник. Одно на другое
-    /// в одном жесте не уживается: протяжка либо двигает лист, либо выделяет.
+    /// Левая кнопка мыши выделяет участок, средняя двигает лист. Одно на другое в
+    /// одном жесте не уживается: протяжка либо двигает лист, либо выделяет.
     /// </remarks>
     public partial class PageViewer : UserControl
     {
@@ -68,6 +67,18 @@ namespace Kite2.App.Views
         /// </summary>
         public event EventHandler<Rect> FragmentRequested;
 
+        /// <summary>
+        /// Лист поехал под мышью или прокруткой. Панель команд над страницей на это
+        /// время прячется: под ней оказался бы тот самый лист.
+        /// </summary>
+        public event EventHandler<bool> SheetDragChanged;
+
+        /// <summary>
+        /// Таймер, которым ловится конец прокрутки. Само событие приходит на каждое
+        /// движение полосы, а «остановился» оно не сообщает.
+        /// </summary>
+        private readonly DispatcherTimer _scrollEndTimer;
+
         public PageViewer()
         {
             InitializeComponent();
@@ -87,14 +98,30 @@ namespace Kite2.App.Views
             Root.PreviewMouseMove += OnMouseMove;
             Root.PreviewMouseUp += OnMouseUp;
 
-            // Прокрутка полосами и колесом двигает лист внутри полотна, а кнопка
-            // сохранения с подсказкой лежат поверх него — их надо ставить заново.
             Scroller.ScrollChanged += OnScrollerScrollChanged;
+
+            _scrollEndTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _scrollEndTimer.Tick += OnScrollEnded;
+        }
+
+        private void OnScrollEnded(object sender, EventArgs args)
+        {
+            _scrollEndTimer.Stop();
+
+            RaiseSheetDragChanged(false);
+
+            FollowSheet();
         }
 
         private void OnScrollerScrollChanged(object sender, ScrollChangedEventArgs args)
         {
-            FollowSheet();
+            // Прокрутка полосами и колесом двигает лист внутри полотна. Кнопка
+            // сохранения и подсказка на этом не едут: они относятся к экрану, а не
+            // к странице, и улетающие за листом значки только сбивают с толку.
+            RaiseSheetDragChanged(true);
+
+            _scrollEndTimer.Stop();
+            _scrollEndTimer.Start();
         }
 
         private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs args)
@@ -304,6 +331,9 @@ namespace Kite2.App.Views
             _dragging = true;
             _middleDrag = e.ChangedButton == MouseButton.Middle;
 
+            if (_middleDrag)
+                RaiseSheetDragChanged(true);
+
             // Точка отсчёта берётся от области просмотра, а не от листа: лист под
             // курсором сам идёт направо, и отсчёт от него каждый раз меняется — лист
             // трясётся вместо того, чтобы ехать.
@@ -331,6 +361,16 @@ namespace Kite2.App.Views
 
             _dragging = false;
 
+            if (_middleDrag)
+            {
+                _middleDrag = false;
+                RaiseSheetDragChanged(false);
+
+                // Пока лист ехал, кнопка и подсказка стояли на месте и не мелькали
+                // вместе с ним. Лист встал — и они снова встали к своему углу рамки.
+                FollowSheet();
+            }
+
             if (Root.IsMouseCaptureWithin)
                 Root.ReleaseMouseCapture();
 
@@ -354,10 +394,6 @@ namespace Kite2.App.Views
 
             Canvas.SetLeft(Sheet, _dragLeft + current.X - _dragOrigin.X);
             Canvas.SetTop(Sheet, _dragTop + current.Y - _dragOrigin.Y);
-
-            // Кнопка сохранения и подсказка лежат не в листе, а поверх него:
-            // без этого шага они остались бы на месте, пока лист уезжал.
-            FollowSheet();
         }
 
         /// <summary>
@@ -507,9 +543,9 @@ namespace Kite2.App.Views
         }
 
         /// <summary>
-        /// Возвращает кнопку и подсказку к рамке. Они лежат в слое поверх листа, а
-        /// рамка — внутри листа: когда лист едет или просмотр прокручивается,
-        /// рамка уезжает вместе с листом, а эти два элемента остаются на месте.
+        /// Возвращает кнопку и подсказку к рамке после того, как лист встал. Пока
+        /// лист едет, они стоят на месте и не едут вместе с ним: мелькание двух
+        /// значков по всему листу только сбивает.
         /// </summary>
         private void FollowSheet()
         {
@@ -519,6 +555,11 @@ namespace Kite2.App.Views
             LayoutSelection();
         }
 
+        /// <summary>Сообщает, что лист поехал: true — едет, false — встал.</summary>
+        private void RaiseSheetDragChanged(bool dragging)
+        {
+            SheetDragChanged?.Invoke(this, dragging);
+        }
         /// <summary>Дискета нажата: фрагмент под рамкой выделения запрошен.</summary>
         private void OnCropClick(object sender, RoutedEventArgs e)
         {

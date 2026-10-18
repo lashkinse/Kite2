@@ -20,10 +20,13 @@
         </Border.Effect>
 
         <StackPanel>
+            <!-- Порядок сверху вниз: поворот, порядок страниц, удаление. Разрушающая
+                 команда внизу — на неё не попадают по ошибке, и на верхней панели
+                 она тоже не стоит. -->
             <Button Style="{StaticResource PageActionButtonStyle}"
-                    Tag="{StaticResource IconDelete}"
-                    ToolTip="Удалить страницу (Del)"
-                    Command="{Binding DeletePageCommand}" />
+                    Tag="{StaticResource IconRotate}"
+                    ToolTip="Повернуть страницу на 180° (Ctrl+R)"
+                    Command="{Binding RotatePageCommand}" />
 
             <Button Style="{StaticResource PageActionButtonStyle}"
                     Tag="{StaticResource IconUp}"
@@ -36,9 +39,9 @@
                     Command="{Binding MovePageDownCommand}" />
 
             <Button Style="{StaticResource PageActionButtonStyle}"
-                    Tag="{StaticResource IconRotate}"
-                    ToolTip="Повернуть страницу на 180° (Ctrl+R)"
-                    Command="{Binding RotatePageCommand}" />
+                    Tag="{StaticResource IconDelete}"
+                    ToolTip="Удалить страницу (Del)"
+                    Command="{Binding DeletePageCommand}" />
         </StackPanel>
     </Border>
 </UserControl>

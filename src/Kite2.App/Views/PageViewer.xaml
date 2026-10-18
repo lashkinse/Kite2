@@ -93,27 +93,30 @@
                     Visibility="Collapsed"
                     Focusable="False"
                     Cursor="Hand"
-                    Background="{StaticResource Accent}"
+                    Background="White"
+                    BorderBrush="#D4D4D4"
+                    BorderThickness="1"
                     ToolTip="Сохранить выделенный участок страницы файлом PNG"
                     Click="OnCropClick">
                 <Button.Template>
                     <ControlTemplate TargetType="Button">
-                        <!-- Кнопка залита акцентным цветом, как кнопки на панели:
-                             без заливки значок терялся на странице, а с белой
-                             подложкой выглядел дырой в листе. -->
+                        <!-- Белая подложка во всю кнопку: на белом листе значок без
+                             неё тонул, а синий значок на белом читается сразу. -->
                         <Border x:Name="Plate"
                                 Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="3">
                             <Path Style="{StaticResource ChipIconStyle}"
                                   Data="{StaticResource IconSaveFragment}"
-                                  Stroke="White" />
+                                  Stroke="#1A6FC4" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Plate" Property="Background" Value="{StaticResource AccentHover}" />
+                                <Setter TargetName="Plate" Property="Background" Value="#E8F1FC" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Plate" Property="Background" Value="{StaticResource AccentPressed}" />
+                                <Setter TargetName="Plate" Property="Background" Value="#CFE3FB" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
