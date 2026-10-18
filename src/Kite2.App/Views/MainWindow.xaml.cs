@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using Kite2.App.ViewModels;
@@ -31,22 +30,7 @@ namespace Kite2.App.Views
         /// </summary>
         public void Connect(MainViewModel model)
         {
-            Viewer.SelectionMode = model.IsSelectionMode;
-
-            model.PropertyChanged += OnModelPropertyChanged;
-
-            Viewer.FragmentRequested += (sender, area) =>
-            {
-                model.SaveSelectedFragment(area);
-
-
-            };
-        }
-
-        private void OnModelPropertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(MainViewModel.IsSelectionMode) && DataContext is MainViewModel model)
-                Viewer.SelectionMode = model.IsSelectionMode;
+            Viewer.FragmentRequested += (sender, area) => model.SaveSelectedFragment(area);
         }
 
         /// <summary>

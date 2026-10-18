@@ -14,6 +14,7 @@ using Kite2.App.Services;
 using Kite2.App.Views;
 using Kite2.Core;
 using NLog;
+using System.Windows.Threading;
 
 namespace Kite2.App.ViewModels
 {
@@ -36,15 +37,20 @@ namespace Kite2.App.ViewModels
         /// <summary>Разрешение захвата.</summary>
         private const int ScanDpi = 300;
 
+        /// <summary>Сколько висит плашка с результатом, в секундах.</summary>
+        private const int ResultNoticeSeconds = 4;
+
         private readonly ObservableCollection<PageViewModel> _pages = new ObservableCollection<PageViewModel>();
         private PageViewModel _selectedPage;
         private bool _busy;
         private bool _noticeVisible;
         private bool _noticeIsResult;
         private bool _cancelWanted;
-        private bool _selectionMode;
         private string _noticeText = string.Empty;
         private CancellationTokenSource _scanCancellation;
+
+        /// <summary>Таймер, убирающий плашку с результатом.</summary>
+        private readonly DispatcherTimer _resultNoticeTimer;
 
         public MainViewModel()
         {
@@ -58,13 +64,17 @@ namespace Kite2.App.ViewModels
             MovePageDownCommand = new RelayCommand(() => MovePage(1), () => !IsBusy && SelectedPage != null);
             RotatePageCommand = new RelayCommand(RotatePage, () => !IsBusy && SelectedPage != null);
             CancelNoticeCommand = new RelayCommand(CancelOperation);
-            SelectionModeCommand = new RelayCommand(ToggleSelectionMode, () => !IsBusy && SelectedPage != null);
 
             _commands = new[]
             {
                 NewDocumentCommand, SaveCommand, ScanMonoCommand, ScanColourCommand, SettingsCommand, DeletePageCommand,
-                MovePageUpCommand, MovePageDownCommand, RotatePageCommand, SelectionModeCommand
+                MovePageUpCommand, MovePageDownCommand, RotatePageCommand
             };
+
+            // Плашка с результатом («сохранено», «добавлено страниц») убирается сама:
+            // сообщение не должно висеть, пока пользователь смотрит на страницу.
+            _resultNoticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(ResultNoticeSeconds) };
+            _resultNoticeTimer.Tick += OnResultNoticeTimeout;
         }
 
         /// <summary>Отсканированные страницы в порядке документа.</summary>
@@ -147,19 +157,6 @@ namespace Kite2.App.ViewModels
         public RelayCommand MovePageDownCommand { get; }
 
         public RelayCommand RotatePageCommand { get; }
-
-        /// <summary>
-        /// Включён ли режим выделения. В нём протягивание мышью отмечает участок
-        /// страницы, обычно лист двигают по экрану.
-        /// </summary>
-        public bool IsSelectionMode
-        {
-            get => _selectionMode;
-            private set => SetProperty(ref _selectionMode, value);
-        }
-
-        /// <summary>Включает и выключает режим выделения фрагмента.</summary>
-        public RelayCommand SelectionModeCommand { get; }
 
         /// <summary>Отменяет текущую операцию, если она её допускает.</summary>
         public RelayCommand CancelNoticeCommand { get; }
@@ -484,25 +481,6 @@ namespace Kite2.App.ViewModels
         }
 
         /// <summary>
-        /// Поворачивает выбранную страницу на 180° и переписывает файл на диске.
-        /// </summary>
-        /// <remarks>
-        /// Поворот меняет файл, а не только картинку на экране: страница уходит в
-        /// документ такой, какой лежит на диске, и иначе после сохранения она была бы
-        /// повёрнута не так, как показано.
-        /// </remarks>
-        /// <summary>
-        /// Включает и выключает режим выделения. В нём протягивание мышью
-        /// отмечает участок страницы, а у рамки появляются ножницы.
-        /// </summary>
-        private void ToggleSelectionMode()
-        {
-            IsSelectionMode = !IsSelectionMode;
-
-            Log.Info("Режим выделения: {0}", IsSelectionMode ? "включён" : "выключен");
-        }
-
-        /// <summary>
         /// Сохраняет выделенный участок страницы отдельным файлом PNG. Прямоугольник
         /// присылает область просмотра и задаёт его в пикселях картинки, а не на
         /// экране.
@@ -553,6 +531,15 @@ namespace Kite2.App.ViewModels
             }
         }
 
+        /// <summary>
+        /// Поворачивает выбранную страницу на 180° и переписывает файл на диске.
+        /// </summary>
+        /// <remarks>
+        /// Поворот меняет файл, а не только картинку на экране: страница уходит в
+        /// документ такой, какой лежит на диске, и иначе после сохранения она была бы
+        /// повёрнута не так, как показано. Область просмотра следит только за выбором
+        /// страницы, поэтому после перечитывания ей это сообщение и нужно.
+        /// </remarks>
         private void RotatePage()
         {
             PageViewModel page = SelectedPage;
@@ -564,6 +551,8 @@ namespace Kite2.App.ViewModels
             {
                 PageImage.Rotate(page.FilePath, 180.0);
                 page.Reload();
+
+                OnPropertyChanged(nameof(SelectedPage));
             }
             catch (Exception ex)
             {
@@ -598,12 +587,29 @@ namespace Kite2.App.ViewModels
             NoticeIsResult = result;
             CancelWanted = cancel;
             NoticeVisible = true;
+
+            // Отсчёт заново на каждое сообщение: два результата подряд не должны
+            // ждать друг друга.
+            _resultNoticeTimer.Stop();
+
+            if (result)
+                _resultNoticeTimer.Start();
         }
 
         private void HideNotice()
         {
+            _resultNoticeTimer.Stop();
+
             NoticeVisible = false;
             CancelWanted = false;
+        }
+
+        /// <summary>Плашка с результатом пролежала своё время и убирается.</summary>
+        private void OnResultNoticeTimeout(object sender, EventArgs args)
+        {
+            _resultNoticeTimer.Stop();
+
+            HideNotice();
         }
 
         /// <summary>

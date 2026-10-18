@@ -18,13 +18,14 @@
          колонка страниц слева и просмотр выбранной страницы справа. -->
 
     <!-- Горячие клавиши. Заданы на окне, а не на кнопках: работают при любом фокусе
-         внутри программы, в том числе на колонке страниц и на листе. -->
+         внутри программы, в том числе на колонке страниц и на листе. Выделения
+         участка отдельного режима нет: протягивание мышью всегда отмечает участок,
+         а лист двигают средней кнопкой. -->
     <Window.InputBindings>
         <KeyBinding Key="N" Modifiers="Control" Command="{Binding NewDocumentCommand}" />
         <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveCommand}" />
         <KeyBinding Key="R" Modifiers="Control" Command="{Binding RotatePageCommand}" />
         <KeyBinding Key="Delete" Command="{Binding DeletePageCommand}" />
-        <KeyBinding Key="C" Modifiers="Control" Command="{Binding SelectionModeCommand}" />
         <KeyBinding Key="Up" Modifiers="Control" Command="{Binding MovePageUpCommand}" />
         <KeyBinding Key="Down" Modifiers="Control" Command="{Binding MovePageDownCommand}" />
         <KeyBinding Key="Add" Command="{Binding ScanMonoCommand}" />
@@ -59,13 +60,6 @@
 
                 <Button Style="{StaticResource CommandButtonStyle}" Content="Цветное" controls:CommandBar.Hint="+" Tag="{StaticResource IconScanColour}"
                         ToolTip="Сканировать в цветном режиме (+)" Command="{Binding ScanColourCommand}" />
-
-                <!-- Режим выделения фрагмента. В нём протягивание мышью отмечает
-                     участок страницы, а лист перестаёт двигаться под курсором. -->
-                <Button x:Name="FragmentButton" Style="{StaticResource CommandButtonStyle}" Content="Выделить"
-                        controls:CommandBar.Hint="Ctrl+C" Tag="{StaticResource IconCrop}"
-                        ToolTip="Выделить участок страницы для сохранения фрагментом (Ctrl+C)"
-                        Command="{Binding SelectionModeCommand}" />
 
                 <Button Style="{StaticResource CommandButtonStyle}" Content="Параметры" Tag="{StaticResource IconSettings}"
                         ToolTip="Выбрать источник сканирования" Command="{Binding SettingsCommand}" />

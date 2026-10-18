@@ -52,37 +52,14 @@ namespace Kite2.App.Views
         /// <summary>Идёт ли протягивание мышью: листа или выделения.</summary>
         private bool _dragging;
 
-        /// <summary>Текущее перетаскивание двигает лист, а не тянет рамку.</summary>
-        private bool _panning;
-
-        /// <summary>Перетаскивание начато средней кнопкой.</summary>
-        private bool _middleDrag;
-
         private Point _dragOrigin;
 
         private double _dragLeft;
 
         private double _dragTop;
 
-        private bool _selectionMode;
-
-        /// <summary>
-        /// Режим выделения. Включается кнопкой «Выделить»: в нём протягивание
-        /// выделяет участок, а обычно лист двигают по экрану.
-        /// </summary>
-        public bool SelectionMode
-        {
-            get => _selectionMode;
-            set
-            {
-                _selectionMode = value;
-
-                if (!value)
-                    ClearSelection();
-
-                UpdateCursor();
-            }
-        }
+        /// <summary>Перетаскивание начато средней кнопкой: им двигают лист.</summary>
+        private bool _middleDrag;
 
         /// <summary>
         /// Запрошено сохранение фрагмента. В событии идёт прямоугольник в пикселях
@@ -228,9 +205,8 @@ namespace Kite2.App.Views
         }
 
         /// <summary>
-        /// Вид курсора говорит, что будет делать протягивание: в режиме обрезки —
-        /// выделять, на увеличенном листе — двигать, на листе, который целиком
-        /// помещается, — ничего.
+        /// Вид курсора говорит, что будет делать протягивание: левой кнопкой —
+        /// выделять участок, средней — двигать лист.
         /// </summary>
         private void UpdateCursor()
         {
@@ -240,17 +216,20 @@ namespace Kite2.App.Views
                 return;
             }
 
-            Root.Cursor = _selectionMode
-                ? Cursors.Cross
-                : Sheet.Width > ActualWidth || Sheet.Height > ActualHeight ? Cursors.SizeAll : Cursors.Arrow;
+            Root.Cursor = Cursors.Cross;
         }
 
+        /// <summary>
+        /// После изменения размера окна лист возвращается в исходный масштаб и
+        /// встаёт по центру: увеличенный лист иначе остался бы увеличенным или уехал
+        /// бы в угол.
+        /// </summary>
         private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
         {
-            if (_zoom <= MinZoom + 0.001)
-                return;
-
-            FitPage();
+            // Подгонка откладывается до следующего прохода разметки: во время
+            // SizeChanged полосы прокрутки ещё старого размера, и лист встал бы
+            // по центру прежнего окна.
+            Dispatcher.BeginInvoke(new Action(FitPage), DispatcherPriority.Loaded);
         }
 
         /// <summary>
@@ -297,8 +276,8 @@ namespace Kite2.App.Views
         }
 
         /// <summary>
-        /// Нажатие мыши начинает либо перетаскивание листа, либо выделение.
-        /// Средняя кнопка двигает лист всегда: в режиме выделения ею лист уводят
+        /// Нажатие мыши начинает либо выделение участка, либо перетаскивание листа.
+        /// Выделение отмечается всегда, а лист двигают средней кнопкой: ею его уводят
         /// из-под себя, не сбивая уже начатую рамку.
         /// </summary>
         private void OnMouseDown(object sender, MouseButtonEventArgs e)
@@ -324,7 +303,6 @@ namespace Kite2.App.Views
 
             _dragging = true;
             _middleDrag = e.ChangedButton == MouseButton.Middle;
-            _panning = _middleDrag || !_selectionMode;
 
             // Точка отсчёта берётся от области просмотра, а не от листа: лист под
             // курсором сам идёт направо, и отсчёт от него каждый раз меняется — лист
@@ -352,23 +330,23 @@ namespace Kite2.App.Views
                 return;
 
             _dragging = false;
-            _panning = false;
 
             if (Root.IsMouseCaptureWithin)
                 Root.ReleaseMouseCapture();
 
-            if (_selectionMode && e.ChangedButton == MouseButton.Left)
+            if (e.ChangedButton == MouseButton.Left)
                 ShowSelection(PointInSheet(_dragOrigin), PointInSheet(e.GetPosition(Root)));
 
             UpdateCursor();
         }
 
         /// <summary>
-        /// Продолжает начатое мышью: тянет рамку выделения или двигает лист.
+        /// Продолжает начатое мышью: средней кнопкой двигает лист, левой тянет
+        /// рамку выделения.
         /// </summary>
         private void ContinueDrag(Point current)
         {
-            if (!_panning)
+            if (!_middleDrag)
             {
                 ShowSelection(PointInSheet(_dragOrigin), PointInSheet(current));
                 return;
