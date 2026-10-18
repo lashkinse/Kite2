@@ -15,7 +15,7 @@
         </Style>
     </UserControl.Style>
 
-    <Border x:Name="Plate"
+    <Border
             CornerRadius="{StaticResource Corner}"
             Padding="16,0"
             Height="{StaticResource NoticeHeight}"
@@ -35,7 +35,7 @@
 
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
             <TextBlock Text="{Binding NoticeText}"
-                       Foreground="White"
+                       Foreground="{StaticResource TextOnBar}"
                        FontFamily="{StaticResource UiFont}"
                        FontSize="{StaticResource FontSizeUi}"
                        TextWrapping="Wrap"
@@ -53,7 +53,7 @@
                     VerticalContentAlignment="Center"
                     Padding="10,0"
                     Cursor="Hand"
-                    Foreground="White"
+                    Foreground="{StaticResource TextOnBar}"
                     Background="{StaticResource BarHover}"
                     BorderThickness="0"
                     FocusVisualStyle="{x:Null}">
@@ -71,7 +71,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Background" Property="BorderBrush" Value="#8AB4E8" />
+                                <Setter TargetName="Background" Property="BorderBrush" Value="{StaticResource FocusBorder}" />
                                 <Setter TargetName="Background" Property="BorderThickness" Value="1" />
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">

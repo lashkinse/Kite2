@@ -13,7 +13,7 @@
     <Border Background="{StaticResource Rail}"
             BorderBrush="{StaticResource Hairline}"
             BorderThickness="0,0,1,0">
-        <ListBox x:Name="List"
+        <ListBox
                  ItemsSource="{Binding Pages}"
                  SelectedItem="{Binding SelectedPage, Mode=TwoWay}"
                  Background="Transparent"
@@ -71,7 +71,7 @@
                          заданы тоже явно — картинка должна занимать одно и то же
                          место и при пустой колонке, иначе список прыгает. -->
                     <StackPanel Width="150" HorizontalAlignment="Center">
-                        <Border Background="White"
+                        <Border Background="{StaticResource Page}"
                                 BorderBrush="{StaticResource PageBorder}"
                                 BorderThickness="1"
                                 Width="110"

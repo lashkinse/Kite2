@@ -1,6 +1,4 @@
-using System;
 using System.IO;
-using System.Linq;
 using ImageMagick;
 using Kite2.Core;
 

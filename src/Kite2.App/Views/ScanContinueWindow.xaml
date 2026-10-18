@@ -7,7 +7,7 @@
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
-        Background="White"
+        Background="{StaticResource Page}"
         FontFamily="{StaticResource UiFont}"
         FontSize="{StaticResource FontSizeUi}">
 
@@ -16,7 +16,7 @@
          мимо окна, и справа оставалась чёрная полоса. -->
     <StackPanel Margin="20">
 
-        <TextBlock x:Name="Caption"
+        <TextBlock
                    Text="Укажите, завершено ли сканирование, или нужно отсканировать дополнительные страницы, чтобы закончить этот документ"
                    TextWrapping="Wrap"
                    Foreground="{StaticResource TextPrimary}"
@@ -30,7 +30,6 @@
             </Grid.ColumnDefinitions>
 
             <Button Grid.Column="0"
-                    x:Name="StopButton"
                     Content="Завершить  [Enter]"
                     Height="32"
                     FontSize="13"
@@ -38,7 +37,6 @@
                     Click="OnStopClick" />
 
             <Button Grid.Column="2"
-                    x:Name="ContinueButton"
                     Content="Сканировать ещё  [+]"
                     Height="32"
                     FontSize="13"

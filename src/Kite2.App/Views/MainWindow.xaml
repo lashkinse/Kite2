@@ -51,7 +51,7 @@
 
                 <!-- Формат выбирается в окне сохранения, поэтому отдельного списка
                      под кнопкой больше нет: он повторял то, что окно и так спрашивает. -->
-                <Button x:Name="SaveButton" Style="{StaticResource AccentCommandButtonStyle}" Content="Сохранить"
+                <Button Style="{StaticResource AccentCommandButtonStyle}" Content="Сохранить"
                         controls:CommandBar.Hint="Ctrl+S" Tag="{StaticResource IconSave}"
                         ToolTip="Сохранить документ: формат выбирается в окне сохранения (Ctrl+S)"
                         Command="{Binding SaveCommand}" />

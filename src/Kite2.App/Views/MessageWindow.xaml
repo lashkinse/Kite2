@@ -6,7 +6,7 @@
         SizeToContent="Height"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        Background="White"
+        Background="{StaticResource Page}"
         FontFamily="{StaticResource UiFont}"
         FontSize="{StaticResource FontSizeUi}">
 
@@ -32,7 +32,7 @@
                   Grid.Column="0"
                   Style="{StaticResource BadgeIconStyle}"
                   Data="{StaticResource IconQuestion}"
-                  Stroke="White" />
+                  Stroke="{StaticResource TextOnAccent}" />
 
             <TextBlock x:Name="Caption"
                        Grid.Column="2"
