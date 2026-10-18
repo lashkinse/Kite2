@@ -106,7 +106,7 @@
                                 CornerRadius="3">
                             <Path Style="{StaticResource ChipIconStyle}"
                                   Data="{StaticResource IconSaveFragment}"
-                                  Fill="#1A6FC4" />
+                                  Stroke="#1A6FC4" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">

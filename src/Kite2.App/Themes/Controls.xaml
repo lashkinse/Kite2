@@ -22,29 +22,44 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Plate"
-                            Background="{TemplateBinding Background}"
-                            BorderBrush="Transparent"
-                            BorderThickness="1"
-                            CornerRadius="4">
-                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Path Style="{StaticResource CommandIconStyle}"
-                                  Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
-                                  Stroke="{StaticResource TextOnBar}" />
-                            <TextBlock Text="{TemplateBinding Content}"
-                                       Foreground="{StaticResource TextOnBar}"
-                                       FontFamily="{StaticResource UiFont}"
-                                       FontSize="{StaticResource FontSizeSmall}"
-                                       Margin="0,4,0,0"
-                                       HorizontalAlignment="Center" />
-                            <TextBlock Text="{Binding (controls:CommandBar.Hint), RelativeSource={RelativeSource TemplatedParent}}"
+                    <Grid>
+                        <Border x:Name="Plate"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="Transparent"
+                                BorderThickness="1"
+                                CornerRadius="4">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Path Style="{StaticResource CommandIconStyle}"
+                                      Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                      Stroke="{StaticResource TextOnBar}" />
+                                <TextBlock Text="{TemplateBinding Content}"
+                                           Foreground="{StaticResource TextOnBar}"
+                                           FontFamily="{StaticResource UiFont}"
+                                           FontSize="{StaticResource FontSizeSmall}"
+                                           Margin="0,4,0,0"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Text="{Binding (controls:CommandBar.Hint), RelativeSource={RelativeSource TemplatedParent}}"
                                            Foreground="{StaticResource TextOnBarHint}"
                                            FontFamily="{StaticResource UiFont}"
                                            FontSize="10"
                                            Margin="0,1,0,0"
                                            HorizontalAlignment="Center" />
-                        </StackPanel>
-                    </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Отметка «сработает следующей»: та же пунктирная рамка, что
+                             вокруг выделения на странице. Отступ отрицательный, чтобы
+                             рамка шла по краю кнопки, а не по краю подложки. -->
+                        <Rectangle x:Name="NextFrame"
+                                   Margin="-3"
+                                   RadiusX="7"
+                                   RadiusY="7"
+                                   Stroke="#1A6FC4"
+                                   StrokeThickness="1.5"
+                                   StrokeDashArray="3,2"
+                                   IsHitTestVisible="False"
+                                   Visibility="Collapsed" />
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <!-- Рамка клавиатурного фокуса вместо системной: та рисуется
                              мелким пунктиром и на тёмной панели выглядит опечаткой. -->
@@ -60,6 +75,9 @@
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.4" />
                             <Setter Property="Cursor" Value="Arrow" />
+                        </Trigger>
+                        <Trigger Property="controls:CommandBar.IsNext" Value="True">
+                            <Setter TargetName="NextFrame" Property="Visibility" Value="Visible" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

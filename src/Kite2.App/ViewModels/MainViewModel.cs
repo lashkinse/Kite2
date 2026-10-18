@@ -216,7 +216,7 @@ namespace Kite2.App.ViewModels
                 return;
             }
 
-            CurrentColour = colour;
+            RememberScanColour(colour);
 
             var cancellation = new CancellationTokenSource();
             _scanCancellation = cancellation;
@@ -264,6 +264,32 @@ namespace Kite2.App.ViewModels
 
         /// <summary>Режим цвета последней серии: он определяет кодировку страниц.</summary>
         private CaptureColour CurrentColour { get; set; } = CaptureColour.BlackAndWhite;
+
+        /// <summary>
+        /// Режим последней серии в том виде, в каком его показывает панель: кнопку
+        /// этого режима обводит пунктир. Клавиша «+» повторяет именно его, а без
+        /// отметки не видно, какой — «Ч/Б» и «Цветное» выглядят одинаково.
+        /// </summary>
+        public bool LastScanIsMono { get; private set; } = true;
+
+        /// <summary>Отметка на кнопке «Цветное».</summary>
+        public bool LastScanIsColour { get; private set; }
+
+        /// <summary>
+        /// Запоминает режим серии и отмечает его кнопку. Отметка нужна и до первого
+        /// сканирования: «+» и так повторяет чёрно-белое, и панель должна говорить
+        /// об этом сразу, а не после первого нажатия.
+        /// </summary>
+        private void RememberScanColour(CaptureColour colour)
+        {
+            CurrentColour = colour;
+
+            LastScanIsMono = colour == CaptureColour.BlackAndWhite;
+            LastScanIsColour = colour == CaptureColour.Colour;
+
+            OnPropertyChanged(nameof(LastScanIsMono));
+            OnPropertyChanged(nameof(LastScanIsColour));
+        }
 
         /// <summary>
         /// Клавиша «+» повторяет предыдущий режим, а не всегда чёрно-белый:
