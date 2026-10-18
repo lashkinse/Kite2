@@ -13,6 +13,9 @@
              ширине значки разъезжались на разный шаг. Размер подобран по самой
              длинной подписи «Параметры» вместе с сочетанием клавиш. -->
         <Setter Property="Width" Value="88" />
+        <!-- Высота задана явно: по содержимому кнопка получалась впритык,
+             значок стоял у самого верхнего края, и кнопки выглядели приплюснутыми. -->
+        <Setter Property="Height" Value="62" />
         <Setter Property="Margin" Value="0,0" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
