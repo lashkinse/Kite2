@@ -21,18 +21,22 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- Значок: восклицательный знак для ошибки, вопрос — когда уточняем. -->
-            <Ellipse x:Name="Badge"
-                     Grid.Column="0"
-                     Width="26"
-                     Height="26"
-                     VerticalAlignment="Top" />
+            <!-- Значок: восклицательный знак для ошибки, вопрос — когда уточняем. Кружок и знак
+                 лежат в одной сетке 26 на 26: рядом с текстом строка выше кружка, и знак,
+                 центрируясь в ней, уезжал бы вниз от своего кружка. -->
+            <Grid Grid.Column="0"
+                  Width="26"
+                  Height="26"
+                  VerticalAlignment="Top">
+                <Ellipse x:Name="Badge" />
 
-            <Path x:Name="BadgeText"
-                  Grid.Column="0"
-                  Style="{StaticResource BadgeIconStyle}"
-                  Data="{StaticResource IconQuestion}"
-                  Stroke="{StaticResource TextOnAccent}" />
+                <Path x:Name="BadgeText"
+                      Style="{StaticResource BadgeIconStyle}"
+                      Data="{StaticResource IconQuestion}"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      Stroke="{StaticResource TextOnAccent}" />
+            </Grid>
 
             <TextBlock x:Name="Caption"
                        Grid.Column="2"
