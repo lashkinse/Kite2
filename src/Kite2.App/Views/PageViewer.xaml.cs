@@ -117,6 +117,8 @@ namespace Kite2.App.Views
 
             _scrollEndTimer.Stop();
             _scrollEndTimer.Start();
+
+            FollowSheet();
         }
 
         private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs args)
@@ -251,7 +253,11 @@ namespace Kite2.App.Views
             // Подгонка откладывается до следующего прохода разметки: во время
             // SizeChanged полосы прокрутки ещё старого размера, и лист встал бы
             // по центру прежнего окна.
-            Dispatcher.BeginInvoke(new Action(FitPage), DispatcherPriority.Loaded);
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                FitPage();
+                FollowSheet();
+            }), DispatcherPriority.Loaded);
         }
 
         /// <summary>
@@ -385,6 +391,8 @@ namespace Kite2.App.Views
 
             Canvas.SetLeft(Sheet, _dragLeft + current.X - _dragOrigin.X);
             Canvas.SetTop(Sheet, _dragTop + current.Y - _dragOrigin.Y);
+
+            FollowSheet();
         }
 
         /// <summary>
@@ -517,6 +525,20 @@ namespace Kite2.App.Views
 
             Canvas.SetLeft(SelectionHint, Math.Max(0, corner.X - HintGap));
             Canvas.SetTop(SelectionHint, Math.Max(0, y));
+        }
+
+        /// <summary>
+        /// Ставит кнопку сохранения и подсказку к рамке выделения. Они лежат в слое
+        /// поверх листа, а рамка — внутри листа, поэтому при переносе или прокрутке
+        /// листа их положение надо пересчитывать. При этом на край окна значки не
+        /// подстраиваются: как только появились, стоят у своего угла рамки.
+        /// </summary>
+        private void FollowSheet()
+        {
+            if (Selection.Visibility != Visibility.Visible)
+                return;
+
+            LayoutSelection();
         }
 
         /// <summary>Сообщает, что лист поехал: true — едет, false — встал.</summary>
