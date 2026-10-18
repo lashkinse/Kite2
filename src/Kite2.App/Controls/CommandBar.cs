@@ -1,10 +1,11 @@
 using System.Windows;
+using System.Windows.Media;
 
 namespace Kite2.App.Controls
 {
     /// <summary>
-    /// Дополнительные свойства кнопки верхней панели: сочетание клавиш под подписью
-    /// и отметка «сработает следующей».
+    /// Дополнительные свойства кнопки верхней панели: сочетание клавиш под подписью,
+    /// его цвет и отметка «сработает следующей».
     /// </summary>
     /// <remarks>
     /// Отдельные свойства, а не часть содержимого кнопки: содержимое уже занято
@@ -20,6 +21,18 @@ namespace Kite2.App.Controls
                 typeof(string),
                 typeof(CommandBar),
                 new PropertyMetadata(string.Empty));
+
+        /// <summary>
+        /// Цвет подсказки с сочетанием клавиш. У тёмной и у акцентной кнопки он
+        /// разный: серая подсказка на синем читалась плохо. В шаблоне берётся через
+        /// привязку к самой кнопке, поэтому общий шаблон подходит обеим.
+        /// </summary>
+        public static readonly DependencyProperty HintBrushProperty =
+            DependencyProperty.RegisterAttached(
+                "HintBrush",
+                typeof(Brush),
+                typeof(CommandBar),
+                new PropertyMetadata(null));
 
         /// <summary>
         /// Помечает кнопку, по которой пойдёт следующее сканирование: вокруг неё
@@ -39,6 +52,10 @@ namespace Kite2.App.Controls
         public static string GetHint(DependencyObject element) => (string)element.GetValue(HintProperty);
 
         public static void SetHint(DependencyObject element, string value) => element.SetValue(HintProperty, value);
+
+        public static Brush GetHintBrush(DependencyObject element) => (Brush)element.GetValue(HintBrushProperty);
+
+        public static void SetHintBrush(DependencyObject element, Brush value) => element.SetValue(HintBrushProperty, value);
 
         public static bool GetIsNext(DependencyObject element) => (bool)element.GetValue(IsNextProperty);
 
