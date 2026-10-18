@@ -1,18 +1,25 @@
 <UserControl x:Class="Kite2.App.Views.PageActions"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Width="44">
+             Background="Transparent"
+             Margin="6">
 
-    <!-- Полоса команд над выбранной страницей. Стоит вплотную к колонке
-         страниц, а не в панели сверху: эти команды относятся к одному листу,
-         и искать их надо там, где этот лист. -->
-    <Border Background="{StaticResource Rail}"
-            BorderBrush="{StaticResource Hairline}"
-            BorderThickness="0,0,1,0">
-        <StackPanel HorizontalAlignment="Center"
-                    VerticalAlignment="Top"
-                    Margin="0,10,0,0">
+    <!-- Плавающая панель над выбранной страницей. Ограничена самими кнопками и
+         скруглена, а по цветам повторяет верхнюю панель: так она читается частью
+         того же набора команд, а не отдельным списком. Стоит поверх области
+         просмотра и не отнимает у неё ширину. -->
+    <Border Background="{StaticResource Bar}"
+            BorderBrush="{StaticResource Header}"
+            BorderThickness="1"
+            CornerRadius="6"
+            Padding="4"
+            VerticalAlignment="Top"
+            HorizontalAlignment="Left">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Direction="270" Opacity="0.4" />
+        </Border.Effect>
 
+        <StackPanel>
             <Button Style="{StaticResource PageActionButtonStyle}"
                     Tag="{StaticResource IconDelete}"
                     ToolTip="Удалить страницу (Del)"
