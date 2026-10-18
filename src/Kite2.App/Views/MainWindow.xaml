@@ -63,7 +63,11 @@
 
                 <Button Style="{StaticResource CommandButtonStyle}" Content="Цветное" controls:CommandBar.Hint="+" Tag="{StaticResource IconScanColour}"
                         ToolTip="Сканировать в цветном режиме (+)" Command="{Binding ScanColourCommand}" />
-                <Button Style="{StaticResource CommandButtonStyle}" Content="Параметры" Tag="{StaticResource IconSettings}"
+                <Rectangle Style="{StaticResource ToolBarSeparatorStyle}" />
+
+                <!-- Настройки отделены чертой от сканирования: это уже не про
+                     захват, а про то, чем захватывают. -->
+                <Button Style="{StaticResource CommandButtonStyle}" Content="Настройки" Tag="{StaticResource IconSettings}"
                         ToolTip="Выбрать источник сканирования" Command="{Binding SettingsCommand}" />
             </StackPanel>
         </Border>

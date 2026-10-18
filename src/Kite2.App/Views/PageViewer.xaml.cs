@@ -109,19 +109,16 @@ namespace Kite2.App.Views
             _scrollEndTimer.Stop();
 
             RaiseSheetDragChanged(false);
-
-            FollowSheet();
         }
 
         private void OnScrollerScrollChanged(object sender, ScrollChangedEventArgs args)
         {
-            // Прокрутка полосами и колесом двигает лист внутри полотна. Кнопка
-            // сохранения и подсказка на этом не едут: они относятся к экрану, а не
-            // к странице, и улетающие за листом значки только сбивают с толку.
             RaiseSheetDragChanged(true);
 
             _scrollEndTimer.Stop();
             _scrollEndTimer.Start();
+
+            FollowSheet();
         }
 
         private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs args)
@@ -365,10 +362,6 @@ namespace Kite2.App.Views
             {
                 _middleDrag = false;
                 RaiseSheetDragChanged(false);
-
-                // Пока лист ехал, кнопка и подсказка стояли на месте и не мелькали
-                // вместе с ним. Лист встал — и они снова встали к своему углу рамки.
-                FollowSheet();
             }
 
             if (Root.IsMouseCaptureWithin)
@@ -394,6 +387,11 @@ namespace Kite2.App.Views
 
             Canvas.SetLeft(Sheet, _dragLeft + current.X - _dragOrigin.X);
             Canvas.SetTop(Sheet, _dragTop + current.Y - _dragOrigin.Y);
+
+            // Кнопка сохранения и подсказка лежат не в листе, а поверх него:
+            // без этого шага они остались бы на месте, пока лист уезжал, и оторвались
+            // бы от своей рамки.
+            FollowSheet();
         }
 
         /// <summary>
@@ -543,9 +541,9 @@ namespace Kite2.App.Views
         }
 
         /// <summary>
-        /// Возвращает кнопку и подсказку к рамке после того, как лист встал. Пока
-        /// лист едет, они стоят на месте и не едут вместе с ним: мелькание двух
-        /// значков по всему листу только сбивает.
+        /// Держит кнопку сохранения и подсказку у рамки выделения. Они лежат в слое
+        /// поверх листа, а рамка — внутри листа, и без этого шага при переносе или
+        /// прокрутке они остались бы на месте и оторвались бы от своего угла.
         /// </summary>
         private void FollowSheet()
         {
