@@ -3,11 +3,8 @@ using System.IO;
 
 namespace Kite2.Tests
 {
-    /// <summary>Проверки с читаемым текстом вместо исключений.</summary>
-    /// <remarks>
-    /// Намеренно без Xunit и прочих библиотек: их пакеты тянут за собой десятки
-    /// мегабайт, а проверки здесь простые и запускаются одной программой.
-    /// </remarks>
+    // Намеренно без Xunit и прочих библиотек: их пакеты тянут за собой десятки
+    // мегабайт, а проверки здесь простые и запускаются одной программой.
     public static class Check
     {
         public static void True(bool condition, string what)
@@ -40,7 +37,6 @@ namespace Kite2.Tests
                 throw new CheckFailedException($"{what}: нет файла {path}");
         }
 
-        /// <summary>Проверяет, что в потоке исключение ожидаемого вида.</summary>
         public static void Throws<TException>(Action action, string what) where TException : Exception
         {
             try
@@ -61,7 +57,6 @@ namespace Kite2.Tests
         }
     }
 
-    /// <summary>Проверка не выполнена. Свое исключение — чтобы отличить от сбоя проверки.</summary>
     public sealed class CheckFailedException : Exception
     {
         public CheckFailedException(string message) : base(message)

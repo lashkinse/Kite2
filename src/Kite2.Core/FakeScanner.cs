@@ -8,51 +8,31 @@ using ImageMagick.Drawing;
 
 namespace Kite2.Core
 {
-    /// <summary>
-    /// Тестовый режим: страницы рисует программа, а не сканер.
-    /// </summary>
-    /// <remarks>
-    /// Нужен там, где сканера под рукой нет: без него нельзя проверить ни путь от
-    /// захвата до просмотра, ни сохранение, ни колонку страниц. На настоящем
-    /// устройстве эти проверки делаются вручную и не каждый день.
-    /// Включается ключом запуска <c>--test</c>, а не настройкой: режим должен быть
-    /// виден в заголовке окна, иначе тестовый лист можно принять за настоящий.
-    /// </remarks>
+    // Нужен там, где сканера под рукой нет: без него нельзя проверить ни путь от
+    // захвата до просмотра, ни сохранение, ни колонку страниц. Включается ключом
+    // запуска, а не настройкой: режим должен быть виден в заголовке окна, иначе
+    // тестовый лист можно принять за настоящий.
     public static class FakeScanner
     {
-        /// <summary>Ключ запуска, включающий тестовый режим.</summary>
         public const string Switch = "--test";
 
-        /// <summary>
-        /// Ключ запуска, заставляющий задавать вопрос «Сканировать ещё?» и в тестовом
-        /// режиме: иначе окно остановит и прогон, и проверку вручную.
-        /// </summary>
+        // Без этого ключа вопрос «Сканировать ещё?» пропускается: иначе окно
+        // остановит и прогон, и проверку вручную.
         public const string AskSwitch = "--ask";
 
-        /// <summary>Столько страниц возвращает один захват.</summary>
         private const int PageCount = 3;
 
-        /// <summary>Тестовый лист: A4 при 150 dpi.</summary>
+        // Тестовый лист: A4 при 150 dpi.
         private const double PageWidth = 1240;
 
         private const double PageHeight = 1754;
 
         private static int _counter;
 
-        /// <summary>Работает ли программа в тестовом режиме.</summary>
         public static bool Enabled { get; private set; }
 
-        /// <summary>
-        /// Задавать ли вопрос «Сканировать ещё?» и в тестовом режиме. Включается
-        /// ключом <c>--ask</c>: без него вопрос пропускается, иначе окно остановит и
-        /// прогон, и проверку вручную.
-        /// </summary>
         public static bool AlwaysAsk { get; private set; }
 
-        /// <summary>
-        /// Включает тестовый режим по ключам запуска. Возвращает признак того, что
-        /// режим включён, — окно дописывает его в заголовок.
-        /// </summary>
         public static bool EnableFromArguments(string[] arguments)
         {
             if (arguments == null)
@@ -73,18 +53,11 @@ namespace Kite2.Core
             return enabled;
         }
 
-        /// <summary>Названия источников в тестовом режиме.</summary>
         public static IReadOnlyList<string> GetSources()
         {
             return new[] { "Тестовый сканер" };
         }
 
-        /// <summary>
-        /// Рисует страницы в каталог запроса вместо захвата со сканера.
-        /// </summary>
-        /// <param name="request">Запрос с уже очищенным каталогом.</param>
-        /// <param name="cancellationToken">Позволяет прервать ожидание, как и при настоящем захвате.</param>
-        /// <returns>Пути к нарисованным сканам.</returns>
         public static string[] Capture(ScanRequest request, CancellationToken cancellationToken)
         {
             var written = new string[PageCount];
@@ -111,11 +84,8 @@ namespace Kite2.Core
             return written;
         }
 
-        /// <summary>
-        /// Рисует лист: рамку, номер страницы и полосу градаций. Чёрно-белый лист
-        /// рисуется градациями серого, чтобы по нему было видно, что полутонов не
-        /// осталось два.
-        /// </summary>
+        // Чёрно-белый лист рисуется градациями серого: по нему видно, что полутонов
+        // не осталось два.
         private static void DrawSheet(int number, CaptureColour colour, string path)
         {
             using (var sheet = new MagickImage(MagickColors.White, (uint)PageWidth, (uint)PageHeight))
@@ -143,11 +113,8 @@ namespace Kite2.Core
             }
         }
 
-        /// <summary>
-        /// Полоса градаций: в чёрно-белом режиме от белого к чёрному, в цветном —
-        /// цветовой переход. Ступени отличаются друг от друга заметно: соседние
-        /// оттенки после сжатия в JPEG сливались, и полоса читалась как сплошная.
-        /// </summary>
+        // Ступени отличаются друг от друга заметно: соседние оттенки после сжатия
+        // в JPEG сливались, и полоса читалась как сплошная.
         private static void ToneBar(MagickImage sheet, CaptureColour colour)
         {
             const int Left = 80;
@@ -178,7 +145,6 @@ namespace Kite2.Core
             sheet.Draw(draws.ToArray());
         }
 
-        /// <summary>Цвет ступени для указанной доли шкалы.</summary>
         private static MagickColor Tone(CaptureColour colour, double position)
         {
             if (colour == CaptureColour.BlackAndWhite)

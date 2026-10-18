@@ -6,29 +6,17 @@ using ImageMagick;
 
 namespace Kite2.Core
 {
-    /// <summary>
-    /// Превращает то, что отдал TWAIN-драйвер, в страницы документа.
-    /// </summary>
-    /// <remarks>
-    /// Драйвер кладёт рядом файлы PPM (цветные) и PGM (чёрно-белые). Читаются они
-    /// прямо здесь, средствами ImageMagick: в прежней версии программы между
-    /// драйвером и страницей стоял внешний инструмент pnmtojpeg, и приложение
-    /// зависело от папки с чужими программами рядом с собой.
-    /// </remarks>
+    // Драйвер кладёт рядом файлы PPM (цветные) и PGM (чёрно-белые). Читаются они
+    // прямо здесь, средствами ImageMagick: в прежней версии программы между драйвером
+    // и страницей стоял внешний инструмент pnmtojpeg, и приложение зависело от папки
+    // с чужими программами рядом с собой.
     public static class PageImage
     {
-        /// <summary>Лист A4 при 300 dpi — в него вписывается скан любого размера.</summary>
+        // Лист A4 при 300 dpi — в него вписывается скан любого размера.
         private const uint PageA4Width = 2480;
 
         private const uint PageA4Height = 3508;
 
-        /// <summary>
-        /// Превращает все результаты захвата в страницы JPEG, вписывая каждый скан по
-        /// центру белого листа A4. Исходные PPM и PGM удаляются.
-        /// </summary>
-        /// <param name="request">Запрос, у которого каталог уже очищен.</param>
-        /// <param name="quality">Качество JPEG.</param>
-        /// <returns>Пути к страницам в порядке сканирования. Пустой массив, если сканов не было.</returns>
         public static string[] ComposeDirectory(ScanRequest request, int quality)
         {
             ImageMagickSetup.EnsureStarted();
@@ -55,10 +43,7 @@ namespace Kite2.Core
             return pages;
         }
 
-        /// <summary>
-        /// Файлы, которые получаются от драйвера и несут скан без обработки: BMP
-        /// записывает сам сервис захвата, PPM и PGM — если драйвер отдал файлы сам.
-        /// </summary>
+        // BMP записывает сервис захвата, PPM и PGM — если драйвер отдал файлы сам.
         private static bool IsRawScan(string file)
         {
             string extension = Path.GetExtension(file);
@@ -85,10 +70,6 @@ namespace Kite2.Core
             }
         }
 
-        /// <summary>
-        /// Вписывает скан в белый лист A4 по центру. Скан больше листа уменьшается,
-        /// меньший остаётся как есть и просто центрируется.
-        /// </summary>
         private static MagickImage FitOntoSheet(MagickImage scan)
         {
             if (scan.Width > PageA4Width || scan.Height > PageA4Height)
@@ -107,7 +88,6 @@ namespace Kite2.Core
             return sheet;
         }
 
-        /// <summary>Поворачивает страницу на заданный угол и перезаписывает файл.</summary>
         public static void Rotate(string filePath, double degrees)
         {
             ImageMagickSetup.EnsureStarted();
@@ -119,16 +99,6 @@ namespace Kite2.Core
             }
         }
 
-        /// <summary>
-        /// Сохраняет выделенный участок страницы отдельным файлом PNG. Сама
-        /// страница не меняется: фрагмент уходит рядом, документ остаётся прежним.
-        /// </summary>
-        /// <param name="sourcePath">Файл страницы-источника.</param>
-        /// <param name="left">Отступ слева, в пикселях изображения.</param>
-        /// <param name="top">Отступ сверху, в пикселях изображения.</param>
-        /// <param name="width">Ширина фрагмента, в пикселях.</param>
-        /// <param name="height">Высота фрагмента, в пикселях.</param>
-        /// <param name="targetPath">Файл фрагмента.</param>
         public static void SaveFragment(string sourcePath, int left, int top, int width, int height, string targetPath)
         {
             if (width < 1 || height < 1)
@@ -159,9 +129,6 @@ namespace Kite2.Core
             }
         }
 
-        /// <summary>
-        /// Размер, в который изображение уменьшается целиком, чтобы поместиться в рамку.
-        /// </summary>
         public static void FitInside(uint width, uint height, uint boundWidth, uint boundHeight, out uint resultWidth, out uint resultHeight)
         {
             float scale = Math.Min(boundWidth / (float)width, boundHeight / (float)height);
@@ -170,7 +137,8 @@ namespace Kite2.Core
             resultHeight = (uint)(height * scale);
         }
 
-        /// <summary>Удаляет файлы страниц: ими владеет программа, а не документ на диске.</summary>
+        // Исключения глотаются: файл может быть занят просмотром, и он удалится при
+        // следующей очистке каталога.
         public static void Delete(IEnumerable<string> pages)
         {
             foreach (string page in pages)
@@ -181,7 +149,6 @@ namespace Kite2.Core
                 }
                 catch (IOException)
                 {
-                    // Файл занят просмотром: он удалится при следующей очистке каталога.
                 }
                 catch (UnauthorizedAccessException)
                 {

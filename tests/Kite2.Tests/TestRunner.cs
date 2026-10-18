@@ -6,14 +6,8 @@ using System.Reflection;
 
 namespace Kite2.Tests
 {
-    /// <summary>
-    /// Находит методы с признаком проверки и выполняет их.
-    /// </summary>
     public static class TestRunner
     {
-        /// <summary>
-        /// Выполняет все проверки и возвращает код ответа программы: ноль — все прошли.
-        /// </summary>
         public static int Run(Assembly assembly)
         {
             MethodInfo[] tests = assembly

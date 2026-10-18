@@ -5,12 +5,8 @@ using Kite2.Core;
 
 namespace Kite2.Tests
 {
-    /// <summary>
-    /// Проверки обработки страниц: вписывание скана в лист и поворот.
-    /// </summary>
     public static class PageImageTests
     {
-        /// <summary>Ширина листа A4 при 300 dpi.</summary>
         private const uint A4Width = 2480;
 
         private const uint A4Height = 3508;
@@ -148,7 +144,6 @@ namespace Kite2.Tests
             return pages[0];
         }
 
-        /// <summary>Пишет одноцветный скан указанного размера.</summary>
         private static string WriteScan(TemporaryFolder folder, int width, int height)
         {
             string path = folder.File("scan.bmp");
@@ -159,7 +154,6 @@ namespace Kite2.Tests
             return path;
         }
 
-        /// <summary>Пишет скан с плавным переходом от чёрного к белому.</summary>
         private static string WriteGradient(TemporaryFolder folder)
         {
             string path = folder.File("gradient.bmp");

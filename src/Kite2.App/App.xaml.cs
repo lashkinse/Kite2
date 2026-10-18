@@ -11,20 +11,10 @@ using NLog;
 
 namespace Kite2.App
 {
-    /// <summary>
-    /// Точка входа. Запуск программы и создание главного окна.
-    /// </summary>
     public partial class App : Application
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        /// <summary>
-        /// Главное окно программы.
-        /// </summary>
-        /// <remarks>
-        /// Пользовательские настройки читаются до создания окна, чтобы выбранный
-        /// источник сканирования был известен заранее.
-        /// </remarks>
         public new MainWindow MainWindow { get; private set; }
 
         protected override void OnStartup(StartupEventArgs e)
@@ -69,10 +59,8 @@ namespace Kite2.App
             viewModel.Start();
         }
 
-        /// <summary>
-        /// Значок программы для окна. Берётся из самого файла программы: WPF значок
-        /// из файла не достаёт, и на кнопке панели задач вставало серое окно.
-        /// </summary>
+        // Значок берётся из самого файла программы: WPF не достаёт значок
+        // из файла, и на кнопке панели задач вставало серое окно.
         private static ImageSource ProgramIcon()
         {
             try
@@ -101,9 +89,7 @@ namespace Kite2.App
             }
         }
 
-        /// <summary>
-        /// Путь к файлу программы: у окна WPF своего <c>ExecutablePath</c> нет.
-        /// </summary>
+        // У окна WPF своего ExecutablePath нет.
         private static string ExecutablePath()
         {
             using (var process = System.Diagnostics.Process.GetCurrentProcess())

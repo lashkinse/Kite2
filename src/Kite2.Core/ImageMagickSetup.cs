@@ -4,25 +4,16 @@ using NLog;
 
 namespace Kite2.Core
 {
-    /// <summary>
-    /// Запуск ImageMagick. Вызывается один раз, до первой работы с изображениями.
-    /// </summary>
     public static class ImageMagickSetup
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        /// <summary>Предел памяти ImageMagick — 256 МБ.</summary>
         private const ulong MemoryLimit = 268435456UL;
 
         private static bool _started;
 
-        /// <summary>
-        /// Готовит ImageMagick к работе: временный каталог и предел памяти.
-        /// </summary>
-        /// <remarks>
-        /// Повторный вызов ничего не делает. Инициализация не идемпотентна и при втором
-        /// вызове сбрасывает состояние библиотеки на середине работы программы.
-        /// </remarks>
+        // Инициализация не идемпотентна: повторный вызов сбросил бы состояние
+        // библиотеки на середине работы программы, поэтому она выполняется один раз.
         public static void EnsureStarted()
         {
             if (_started)

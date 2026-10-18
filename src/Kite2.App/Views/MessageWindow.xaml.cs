@@ -5,22 +5,15 @@ using NLog;
 
 namespace Kite2.App.Views
 {
-    /// <summary>Что сообщаем пользователю: ошибку или вопрос с двумя ответами.</summary>
     public enum MessageKind
     {
         Error,
         Question
     }
 
-    /// <summary>
-    /// Окно сообщения: ошибка или вопрос пользователю.
-    /// </summary>
-    /// <remarks>
-    /// Отдельное окно, а не MessageBox, потому что у MessageBox из WPF нет
-    /// привязки к окну: он всегда встаёт по центру экрана, а не программы.
-    /// Надписи на кнопках содержат клавиши: Enter и Esc работают и с клавиатуры,
-    /// и мышью, а подсказки об этом написаны прямо на кнопке.
-    /// </remarks>
+    // Отдельное окно, а не MessageBox: у MessageBox из WPF нет привязки к окну,
+    // он всегда встаёт по центру экрана, а не программы. Клавиши написаны прямо
+    // на кнопках: Enter и Esc работают и мышью, и с клавиатуры.
     public partial class MessageWindow : Window
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
@@ -30,10 +23,8 @@ namespace Kite2.App.Views
             InitializeComponent();
         }
 
-        /// <summary>Ответ пользователя на вопрос. Для сообщения об ошибке не важно.</summary>
         private bool Answer { get; set; }
 
-        /// <summary>Показывает сообщение с одной кнопкой «ОК».</summary>
         public static void Show(Window owner, string title, string text, MessageKind kind)
         {
             var window = Create(owner, title);
@@ -45,10 +36,6 @@ namespace Kite2.App.Views
             window.ShowDialog();
         }
 
-        /// <summary>
-        /// Задаёт вопрос с двумя ответами. true — согласие пользователя.
-        /// Закрытие окна крестиком считается отказом.
-        /// </summary>
         public static bool Ask(Window owner, string title, string text, string yes, string no)
         {
             var window = Create(owner, title);
@@ -65,10 +52,6 @@ namespace Kite2.App.Views
             return window.Answer;
         }
 
-        /// <summary>
-        /// Готовит окно. Без главного окна программы привязываться не к чему,
-        /// и окно встаёт по центру экрана.
-        /// </summary>
         private static MessageWindow Create(Window owner, string title)
         {
             var window = new MessageWindow { Title = title };

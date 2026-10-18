@@ -5,9 +5,6 @@ using Kite2.Core;
 
 namespace Kite2.Tests
 {
-    /// <summary>
-    /// Проверки сохранения выделенного участка страницы файлом PNG.
-    /// </summary>
     public static class FragmentTests
     {
         [Test("Фрагмент получает размер выделенного участка")]
@@ -172,7 +169,6 @@ namespace Kite2.Tests
             }
         }
 
-        /// <summary>Готовая страница: белый лист нужного размера и плотности.</summary>
         private static string WritePage(TemporaryFolder folder, int width, int height)
         {
             string path = folder.File("страница.jpg");
@@ -188,10 +184,6 @@ namespace Kite2.Tests
             return path;
         }
 
-        /// <summary>
-        /// Белая страница с красным квадратом во всю левую верхнюю четверть:
-        /// видно, откуда фрагмент взял пиксели.
-        /// </summary>
         private static string MarkedPage(TemporaryFolder folder, string name)
         {
             string path = folder.File(name);

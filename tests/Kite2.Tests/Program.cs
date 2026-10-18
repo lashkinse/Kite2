@@ -3,9 +3,6 @@ using System.Reflection;
 
 namespace Kite2.Tests
 {
-    /// <summary>
-    /// Программа проверок: находит все методы с признаком проверки и выполняет их.
-    /// </summary>
     public static class Program
     {
         public static int Main(string[] args)

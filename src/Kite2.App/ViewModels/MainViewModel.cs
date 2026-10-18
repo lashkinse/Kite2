@@ -18,26 +18,17 @@ using System.Windows.Threading;
 
 namespace Kite2.App.ViewModels
 {
-    /// <summary>
-    /// Главная модель представления: команды верхней панели, список страниц и
-    /// уведомление о ходе работы.
-    /// </summary>
-    /// <remarks>
-    /// Долгие операции идут через <see cref="Task.Run"/>: захват и сохранение считают
-    /// минуты, и в главном потоке им места нет. Пока операция идёт, команды
-    /// заблокированы, а плашка показывает, что происходит.
-    /// </remarks>
+    // Долгие операции идут через Task.Run: захват и сохранение считают минуты, и в
+    // главном потоке им места нет. Пока операция идёт, команды заблокированы, а
+    // плашка показывает, что происходит.
     public sealed class MainViewModel : ObservableObject
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        /// <summary>Качество JPEG страницы.</summary>
         private const int PageQuality = 25;
 
-        /// <summary>Разрешение захвата.</summary>
         private const int ScanDpi = 300;
 
-        /// <summary>Сколько висит плашка с результатом, в секундах.</summary>
         private const int ResultNoticeSeconds = 4;
 
         private readonly ObservableCollection<PageViewModel> _pages = new ObservableCollection<PageViewModel>();
@@ -49,7 +40,6 @@ namespace Kite2.App.ViewModels
         private string _noticeText = string.Empty;
         private CancellationTokenSource _scanCancellation;
 
-        /// <summary>Таймер, убирающий плашку с результатом.</summary>
         private readonly DispatcherTimer _resultNoticeTimer;
 
         public MainViewModel()
@@ -78,13 +68,8 @@ namespace Kite2.App.ViewModels
             _resultNoticeTimer.Tick += OnResultNoticeTimeout;
         }
 
-        /// <summary>Отсканированные страницы в порядке документа.</summary>
         public ObservableCollection<PageViewModel> Pages => _pages;
 
-        /// <summary>
-        /// Выбранная страница. Область просмотра показывает то, что выбрано, а не то,
-        /// что было выбрано раньше, поэтому смена выделения сразу обновляет команды.
-        /// </summary>
         public PageViewModel SelectedPage
         {
             get => _selectedPage;
@@ -95,64 +80,46 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        /// <summary>Идёт ли операция: команды на это время заблокированы.</summary>
         public bool IsBusy => _busy;
 
-        /// <summary>Показана ли плашка с ходом работы или результатом.</summary>
         public bool NoticeVisible
         {
             get => _noticeVisible;
             private set => SetProperty(ref _noticeVisible, value);
         }
 
-        /// <summary>
-        /// Плашка показывает результат, а не ход работы. Результат в акцентном цвете и
-        /// убирается сам, ход работы остаётся, пока идёт операция.
-        /// </summary>
+        // Результат в акцентном цвете и убирается сам, ход работы остаётся, пока идёт
+        // операция.
         public bool NoticeIsResult
         {
             get => _noticeIsResult;
             private set => SetProperty(ref _noticeIsResult, value);
         }
 
-        /// <summary>Текст плашки.</summary>
         public string NoticeText
         {
             get => _noticeText;
             private set => SetProperty(ref _noticeText, value);
         }
 
-        /// <summary>Нужна ли кнопка «Отмена» у плашки.</summary>
         public bool CancelWanted
         {
             get => _cancelWanted;
             private set => SetProperty(ref _cancelWanted, value);
         }
 
-        /// <summary>
-        /// Все команды верхней панели одним списком: их доступность меняется
-        /// одновременно и по одним и тем же причинам — идёт операция или нет,
-        /// выбрана страница или нет.
-        /// </summary>
+        // Доступность всех команд меняется по одним и тем же причинам — идёт операция
+        // или нет, выбрана страница или нет, — поэтому они и обновляются одним списком.
         private readonly RelayCommand[] _commands;
 
-        /// <summary>Создаёт новый документ.</summary>
         public RelayCommand NewDocumentCommand { get; }
 
-        /// <summary>
-        /// Сохраняет документ. Формат выбирается в окне сохранения, отдельного
-        /// списка под кнопкой нет.
-        /// </summary>
         public RelayCommand SaveCommand { get; }
 
         public RelayCommand ScanMonoCommand { get; }
 
         public RelayCommand ScanColourCommand { get; }
 
-        /// <summary>
-        /// Повторное сканирование клавишей «+» — в том режиме, в каком шло
-        /// предыдущее.
-        /// </summary>
         public RelayCommand ScanAgainCommand { get; }
 
         public RelayCommand SettingsCommand { get; }
@@ -165,17 +132,12 @@ namespace Kite2.App.ViewModels
 
         public RelayCommand RotatePageCommand { get; }
 
-        /// <summary>Отменяет текущую операцию, если она её допускает.</summary>
         public RelayCommand CancelNoticeCommand { get; }
 
-        /// <summary>Режим последнего сканирования: он определяет кодировку страниц.</summary>
         private ScanMode CurrentScanMode { get; set; } = ScanMode.Greyscale;
 
-        /// <summary>
-        /// Подготовка после показа окна: чистка каталога прошлой сессии и запуск
-        /// ImageMagick. Делается здесь, а не в конструкторе, чтобы окно успело
-        /// показаться и не висело белым.
-        /// </summary>
+        // Подготовка идёт после показа окна, а не в конструкторе: иначе окно успело бы
+        // повисеть белым, пока чистится каталог и запускается ImageMagick.
         public void Start()
         {
             try
@@ -199,15 +161,8 @@ namespace Kite2.App.ViewModels
 
         // --- Сканирование ----------------------------------------------------
 
-        /// <summary>
-        /// Забирает страницы со сканера и добавляет их в документ.
-        /// </summary>
-        /// <remarks>
-        /// Каталог результатов очищается в самом запросе: драйвер пишет файлы с
-        /// именами по порядку, и сканы прошлого раза иначе попали бы в новый
-        /// документ. Порядок страниц задаётся временем создания файлов, поэтому
-        /// композиция страниц идёт сразу после захвата, пока порядок ещё виден.
-        /// </remarks>
+        // Порядок страниц задаётся временем создания файлов, поэтому композиция идёт
+        // сразу после захвата, пока порядок ещё виден.
         private async void ScanAsync(CaptureColour colour)
         {
             if (!FakeScanner.Enabled && AppSettings.ScanSourceIndex == AppSettings.NotSelected)
@@ -262,24 +217,15 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        /// <summary>Режим цвета последней серии: он определяет кодировку страниц.</summary>
         private CaptureColour CurrentColour { get; set; } = CaptureColour.BlackAndWhite;
 
-        /// <summary>
-        /// Режим последней серии в том виде, в каком его показывает панель: кнопку
-        /// этого режима обводит пунктир. Клавиша «+» повторяет именно его, а без
-        /// отметки не видно, какой — «Ч/Б» и «Цветное» выглядят одинаково.
-        /// </summary>
+        // Без отметки не видно, какой режим повторит «+»: кнопки «Ч/Б» и «Цветное»
+        // на панели выглядят одинаково. Отметка нужна и до первого сканирования — «+»
+        // и так повторяет чёрно-белое.
         public bool LastScanIsMono { get; private set; } = true;
 
-        /// <summary>Отметка на кнопке «Цветное».</summary>
         public bool LastScanIsColour { get; private set; }
 
-        /// <summary>
-        /// Запоминает режим серии и отмечает его кнопку. Отметка нужна и до первого
-        /// сканирования: «+» и так повторяет чёрно-белое, и панель должна говорить
-        /// об этом сразу, а не после первого нажатия.
-        /// </summary>
         private void RememberScanColour(CaptureColour colour)
         {
             CurrentColour = colour;
@@ -291,19 +237,14 @@ namespace Kite2.App.ViewModels
             OnPropertyChanged(nameof(LastScanIsColour));
         }
 
-        /// <summary>
-        /// Клавиша «+» повторяет предыдущий режим, а не всегда чёрно-белый:
-        /// иначе после цветной серии «+» тихо переключал бы программу в другой
-        /// режим, и страницы выходили бы не те, что человек ожидал.
-        /// </summary>
+        // «+» повторяет предыдущий режим, а не всегда чёрно-белый: иначе после
+        // цветной серии он тихо переключил бы программу в другой режим, и страницы
+        // вышли бы не те, что человек ожидал.
         private void ScanAgain()
         {
             ScanAsync(CurrentColour);
         }
 
-        /// <summary>
-        /// Одна серия: захват и превращение результата в страницы документа.
-        /// </summary>
         private async Task ScanOnce(CaptureColour colour, CancellationToken cancellationToken)
         {
             var request = new ScanRequest
@@ -336,11 +277,8 @@ namespace Kite2.App.ViewModels
             AddPages(pages);
         }
 
-        /// <summary>
-        /// Спрашивает, сканировать ли ещё. В тестовом режиме вопрос не задаётся:
-        /// там всё равно никто не сидит перед окном, а окно остановит и прогон, и
-        /// автоматическую проверку.
-        /// </summary>
+        // В тестовом режиме вопрос не задаётся: там всё равно никто не сидит перед
+        // окном, а вопрос остановил бы и прогон, и автоматическую проверку.
         private bool AskToContinue()
         {
             if (FakeScanner.Enabled && !FakeScanner.AlwaysAsk)
@@ -352,7 +290,6 @@ namespace Kite2.App.ViewModels
             return ScanContinueWindow.Ask(Application.Current.MainWindow);
         }
 
-        /// <summary>Собирает модели страниц по файлам, отсортированным по имени.</summary>
         private List<PageViewModel> BuildPages(string directory)
         {
             var pages = new List<PageViewModel>();
@@ -387,11 +324,9 @@ namespace Kite2.App.ViewModels
                 ShowNotice(Messages.PagesAdded(added), result: true, cancel: false);
         }
 
-        /// <summary>
-        /// Проставляет номера по нынешнему порядку страниц. Номера присваиваются не
-        /// при создании, а здесь: иначе после удаления первой страницы колонка
-        /// начинается с двойки, а после перестановки идёт 1, 3, 2.
-        /// </summary>
+        // После вставки и удаления между номерами остаются пропуски, и подпись
+        // «страница 2» попадает на страницу 1, 3, 2 — поэтому номера проставляются
+        // подряд каждый раз.
         private void RenumberPages()
         {
             for (int i = 0; i < _pages.Count; i++)
@@ -400,7 +335,6 @@ namespace Kite2.App.ViewModels
 
         // --- Сохранение -------------------------------------------------------
 
-        /// <summary>Спрашивает имя файла и сохраняет документ в выбранном формате.</summary>
         private async void Save()
         {
             string path = SaveFilePicker.Ask(".pdf");
@@ -438,11 +372,8 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        /// <summary>
-        /// Описание того, что лежит на диске после сохранения: имя файла и его размер.
-        /// Для картинок в запрошенном имени может не быть ничего — вместо него
-        /// появляются файлы с номерами страниц.
-        /// </summary>
+        // Для картинок в запрошенном имени может не быть ничего — вместо него
+        // появляются файлы с номерами страниц.
         private static string Describe(string requestedPath)
         {
             if (File.Exists(requestedPath))
@@ -523,11 +454,7 @@ namespace Kite2.App.ViewModels
             RenumberPages();
         }
 
-        /// <summary>
-        /// Сохраняет выделенный участок страницы отдельным файлом PNG. Прямоугольник
-        /// присылает область просмотра и задаёт его в пикселях картинки, а не на
-        /// экране.
-        /// </summary>
+        // Страница не меняется: фрагмент уходит рядом, документ остаётся прежним.
         public async void SaveSelectedFragment(Rect area)
         {
             PageViewModel page = SelectedPage;
@@ -574,15 +501,10 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        /// <summary>
-        /// Поворачивает выбранную страницу на 180° и переписывает файл на диске.
-        /// </summary>
-        /// <remarks>
-        /// Поворот меняет файл, а не только картинку на экране: страница уходит в
-        /// документ такой, какой лежит на диске, и иначе после сохранения она была бы
-        /// повёрнута не так, как показано. Область просмотра следит только за выбором
-        /// страницы, поэтому после перечитывания ей это сообщение и нужно.
-        /// </remarks>
+        // Поворот меняет файл, а не только картинку на экране: страница уходит в
+        // документ такой, какой лежит на диске, иначе после сохранения она была бы
+        // повёрнута не так, как показано. Область просмотра следит только за выбором
+        // страницы, поэтому после перечитывания ей это сообщение и нужно.
         private void RotatePage()
         {
             PageViewModel page = SelectedPage;
@@ -647,7 +569,6 @@ namespace Kite2.App.ViewModels
             CancelWanted = false;
         }
 
-        /// <summary>Плашка с результатом пролежала своё время и убирается.</summary>
         private void OnResultNoticeTimeout(object sender, EventArgs args)
         {
             _resultNoticeTimer.Stop();
@@ -655,10 +576,8 @@ namespace Kite2.App.ViewModels
             HideNotice();
         }
 
-        /// <summary>
-        /// Отменяет операцию, если она это допускает. Сохранение отменить нельзя:
-        /// файл дописывается на месте, и прерывание оставило бы его обрывок.
-        /// </summary>
+        // Отмена у WPF — это закрытие окна, но закрывать нечего: закрывается сессия
+        // TWAIN, и ждать её поток перестаёт.
         private void CancelOperation()
         {
             if (_scanCancellation == null)
@@ -687,15 +606,6 @@ namespace Kite2.App.ViewModels
             cancellation?.Dispose();
         }
 
-        /// <summary>
-        /// Обновляет доступность всех команд разом. Список команд короткий и
-        /// общий, а отслеживать зависимости каждой отдельно — лишняя работа.
-        /// </summary>
-        /// <summary>
-        /// Пересчитывает доступность команд. Список нужен для явного обновления,
-        /// а общий запрос WPF — страховка: команда, забытая в списке, иначе осталась
-        /// бы выключенной навсегда, и об её поломке узнаёшь только по кнопке.
-        /// </summary>
         private void RefreshCommands()
         {
             foreach (RelayCommand command in _commands)

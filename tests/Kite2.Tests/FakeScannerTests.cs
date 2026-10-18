@@ -4,10 +4,6 @@ using Kite2.Core;
 
 namespace Kite2.Tests
 {
-    /// <summary>
-    /// Проверки тестового режима: нарисованные страницы должны быть пригодны для
-    /// проверки всего остального: белый лист, номер страницы и полоса градаций.
-    /// </summary>
     public static class FakeScannerTests
     {
         [Test("Тестовый режим включается ключом запуска")]
@@ -64,9 +60,6 @@ namespace Kite2.Tests
             }
         }
 
-        /// <summary>
-        /// Рисует одну серию страниц и отдаёт пути к готовым файлам.
-        /// </summary>
         private static string[] CapturePages(CaptureColour colour)
         {
             FakeScanner.EnableFromArguments(new[] { FakeScanner.Switch });

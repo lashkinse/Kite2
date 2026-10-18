@@ -2,9 +2,6 @@ using Kite2.Core;
 
 namespace Kite2.Tests
 {
-    /// <summary>
-    /// Проверки разбора файла настроек.
-    /// </summary>
     public static class AppSettingsTests
     {
         [Test("Индекс источника читается из строки настроек")]

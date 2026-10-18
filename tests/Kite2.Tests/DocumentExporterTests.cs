@@ -8,9 +8,6 @@ using Kite2.Core;
 
 namespace Kite2.Tests
 {
-    /// <summary>
-    /// Проверки сохранения документа во всех поддерживаемых форматах.
-    /// </summary>
     public static class DocumentExporterTests
     {
         [Test("Документ сохраняется в PDF под запрошенным именем")]
@@ -203,10 +200,6 @@ namespace Kite2.Tests
 
         // --- вспомогательное ---------------------------------------------------
 
-        /// <summary>
-        /// Готовит указанное число страниц: белый лист нужного размера с рамкой,
-        /// чтобы страницы в документе было видно глазом.
-        /// </summary>
         private static IReadOnlyList<string> Pages(TemporaryFolder folder, int count, bool gradient = false)
         {
             var pages = new string[count];

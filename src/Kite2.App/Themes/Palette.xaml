@@ -9,7 +9,6 @@
          никто не ссылается, легко разъезжается со своим местом: в палитре остаётся
          старая цифра, а в разметке — другая. -->
 
-    <!-- Фон и поверхности -->
     <SolidColorBrush x:Key="Canvas" Color="#E9E9E9" />
     <SolidColorBrush x:Key="Page" Color="#FFFFFF" />
     <SolidColorBrush x:Key="PageBorder" Color="#BFBFBF" />
@@ -36,10 +35,8 @@
          поверх тёмной панели и выглядит как опечатка, поэтому своя. -->
     <SolidColorBrush x:Key="FocusBorder" Color="#8AB4E8" />
 
-    <!-- Ошибка: значок окна сообщения -->
     <SolidColorBrush x:Key="Danger" Color="#C42B1C" />
 
-    <!-- Текст -->
     <SolidColorBrush x:Key="TextOnBar" Color="#FFFFFF" />
     <SolidColorBrush x:Key="TextOnAccent" Color="#FFFFFF" />
 
@@ -51,16 +48,13 @@
     <SolidColorBrush x:Key="TextPrimary" Color="#1A1A1A" />
     <SolidColorBrush x:Key="TextSecondary" Color="#6E6E6E" />
 
-    <!-- Уведомление о ходе работы -->
     <SolidColorBrush x:Key="Toast" Color="#2F2F2F" />
 
-    <!-- Размеры -->
     <sys:Double x:Key="BarHeight">76</sys:Double>
     <sys:Double x:Key="NoticeHeight">36</sys:Double>
     <sys:Double x:Key="RailWidth">176</sys:Double>
     <CornerRadius x:Key="Corner">4</CornerRadius>
 
-    <!-- Шрифты -->
     <FontFamily x:Key="UiFont">Segoe UI</FontFamily>
 
     <sys:Double x:Key="FontSizeUi">12</sys:Double>

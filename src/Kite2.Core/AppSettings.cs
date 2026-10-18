@@ -6,14 +6,9 @@ using NLog;
 
 namespace Kite2.Core
 {
-    /// <summary>
-    /// Пользовательские настройки в файле settings.ini рядом с рабочими каталогами.
-    /// </summary>
-    /// <remarks>
-    /// Отдельный файл, а не user.config: каталог установки может быть недоступен для
-    /// записи, а каталог AppData доступен всегда. Формат — обычный INI, чтобы
-    /// пользователь мог поправить значение руками.
-    /// </remarks>
+    // Отдельный INI-файл, а не user.config: каталог установки может быть недоступен
+    // для записи, а каталог AppData доступен всегда. Формат простой, чтобы
+    // пользователь мог поправить значение руками.
     public static class AppSettings
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
@@ -21,19 +16,12 @@ namespace Kite2.Core
         private const string Section = "Scan";
         private const string KeySourceIndex = "ScanSourceIndex";
 
-        /// <summary>Источник не выбран.</summary>
         public const int NotSelected = -1;
 
-        /// <summary>
-        /// Индекс TWAIN-источника в списке устройств; <see cref="NotSelected"/>, пока
-        /// пользователь не выбрал источник в «Параметрах».
-        /// </summary>
         public static int ScanSourceIndex { get; set; } = NotSelected;
 
-        /// <summary>
-        /// Читает настройки, а если файла нет — создаёт его со значениями по умолчанию,
-        /// чтобы пользователь всегда мог найти его и поправить вручную.
-        /// </summary>
+        // Отсутствующий файл создаётся со значениями по умолчанию: пользователь
+        // должен всегда находить файл и видеть, что в нём можно поправить.
         public static void Load()
         {
             if (!File.Exists(AppPaths.SettingsFile))
@@ -53,10 +41,6 @@ namespace Kite2.Core
             }
         }
 
-        /// <summary>
-        /// Сохраняет настройки. Ошибки записи не подавляются: молчаливая потеря
-        /// выбранного источника хуже, чем сообщение о ней.
-        /// </summary>
         public static void Save() => TrySave();
 
         private static void TrySave()
@@ -78,7 +62,6 @@ namespace Kite2.Core
             }
         }
 
-        /// <summary>Разбирает строку вида «ключ=значение». Комментарии и секции пропускаются.</summary>
         public static void Apply(string line)
         {
             string text = line.Trim();

@@ -1,9 +1,5 @@
 namespace Kite2.Core
 {
-    /// <summary>
-    /// Тексты, с которыми общается ядро. Интерфейс задаёт свой набор отдельно:
-    /// ядро сообщает о ситуациях, которых в нём самой нет.
-    /// </summary>
     public static class Messages
     {
         public const string Scanning = "Выполняется сканирование...\nПожалуйста, подождите";
@@ -16,7 +12,6 @@ namespace Kite2.Core
 
         public const string NothingSelected = "Сначала выделите участок страницы";
 
-        /// <summary>Сообщение о добавленных страницах.</summary>
         public static string PagesAdded(int count) => "Добавлено страниц: " + count;
 
         public const string ChooseSource = "Источник сканирования не выбран. Откройте «Параметры» и укажите источник.";

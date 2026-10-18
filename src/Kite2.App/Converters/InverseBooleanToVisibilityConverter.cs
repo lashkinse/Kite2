@@ -5,13 +5,8 @@ using System.Windows.Data;
 
 namespace Kite2.App.Converters
 {
-    /// <summary>
-    /// Показывает элемент, когда значение истина. Необратный — наоборот.
-    /// </summary>
-    /// <remarks>
-    /// В WPF есть только прямой преобразователь, а в разметке он нужен и обратный:
-    /// так прячутся элементы, которые показывать незачем.
-    /// </remarks>
+    // В WPF есть только прямой преобразователь, а в разметке он нужен и обратный:
+// так прячутся элементы, которые показывать незачем.
     [ValueConversion(typeof(bool), typeof(Visibility))]
     public sealed class InverseBooleanToVisibilityConverter : IValueConverter
     {

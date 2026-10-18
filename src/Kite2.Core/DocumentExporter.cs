@@ -8,28 +8,19 @@ using iTextSharp.text.pdf;
 
 namespace Kite2.Core
 {
-    /// <summary>
-    /// Сборка отсканированных страниц в один файл. Формат определяется расширением пути.
-    /// </summary>
     public static class DocumentExporter
     {
-        /// <summary>Лист A4 при 150 dpi — в него масштабируются страницы многостраничного TIFF.</summary>
+        // Лист A4 при 150 dpi — в него масштабируются страницы многостраничного TIFF.
         private const uint PageA4HalfWidth = 1240;
 
         private const uint PageA4HalfHeight = 1754;
 
-        /// <summary>Поддерживаемые форматы с их расширениями.</summary>
         public static readonly IReadOnlyList<string> SupportedExtensions = new[] { ".pdf", ".zip", ".tif", ".jpg", ".png" };
 
-        /// <summary>
-        /// Собирает документ и кладёт его под запрошенным именем.
-        /// </summary>
-        /// <remarks>
-        /// Сначала файл пишется рядом под временным именем и только потом переезжает на
-        /// место: PDF собирается по частям, и обрывок на середине выглядел бы как
-        /// готовый документ. Временное имя берётся в той же папке — перенос работает
-        /// только внутри одного тома.
-        /// </remarks>
+        // Сначала файл пишется рядом под временным именем и только потом переезжает
+        // на место: PDF собирается по частям, и обрывок на середине выглядел бы как
+        // готовый документ. Временное имя берётся в той же папке — перенос работает
+        // только внутри одного тома.
         public static void Export(IReadOnlyList<string> pages, string filePath, ScanMode mode)
         {
             if (pages == null || pages.Count == 0)
@@ -74,8 +65,6 @@ namespace Kite2.Core
             return false;
         }
 
-        /// <summary>Убирает метку черновика из имён и переносит файлы на место.</summary>
-        /// <returns>Сколько файлов переехало.</returns>
         private static int Promote(string folder, string name, string mark)
         {
             string[] draft = Directory.GetFiles(folder, name + mark + "*");
@@ -123,10 +112,6 @@ namespace Kite2.Core
             }
         }
 
-        /// <summary>
-        /// Цветные страницы попадают в PDF как есть, сжатием JPEG. Страницы режима
-        /// «Ч/Б» идут отдельным путём: серыми и без потерь.
-        /// </summary>
         private static void SaveAsPdf(IReadOnlyList<string> pages, string filePath, ScanMode mode)
         {
             string scratch = CreateScratchFolder();
@@ -210,13 +195,8 @@ namespace Kite2.Core
             }
         }
 
-        /// <summary>
-        /// Цветная страница добавляется как есть, сжатием JPEG.
-        /// </summary>
-        /// <remarks>
-        /// Файл передаётся по имени, а не потоком: iText читает картинку при закрытии
-        /// документа, и закрытый поток к тому моменту уже нечитаем.
-        /// </remarks>
+        // Файл передаётся по имени, а не потоком: iText читает картинку при закрытии
+        // документа, и закрытый поток к тому моменту уже нечитаем.
         private static void AddJpegPage(Document document, string filePath)
         {
             iTextSharp.text.Image page = iTextSharp.text.Image.GetInstance(filePath);
@@ -227,15 +207,10 @@ namespace Kite2.Core
             document.Add((IElement)page);
         }
 
-        /// <summary>
-        /// Страница режима «Ч/Б» уходит в PDF серой и без потерь.
-        /// </summary>
-        /// <remarks>
-        /// Отсечки по порогу быть не должно: она убивала всё светлее 127, и
-        /// светло-серые линии исчезали из документа. Однобитный CCITT отвергнут вместе
-        /// с отсечкой, которой он требует: экономия не стоит потери полутонов.
-        /// Сжатие — Deflate: не портит и понимается всеми просмотрщиками.
-        /// </remarks>
+        // Отсечки по порогу быть не должно: она убивала всё светлее 127, и
+        // светло-серые линии исчезали из документа. Однобитный CCITT отвергнут вместе
+        // с отсечкой, которой он требует: экономия не стоит потери полутонов.
+        // Сжатие — Deflate: не портит и понимается всеми просмотрщиками.
         private static void AddGreyscalePage(Document document, string filePath, string scratch)
         {
             ImageMagickSetup.EnsureStarted();
@@ -310,15 +285,8 @@ namespace Kite2.Core
             }
         }
 
-        /// <summary>
-        /// Страницы копируются в отдельные файлы: несколько страниц в одну картинку
-        /// не помещаются. Для одной страницы остаётся запрошенное имя, для нескольких
-        /// к имени добавляется номер.
-        /// </summary>
-        /// <remarks>
-        /// PNG не принимает переиспользование JPEG: файл страницы перекодируется, иначе
-        /// под именем .png лежал бы JPEG, а такие файлы некоторые просмотрщики не открывают.
-        /// </remarks>
+        // PNG не принимает переименование JPEG: файл страницы перекодируется, иначе
+        // под именем .png лежал бы JPEG, а такие файлы некоторые просмотрщики не открывают.
         private static void SaveAsPictures(IReadOnlyList<string> pages, string filePath, string extension)
         {
             bool convert = !string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase);
@@ -347,7 +315,6 @@ namespace Kite2.Core
             }
         }
 
-        /// <summary>Перекодирует страницу в заданный формат без потерь.</summary>
         private static void SavePicture(string source, string target)
         {
             ImageMagickSetup.EnsureStarted();
