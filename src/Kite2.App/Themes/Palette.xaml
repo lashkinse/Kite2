@@ -3,10 +3,13 @@
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
     <!-- Палитра и размеры. Взяты из прежней версии программы без изменений: оформление
-         должно выглядеть так же, иначе переход на WPF будет виден глазом. -->
+         должно выглядеть так же, иначе переход на WPF будет виден глазом.
+
+         Здесь только то, чем разметка действительно пользуется. Ресурс, на который
+         никто не ссылается, легко разъезжается со своим местом: в палитре остаётся
+         старая цифра, а в разметке — другая. -->
 
     <!-- Фон и поверхности -->
-    <Color x:Key="CanvasColor">#E9E9E9</Color>
     <SolidColorBrush x:Key="Canvas" Color="#E9E9E9" />
     <SolidColorBrush x:Key="Page" Color="#FFFFFF" />
     <SolidColorBrush x:Key="PageBorder" Color="#BFBFBF" />
@@ -14,30 +17,35 @@
     <SolidColorBrush x:Key="Header" Color="#2E2E2E" />
     <SolidColorBrush x:Key="Rail" Color="#FAFAFA" />
     <SolidColorBrush x:Key="Hairline" Color="#D4D4D4" />
-    <SolidColorBrush x:Key="ScrollTrack" Color="#EAEAEA" />
-    <SolidColorBrush x:Key="ViewTrack" Color="#DCDCDC" />
-    <SolidColorBrush x:Key="ScrollThumb" Color="#8A8A8A" />
-    <SolidColorBrush x:Key="ZoomPlate" Color="#F7F7F7" />
 
-    <!-- Акцентный цвет: главное действие и выделение -->
+    <!-- Светлее панели: подложка под кнопкой при наведении и черта между группами
+         кнопок. Цвет один и тот же, поэтому и ресурс один. -->
+    <SolidColorBrush x:Key="BarHover" Color="#4A4A4A" />
+
+    <!-- Акцентный цвет: главное действие и подложка выбранной страницы -->
     <SolidColorBrush x:Key="Accent" Color="#1473E6" />
     <SolidColorBrush x:Key="AccentHover" Color="#3A90F5" />
     <SolidColorBrush x:Key="AccentPressed" Color="#0C5FC2" />
     <SolidColorBrush x:Key="Selection" Color="#CFE3FB" />
 
-    <!-- Ошибка: значок окна сообщения и подсветка полосы уведомления -->
+    <!-- Рамка выделения на странице и рамка отметки на панели команд. Цвет один:
+         отметка на кнопке должна читаться как то же выделение, а не как свой знак. -->
+    <SolidColorBrush x:Key="SelectionStroke" Color="#1A6FC4" />
+
+    <!-- Ошибка: значок окна сообщения -->
     <SolidColorBrush x:Key="Danger" Color="#C42B1C" />
 
     <!-- Текст -->
     <SolidColorBrush x:Key="TextOnBar" Color="#FFFFFF" />
     <SolidColorBrush x:Key="TextOnAccent" Color="#FFFFFF" />
-  <!-- Подсказка с сочетанием клавиш на панели команд. На тёмном фоне и на
-       акцентном она разная: серая на синем читалась плохо. -->
-  <SolidColorBrush x:Key="TextOnBarHint" Color="#9A9A9A" />
-  <SolidColorBrush x:Key="TextOnAccentHint" Color="#CFE3FB" />
+
+    <!-- Подсказка с сочетанием клавиш на панели команд. На тёмном фоне и на
+         акцентном она разная: серая на синем читалась плохо. -->
+    <SolidColorBrush x:Key="TextOnBarHint" Color="#9A9A9A" />
+    <SolidColorBrush x:Key="TextOnAccentHint" Color="#CFE3FB" />
+
     <SolidColorBrush x:Key="TextPrimary" Color="#1A1A1A" />
     <SolidColorBrush x:Key="TextSecondary" Color="#6E6E6E" />
-    <SolidColorBrush x:Key="TextDisabled" Color="#8C8C8C" />
 
     <!-- Уведомление о ходе работы -->
     <SolidColorBrush x:Key="Toast" Color="#2F2F2F" />
@@ -46,12 +54,10 @@
     <sys:Double x:Key="BarHeight">76</sys:Double>
     <sys:Double x:Key="NoticeHeight">36</sys:Double>
     <sys:Double x:Key="RailWidth">176</sys:Double>
-    <sys:Double x:Key="PageMargin">24</sys:Double>
     <CornerRadius x:Key="Corner">4</CornerRadius>
 
     <!-- Шрифты -->
     <FontFamily x:Key="UiFont">Segoe UI</FontFamily>
-    <FontFamily x:Key="UiStrongFont">Segoe UI Semibold</FontFamily>
 
     <sys:Double x:Key="FontSizeUi">12</sys:Double>
     <sys:Double x:Key="FontSizeSmall">11</sys:Double>

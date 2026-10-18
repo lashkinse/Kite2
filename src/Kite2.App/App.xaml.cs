@@ -16,6 +16,8 @@ namespace Kite2.App
     /// </summary>
     public partial class App : Application
     {
+        private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+
         /// <summary>
         /// Главное окно программы.
         /// </summary>
@@ -93,7 +95,7 @@ namespace Kite2.App
             catch (Exception ex)
             {
                 // Без значка программа работает, а из-за него ронять запуск нельзя.
-                LogManager.GetCurrentClassLogger().Warn("Значок программы не загружен: {0}", ex.Message);
+                Log.Warn("Значок программы не загружен: {0}", ex.Message);
 
                 return null;
             }

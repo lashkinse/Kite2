@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-
 namespace Kite2.Core
 {
     /// <summary>
@@ -37,8 +34,5 @@ namespace Kite2.Core
 
             AppPaths.EmptyFolder(Directory);
         }
-
-        /// <summary>Отбрасывает всё, что накопилось в каталоге результатов.</summary>
-        public void ClearResults() => AppPaths.EmptyFolder(Directory);
     }
 }

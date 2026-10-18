@@ -43,7 +43,7 @@
              отдельной страницей вынесены из неё в плавающую панель у колонки.
              Панель прижата влево, а не отцентрована: с набором кнопок посредине
              панель уезжает от левого края при разной длине подсказок. -->
-        <Border Grid.Row="0" Background="{StaticResource Bar}" Height="76">
+        <Border Grid.Row="0" Background="{StaticResource Bar}" Height="{StaticResource BarHeight}">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0,0,0">
 
                 <Button Style="{StaticResource CommandButtonStyle}" Content="Создать" controls:CommandBar.Hint="Ctrl+N" Tag="{StaticResource IconNew}"

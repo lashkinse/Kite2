@@ -44,18 +44,18 @@
                                  участках страницы, а точки показывают, где за него
                                  взяться. -->
                             <Rectangle x:Name="Selection"
-                                       Stroke="#1A6FC4"
+                                       Stroke="{StaticResource SelectionStroke}"
                                        StrokeThickness="1.5"
                                        StrokeDashArray="3,2"
                                        Visibility="Collapsed" />
 
-                            <Rectangle Width="6" Height="6" Fill="#1A6FC4" RadiusX="1" RadiusY="1"
+                            <Rectangle Width="6" Height="6" Fill="{StaticResource SelectionStroke}" RadiusX="1" RadiusY="1"
                                        x:Name="HandleTopLeft" Visibility="Collapsed" />
-                            <Rectangle Width="6" Height="6" Fill="#1A6FC4" RadiusX="1" RadiusY="1"
+                            <Rectangle Width="6" Height="6" Fill="{StaticResource SelectionStroke}" RadiusX="1" RadiusY="1"
                                        x:Name="HandleTopRight" Visibility="Collapsed" />
-                            <Rectangle Width="6" Height="6" Fill="#1A6FC4" RadiusX="1" RadiusY="1"
+                            <Rectangle Width="6" Height="6" Fill="{StaticResource SelectionStroke}" RadiusX="1" RadiusY="1"
                                        x:Name="HandleBottomLeft" Visibility="Collapsed" />
-                            <Rectangle Width="6" Height="6" Fill="#1A6FC4" RadiusX="1" RadiusY="1"
+                            <Rectangle Width="6" Height="6" Fill="{StaticResource SelectionStroke}" RadiusX="1" RadiusY="1"
                                        x:Name="HandleBottomRight" Visibility="Collapsed" />
                         </Canvas>
                     </Grid>
@@ -74,7 +74,7 @@
                     Visibility="Collapsed"
                     IsHitTestVisible="False"
                     Background="White"
-                    BorderBrush="#1A6FC4"
+                    BorderBrush="{StaticResource SelectionStroke}"
                     BorderThickness="1"
                     CornerRadius="3"
                     Padding="6,2">
@@ -91,7 +91,7 @@
                     Focusable="False"
                     Cursor="Hand"
                     Background="White"
-                    BorderBrush="#D4D4D4"
+                    BorderBrush="{StaticResource Hairline}"
                     BorderThickness="1"
                     ToolTip="Сохранить выделенный участок страницы файлом PNG"
                     Click="OnCropClick">
@@ -106,7 +106,7 @@
                                 CornerRadius="3">
                             <Path Style="{StaticResource ChipIconStyle}"
                                   Data="{StaticResource IconSaveFragment}"
-                                  Fill="#1A6FC4" />
+                                  Fill="{StaticResource SelectionStroke}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">

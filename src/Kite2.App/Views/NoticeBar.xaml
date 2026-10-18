@@ -16,9 +16,9 @@
     </UserControl.Style>
 
     <Border x:Name="Plate"
-            CornerRadius="4"
+            CornerRadius="{StaticResource Corner}"
             Padding="16,0"
-            Height="36"
+            Height="{StaticResource NoticeHeight}"
             SnapsToDevicePixels="True">
         <Border.Style>
             <Style TargetType="Border">
@@ -54,7 +54,7 @@
                     Padding="10,0"
                     Cursor="Hand"
                     Foreground="White"
-                    Background="#4A4A4A"
+                    Background="{StaticResource BarHover}"
                     BorderThickness="0"
                     FocusVisualStyle="{x:Null}">
                 <Button.Template>

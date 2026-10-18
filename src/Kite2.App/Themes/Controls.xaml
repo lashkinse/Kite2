@@ -30,7 +30,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="Transparent"
                                 BorderThickness="1"
-                                CornerRadius="4">
+                                CornerRadius="{StaticResource Corner}">
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Path Style="{StaticResource CommandIconStyle}"
                                       Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
@@ -56,7 +56,7 @@
                         <Rectangle x:Name="NextFrame"
                                    RadiusX="5"
                                    RadiusY="5"
-                                   Stroke="#1A6FC4"
+                                   Stroke="{StaticResource SelectionStroke}"
                                    StrokeThickness="1.5"
                                    StrokeDashArray="3,2"
                                    IsHitTestVisible="False"
@@ -69,7 +69,7 @@
                             <Setter TargetName="Plate" Property="BorderBrush" Value="#8AB4E8" />
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Plate" Property="Background" Value="#4A4A4A" />
+                            <Setter TargetName="Plate" Property="Background" Value="{StaticResource BarHover}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Plate" Property="Background" Value="#2E2E2E" />
@@ -96,7 +96,7 @@
                             Background="{StaticResource Accent}"
                             BorderBrush="Transparent"
                             BorderThickness="1"
-                            CornerRadius="4">
+                            CornerRadius="{StaticResource Corner}">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Path Style="{StaticResource CommandIconStyle}"
                                   Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
@@ -155,7 +155,7 @@
                             Background="{TemplateBinding Background}"
                             BorderBrush="Transparent"
                             BorderThickness="1"
-                            CornerRadius="4">
+                            CornerRadius="{StaticResource Corner}">
                         <Path Style="{StaticResource CommandIconStyle}"
                               Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
                               Stroke="{StaticResource TextOnBar}" />
@@ -165,7 +165,7 @@
                             <Setter TargetName="Plate" Property="BorderBrush" Value="#8AB4E8" />
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Plate" Property="Background" Value="#4A4A4A" />
+                            <Setter TargetName="Plate" Property="Background" Value="{StaticResource BarHover}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Plate" Property="Background" Value="{StaticResource Header}" />
@@ -187,40 +187,7 @@
         <Setter Property="Height" Value="40" />
         <Setter Property="Margin" Value="14,0" />
         <Setter Property="VerticalAlignment" Value="Center" />
-        <Setter Property="Fill" Value="#4A4A4A" />
+        <Setter Property="Fill" Value="{StaticResource BarHover}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
     </Style>
-
-    <!-- Узкая полоса прокрутки: в прежней версии она тоже была тонкой, иначе
-         колонка страниц съедала треть экрана. -->
-    <Style x:Key="SlimScrollBarStyle" TargetType="ScrollBar">
-        <Setter Property="Width" Value="12" />
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="ScrollBar">
-                    <Grid Background="{TemplateBinding Background}">
-                        <Track x:Name="PART_Track" IsDirectionReversed="True">
-                            <Track.Thumb>
-                                <Thumb>
-                                    <Thumb.Template>
-                                        <ControlTemplate TargetType="Thumb">
-                                            <Border Background="{StaticResource ScrollThumb}" CornerRadius="3" />
-                                        </ControlTemplate>
-                                    </Thumb.Template>
-                                </Thumb>
-                            </Track.Thumb>
-                            <Track.IncreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" />
-                            </Track.IncreaseRepeatButton>
-                            <Track.DecreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" />
-                            </Track.DecreaseRepeatButton>
-                        </Track>
-                    </Grid>
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
-    </Style>
-
 </ResourceDictionary>
