@@ -75,13 +75,14 @@
         </Setter>
     </Style>
 
-    <!-- Значок внутри круга окна сообщения: тот же рисунок, но мельче — в круг
-         знак иначе не помещался. -->
+    <!-- Значок внутри круга окна сообщения. Рисунок тот же, но знак занимает почти
+         весь круг: при уменьшении до 0.62 краска знака была 8 пикселей в круге
+         26, и он читался как точка. -->
     <Style x:Key="BadgeIconStyle" TargetType="Path" BasedOn="{StaticResource CommandIconStyle}">
         <Setter Property="StrokeThickness" Value="2.4" />
         <Setter Property="RenderTransform">
             <Setter.Value>
-                <ScaleTransform ScaleX="0.62" ScaleY="0.62" CenterX="12" CenterY="12" />
+                <ScaleTransform ScaleX="1.1" ScaleY="1.1" CenterX="12" CenterY="12" />
             </Setter.Value>
         </Setter>
     </Style>
