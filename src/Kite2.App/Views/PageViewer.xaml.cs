@@ -117,8 +117,6 @@ namespace Kite2.App.Views
 
             _scrollEndTimer.Stop();
             _scrollEndTimer.Start();
-
-            FollowSheet();
         }
 
         private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs args)
@@ -387,11 +385,6 @@ namespace Kite2.App.Views
 
             Canvas.SetLeft(Sheet, _dragLeft + current.X - _dragOrigin.X);
             Canvas.SetTop(Sheet, _dragTop + current.Y - _dragOrigin.Y);
-
-            // Кнопка сохранения и подсказка лежат не в листе, а поверх него:
-            // без этого шага они остались бы на месте, пока лист уезжал, и оторвались
-            // бы от своей рамки.
-            FollowSheet();
         }
 
         /// <summary>
@@ -501,25 +494,16 @@ namespace Kite2.App.Views
         {
             Point corner = Sheet.TranslatePoint(new Point(right, bottom), Overlay);
 
-            double left = corner.X + ScissorsGap;
-            double top = corner.Y + ScissorsGap;
-
-            // У края окна кнопка переворачивается на другую сторону рамки, иначе
-            // она уезжала бы за пределы видимой части.
-            if (left + FragmentSave.Width > ActualWidth - 4)
-                left = corner.X - FragmentSave.Width - ScissorsGap;
-
-            if (top + FragmentSave.Height > ActualHeight - 4)
-                top = corner.Y - FragmentSave.Height - ScissorsGap;
-
-            Canvas.SetLeft(FragmentSave, Math.Max(0, left));
-            Canvas.SetTop(FragmentSave, Math.Max(0, top));
+            Canvas.SetLeft(FragmentSave, Math.Max(0, corner.X + ScissorsGap));
+            Canvas.SetTop(FragmentSave, Math.Max(0, corner.Y + ScissorsGap));
 
             FragmentSave.Visibility = Visibility.Visible;
         }
 
         /// <summary>
-        /// Ставит подсказку «Esc — отменить» у левого верхнего угла рамки.
+        /// Ставит подсказку «Esc — отменить» у левого верхнего угла рамки. Положение
+        /// задаётся один раз, когда появляется выделение: дальше ни перенос листа, ни
+        /// прокрутка их не двигают.
         /// </summary>
         private void PlaceHint(double left, double top)
         {
@@ -531,26 +515,8 @@ namespace Kite2.App.Views
 
             double y = corner.Y - SelectionHint.ActualHeight - HintGap;
 
-            // У самого верха листа над рамкой места нет: подсказка переходит под
-            // верхний край, иначе её срезало бы.
-            if (y < 2)
-                y = corner.Y + HintGap;
-
             Canvas.SetLeft(SelectionHint, Math.Max(0, corner.X - HintGap));
-            Canvas.SetTop(SelectionHint, y);
-        }
-
-        /// <summary>
-        /// Держит кнопку сохранения и подсказку у рамки выделения. Они лежат в слое
-        /// поверх листа, а рамка — внутри листа, и без этого шага при переносе или
-        /// прокрутке они остались бы на месте и оторвались бы от своего угла.
-        /// </summary>
-        private void FollowSheet()
-        {
-            if (Selection.Visibility != Visibility.Visible)
-                return;
-
-            LayoutSelection();
+            Canvas.SetTop(SelectionHint, Math.Max(0, y));
         }
 
         /// <summary>Сообщает, что лист поехал: true — едет, false — встал.</summary>
@@ -558,6 +524,7 @@ namespace Kite2.App.Views
         {
             SheetDragChanged?.Invoke(this, dragging);
         }
+
         /// <summary>Дискета нажата: фрагмент под рамкой выделения запрошен.</summary>
         private void OnCropClick(object sender, RoutedEventArgs e)
         {
