@@ -28,16 +28,11 @@
                      Height="26"
                      VerticalAlignment="Top" />
 
-            <TextBlock x:Name="BadgeText"
-                       Grid.Column="0"
-                       Text="!"
-                       FontFamily="Segoe UI"
-                       FontSize="16"
-                       FontWeight="Bold"
-                       Foreground="White"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       IsHitTestVisible="False" />
+            <Path x:Name="BadgeText"
+                  Grid.Column="0"
+                  Style="{StaticResource BadgeIconStyle}"
+                  Data="{StaticResource IconQuestion}"
+                  Stroke="White" />
 
             <TextBlock x:Name="Caption"
                        Grid.Column="2"

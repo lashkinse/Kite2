@@ -249,7 +249,11 @@ namespace Kite2.App.ViewModels
                 DisposeScanCancellation();
                 SetBusy(false);
 
-                if (NoticeVisible && !CancelWanted)
+                // Плашка «Выполняется сканирование» убирается всегда: после ошибки
+                // она иначе осталась бы висеть, а её «Отмена» уже ничего не отменяет,
+                // потому что источник отмены освобождён. Плашку с результатом не трогаем:
+                // она убирается сама.
+                if (NoticeVisible && !NoticeIsResult)
                     HideNotice();
             }
         }

@@ -71,31 +71,49 @@
              лист, а сама кнопка остаётся доступной. С заливкой она перехватывала
              бы щелчки по всему листу. -->
         <Canvas x:Name="Overlay">
+            <!-- Подсказка у левого верхнего угла рамки: иначе про отмену выделения
+                 приходилось бы помнить, а она появляется вместе с рамкой. -->
+            <Border x:Name="SelectionHint"
+                    Visibility="Collapsed"
+                    IsHitTestVisible="False"
+                    Background="White"
+                    BorderBrush="#1A6FC4"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    Padding="6,2">
+                <TextBlock Text="Esc — отменить"
+                           FontFamily="{StaticResource UiFont}"
+                           FontSize="{StaticResource FontSizeSmall}"
+                           Foreground="{StaticResource TextPrimary}" />
+            </Border>
+
             <Button x:Name="FragmentSave"
-                    Width="26"
-                    Height="26"
+                    Width="28"
+                    Height="28"
                     Visibility="Collapsed"
                     Focusable="False"
                     Cursor="Hand"
+                    Background="{StaticResource Accent}"
                     ToolTip="Сохранить выделенный участок страницы файлом PNG"
                     Click="OnCropClick">
                 <Button.Template>
                     <ControlTemplate TargetType="Button">
-                        <!-- Подложки нет: на белом листе белый квадрат выглядел бы
-                             дырой. Значок стоит прямо на странице, а при наведении
-                             под ним появляется лёгкая подсветка — видно, что на него
-                             можно нажать. -->
+                        <!-- Кнопка залита акцентным цветом, как кнопки на панели:
+                             без заливки значок терялся на странице, а с белой
+                             подложкой выглядел дырой в листе. -->
                         <Border x:Name="Plate"
-                                Background="Transparent"
+                                Background="{TemplateBinding Background}"
                                 CornerRadius="3">
-                            <Path x:Name="Glyph"
-                                  Style="{StaticResource CommandIconStyle}"
+                            <Path Style="{StaticResource ChipIconStyle}"
                                   Data="{StaticResource IconSaveFragment}"
-                                  Stroke="#1A6FC4" />
+                                  Stroke="White" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Plate" Property="Background" Value="#DCEAFC" />
+                                <Setter TargetName="Plate" Property="Background" Value="{StaticResource AccentHover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Plate" Property="Background" Value="{StaticResource AccentPressed}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

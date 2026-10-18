@@ -90,12 +90,12 @@ namespace Kite2.App.Views
 
             if (kind == MessageKind.Error)
             {
-                BadgeText.Text = "!";
+                BadgeText.Data = (Geometry)FindResource("IconAlert");
                 Badge.Fill = (Brush)FindResource("Danger");
             }
             else
             {
-                BadgeText.Text = "?";
+                BadgeText.Data = (Geometry)FindResource("IconQuestion");
                 Badge.Fill = (Brush)FindResource("Accent");
             }
         }

@@ -46,8 +46,20 @@
          у обычных ножниц, — знак обрезки узнаётся сразу. -->
     <Geometry x:Key="IconCrop">M 6.4,19.6 A 2.6,2.6 0 1 1 6.4,14.4 A 2.6,2.6 0 1 1 6.4,19.6 Z M 17.6,19.6 A 2.6,2.6 0 1 1 17.6,14.4 A 2.6,2.6 0 1 1 17.6,19.6 Z M 8.4,14.9 L 18.4,4.4 M 15.6,14.9 L 5.6,4.4</Geometry>
 
+    <!-- Восклицательный знак и вопрос для окна сообщения. Рисуются линиями, а не
+         набором текста: буква в круге всегда стоит чуть выше или ниже середины из-за
+         высоты строки, и знак сбивается с центра. -->
+    <Geometry x:Key="IconAlert">M 12,5.5 L 12,14 M 12,17.9 L 12,18.1</Geometry>
+
+    <Geometry x:Key="IconQuestion">M 8.4,9 C 8.4,5.5 15.6,5.5 15.6,9 C 15.6,12 12,11.8 12,15 M 12,18 L 12,18.2</Geometry>
+
     <!-- Значки нарисованы на сетке 24 на 24 и увеличиваются преобразованием:
-         так сетка остаётся целой, а размер значка меняется в одном месте. -->
+         так сетка остаётся целой, а размер значка меняется в одном месте.
+
+         Преобразование именно Render, а не Layout: LayoutTransform в WPF
+         масштабирует от середины, но занимаемое место уменьшает, и содержимое
+         уезжает на четверть размера — значок встаёт не по центру. RenderTransform
+         двигает только рисунок, место остаётся, и центр остаётся центром. -->
     <Style x:Key="CommandIconStyle" TargetType="Path">
         <Setter Property="Width" Value="24" />
         <Setter Property="Height" Value="24" />
@@ -56,9 +68,30 @@
         <Setter Property="StrokeEndLineCap" Value="Round" />
         <Setter Property="StrokeLineJoin" Value="Round" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
-        <Setter Property="LayoutTransform">
+        <Setter Property="RenderTransform">
             <Setter.Value>
                 <ScaleTransform ScaleX="1.17" ScaleY="1.17" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Значок внутри круга окна сообщения: тот же рисунок, но мельче — в круг
+         знак иначе не помещался. -->
+    <Style x:Key="BadgeIconStyle" TargetType="Path" BasedOn="{StaticResource CommandIconStyle}">
+        <Setter Property="StrokeThickness" Value="2.4" />
+        <Setter Property="RenderTransform">
+            <Setter.Value>
+                <ScaleTransform ScaleX="0.62" ScaleY="0.62" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Значок на кнопке поверх страницы: та же сетка, но знак меньше — иначе он
+         занимал бы всю кнопку вплотную и не оставалось бы полей. -->
+    <Style x:Key="ChipIconStyle" TargetType="Path" BasedOn="{StaticResource CommandIconStyle}">
+        <Setter Property="RenderTransform">
+            <Setter.Value>
+                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
             </Setter.Value>
         </Setter>
     </Style>
