@@ -115,6 +115,53 @@
         </Setter>
     </Style>
 
+    <!-- Кнопка полосы над страницей: только значок, на светлом фоне рядом с
+         колонкой страниц. Подписи здесь не нужны — команды и так работают с
+         выбранной страницей, а сочетание клавиш написано во всплывающей
+         подсказке. -->
+    <Style x:Key="PageActionButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Margin" Value="0,3" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Plate"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                        <Path Style="{StaticResource CommandIconStyle}"
+                              Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                              Stroke="{StaticResource TextPrimary}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Plate" Property="BorderBrush" Value="{StaticResource Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Plate" Property="Background" Value="#E8F1FC" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Plate" Property="Background" Value="{StaticResource Selection}" />
+                        </Trigger>
+                        <!-- Без выбранной страницы команды не работают, и значки
+                             гаснут: полоса не зовёт на пустом месте. -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.25" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="ToolBarSeparatorStyle" TargetType="Rectangle">
         <Setter Property="Width" Value="1" />
         <Setter Property="Height" Value="40" />

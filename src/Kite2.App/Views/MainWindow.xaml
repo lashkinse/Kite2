@@ -15,7 +15,7 @@
         TextOptions.TextFormattingMode="Display">
 
     <!-- Главное окно: тёмная панель команд сверху, под ней рабочая область —
-         колонка страниц слева и просмотр выбранной страницы справа. -->
+         колонка страниц слева, полоса команд над выбранной страницей и просмотр. -->
 
     <!-- Горячие клавиши. Заданы на окне, а не на кнопках: работают при любом фокусе
          внутри программы, в том числе на колонке страниц и на листе. Выделения
@@ -63,35 +63,26 @@
 
                 <Button Style="{StaticResource CommandButtonStyle}" Content="Параметры" Tag="{StaticResource IconSettings}"
                         ToolTip="Выбрать источник сканирования" Command="{Binding SettingsCommand}" />
-
-                <Rectangle Style="{StaticResource ToolBarSeparatorStyle}" />
-
-                <Button Style="{StaticResource CommandButtonStyle}" Content="Удалить" controls:CommandBar.Hint="Del" Tag="{StaticResource IconDelete}"
-                        ToolTip="Удалить выбранную страницу (Del)" Command="{Binding DeletePageCommand}" />
-
-                <Button Style="{StaticResource CommandButtonStyle}" Content="Вверх" controls:CommandBar.Hint="Ctrl+↑" Tag="{StaticResource IconUp}"
-                        ToolTip="Переместить страницу выше (Ctrl+↑)" Command="{Binding MovePageUpCommand}" />
-
-                <Button Style="{StaticResource CommandButtonStyle}" Content="Вниз" controls:CommandBar.Hint="Ctrl+↓" Tag="{StaticResource IconDown}"
-                        ToolTip="Переместить страницу ниже (Ctrl+↓)" Command="{Binding MovePageDownCommand}" />
-
-                <Button Style="{StaticResource CommandButtonStyle}" Content="Повернуть" controls:CommandBar.Hint="Ctrl+R" Tag="{StaticResource IconRotate}"
-                        ToolTip="Повернуть страницу на 180° (Ctrl+R)" Command="{Binding RotatePageCommand}" />
             </StackPanel>
         </Border>
 
-        <!-- Рабочая область -->
+        <!-- Рабочая область: колонка страниц, полоса команд над выбранной
+             страницей и просмотр. Команды над страницей стоят рядом с ней, а не
+             в панели сверху, — там осталось только то, что относится ко всему
+             документу. -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <views:PageRail Grid.Column="0" />
-            <views:PageViewer x:Name="Viewer" Grid.Column="1" />
+            <views:PageActions Grid.Column="1" />
+            <views:PageViewer x:Name="Viewer" Grid.Column="2" />
 
             <!-- Плашка сообщения поверх рабочей области, в её правом нижнем углу. -->
-            <views:NoticeBar Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" />
+            <views:NoticeBar Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" />
         </Grid>
     </Grid>
 </Window>

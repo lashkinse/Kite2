@@ -1,0 +1,37 @@
+<UserControl x:Class="Kite2.App.Views.PageActions"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Width="44">
+
+    <!-- Полоса команд над выбранной страницей. Стоит вплотную к колонке
+         страниц, а не в панели сверху: эти команды относятся к одному листу,
+         и искать их надо там, где этот лист. -->
+    <Border Background="{StaticResource Rail}"
+            BorderBrush="{StaticResource Hairline}"
+            BorderThickness="0,0,1,0">
+        <StackPanel HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    Margin="0,10,0,0">
+
+            <Button Style="{StaticResource PageActionButtonStyle}"
+                    Tag="{StaticResource IconDelete}"
+                    ToolTip="Удалить страницу (Del)"
+                    Command="{Binding DeletePageCommand}" />
+
+            <Button Style="{StaticResource PageActionButtonStyle}"
+                    Tag="{StaticResource IconUp}"
+                    ToolTip="Переместить страницу выше (Ctrl+↑)"
+                    Command="{Binding MovePageUpCommand}" />
+
+            <Button Style="{StaticResource PageActionButtonStyle}"
+                    Tag="{StaticResource IconDown}"
+                    ToolTip="Переместить страницу ниже (Ctrl+↓)"
+                    Command="{Binding MovePageDownCommand}" />
+
+            <Button Style="{StaticResource PageActionButtonStyle}"
+                    Tag="{StaticResource IconRotate}"
+                    ToolTip="Повернуть страницу на 180° (Ctrl+R)"
+                    Command="{Binding RotatePageCommand}" />
+        </StackPanel>
+    </Border>
+</UserControl>
