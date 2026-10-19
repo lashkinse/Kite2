@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using ImageMagick;
-using iTextSharp.text;
-using iTextSharp.text.pdf;
+using PdfSharpCore.Drawing;
+using PdfSharpCore.Pdf;
 
 namespace Kite2.Core
 {
@@ -112,128 +115,153 @@ namespace Kite2.Core
             }
         }
 
+        // PDF собирает форк PDFsharp 1.50 — NAPS2.PdfSharp (сам PDFsharp 6-й версии
+        // уже AGPL, и iTextSharp был AGPL тоже, а этот форк — под MIT). Вкладка
+        // страниц происходит как у прежнего сборщика: без полей и с вписыванием
+        // пропорций; серые страницы уже серые с этапа композиции, поэтому
+        // отдельной конвертации, как раньше перед сборкой PDF, больше нет.
         private static void SaveAsPdf(IReadOnlyList<string> pages, string filePath, ScanMode mode)
         {
-            string scratch = CreateScratchFolder();
+            var document = new PdfDocument();
 
-            try
+            foreach (string pageFile in pages)
             {
-                using (var document = new Document(PageSize.A4))
-                using (var output = new FileStream(filePath, FileMode.Create, FileAccess.Write))
-                using (PdfWriter.GetInstance(document, output))
+                PdfPage page = document.AddPage();
+                page.Size = PdfSharpCore.PageSize.A4;
+
+                // Вписывание с сохранением пропорций: обычный лист совпадает с A4
+                // ровно, а перевёрнутый или нестандартный скан лёг без вытягивания,
+                // и выравнивается по центру листа.
+                using (XGraphics graphics = XGraphics.FromPdfPage(page))
                 {
-                    document.SetMargins(0f, 0f, 0f, 0f);
-                    document.Open();
+                    var source = new BitmapPageSource(pageFile, mode == ScanMode.Greyscale);
+
+                    double scale = Math.Min(
+                        page.Width.Point / source.Width,
+                        page.Height.Point / source.Height);
+
+                    double width = source.Width * scale;
+                    double height = source.Height * scale;
+
+                    graphics.DrawImage(
+                        XImage.FromImageSource(source),
+                        (page.Width.Point - width) / 2,
+                        0,
+                        width,
+                        height);
+                }
+            }
+
+            document.Save(filePath);
+            document.Close();
+        }
+
+        // Поставщик страниц для сборщика PDF: форк PDFsharp тянет картинку своим
+        // контрактом IImageSource (в NAPS2 под то же место своя реализация), а у нас
+        // всё рисуется на System.Drawing.
+        private sealed class BitmapPageSource : IImageSource
+        {
+            private readonly byte[] _bytes;
+            private readonly string _path;
+            private readonly bool _jpeg;
+
+            // flatGrey запрещает JPEG-путь: серая страница — однокомпонентный JPEG,
+            // а сборщик объявляет JPEG внутри PDF только как DeviceRGB, и
+            // обсуждение формата зависело бы от снисходительности просмотрщиков.
+            public BitmapPageSource(string path, bool flatGrey)
+            {
+                _path = path;
+                _bytes = File.ReadAllBytes(path);
+
+                using (var stream = new MemoryStream(_bytes))
+                using (var image = new Bitmap(stream))
+                {
+                    Width = image.Width;
+                    Height = image.Height;
+
+                    // Определяется формат по содержимому, а не по расширению:
+                    // внутри документа расхождение имени и содержимого недопустимо.
+                    // Имя типа уточняется полностью: без него слово ImageFormat
+                    // указывает на одноимённое свойство интерфейса.
+                    _jpeg = image.RawFormat.Equals(System.Drawing.Imaging.ImageFormat.Jpeg) && !flatGrey;
+                }
+
+                ImageFormat = _jpeg ? XImageFormat.Jpeg : XImageFormat.Rgb24;
+            }
+
+            public int Width { get; }
+
+            public int Height { get; }
+
+            public string Name => _path;
+
+            public XImageFormat ImageFormat { get; }
+
+            public void SaveAsJpeg(MemoryStream stream)
+            {
+                if (_jpeg)
+                {
+                    // Пересжатие ухудшило бы качество и копило артефакты: байты
+                    // уезжают в документ как есть.
+                    stream.Write(_bytes, 0, _bytes.Length);
+                    return;
+                }
+
+                using (var source = new MemoryStream(_bytes))
+                using (var image = new Bitmap(source))
+                    image.Save(stream, JpegEncoder(), JpegParameters(92));
+            }
+
+            public void SaveAsPdfBitmap(MemoryStream stream)
+            {
+                // Контракт сборщика (PdfSharpCore.Pdf.Advanced.PdfImage): буфер
+                // как у LockBits в Format24bppRgb — BGR-байты, верхние строки
+                // первыми, каждая строка добита до 4 байт. Переворот строк и
+                // порядок каналов сборщик разбирает сам.
+                using (var source = new MemoryStream(_bytes))
+                using (var image = new Bitmap(source))
+                {
+                    var rectangle = new Rectangle(0, 0, image.Width, image.Height);
+                    var data = image.LockBits(rectangle, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
 
                     try
                     {
-                        for (int i = 0; i < pages.Count; i++)
-                        {
-                            // Новый лист открывается перед каждой страницей, кроме
-                            // первой: иначе в конец документа добавляется пустой.
-                            if (i > 0)
-                                document.NewPage();
+                        var buffer = new byte[data.Stride * image.Height];
 
-                            if (mode == ScanMode.Greyscale)
-                                AddGreyscalePage(document, pages[i], scratch);
-                            else
-                                AddJpegPage(document, pages[i]);
-                        }
-
-                        document.Close();
+                        Marshal.Copy(data.Scan0, buffer, 0, buffer.Length);
+                        stream.Write(buffer, 0, buffer.Length);
                     }
-                    catch
+                    finally
                     {
-                        // При ошибке на первой же странице документ закрывается пустым,
-                        // и iText поверх настоящей причины бросает «The document has no
-                        // pages»: диагностировать потом нечего.
-                        CloseQuietly(document);
-                        throw;
+                        image.UnlockBits(data);
                     }
                 }
             }
-            finally
+
+            public void SaveAsPdfIndexedBitmap(MemoryStream stream)
             {
-                RemoveScratch(scratch);
+                // Палитровые страницы не производятся: страница в документе либо
+                // JPEG, либо плоский RGB.
+                throw new NotSupportedException("Однобитные страницы в PDF не вкладываются.");
             }
-        }
 
-        private static string CreateScratchFolder()
-        {
-            string folder = Path.Combine(Path.GetTempPath(), "kite2-pdf-" + Guid.NewGuid().ToString("N"));
-
-            Directory.CreateDirectory(folder);
-
-            return folder;
-        }
-
-        private static void RemoveScratch(string folder)
-        {
-            try
+            private static ImageCodecInfo JpegEncoder()
             {
-                Directory.Delete(folder, true);
+                foreach (ImageCodecInfo codec in ImageCodecInfo.GetImageEncoders())
+                {
+                    if (codec.FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid)
+                        return codec;
+                }
+
+                throw new InvalidOperationException("Кодек JPEG не найден.");
             }
-            catch (IOException)
+
+            private static EncoderParameters JpegParameters(int quality)
             {
-                // Файлы заняты — экспорт всё равно удался, а папку в системной
-                // временной уберёт очистка.
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
-        }
+                var parameters = new EncoderParameters(1);
+                parameters.Param[0] = new EncoderParameter(Encoder.Quality, (long)quality);
 
-        private static void CloseQuietly(Document document)
-        {
-            try
-            {
-                document.Close();
-            }
-            catch (IOException)
-            {
-                // Закрытие не удалось — это следствие исходной ошибки.
-            }
-        }
-
-        // Файл передаётся по имени, а не потоком: iText читает картинку при закрытии
-        // документа, и закрытый поток к тому моменту уже нечитаем.
-        private static void AddJpegPage(Document document, string filePath)
-        {
-            iTextSharp.text.Image page = iTextSharp.text.Image.GetInstance(filePath);
-
-            page.ScaleToFit(PageSize.A4);
-            page.SetAbsolutePosition(0f, 0f);
-
-            document.Add((IElement)page);
-        }
-
-        // Отсечки по порогу быть не должно: она убивала всё светлее 127, и
-        // светло-серые линии исчезали из документа. Однобитный CCITT отвергнут вместе
-        // с отсечкой, которой он требует: экономия не стоит потери полутонов.
-        // Сжатие — Deflate: не портит и понимается всеми просмотрщиками.
-        private static void AddGreyscalePage(Document document, string filePath, string scratch)
-        {
-            ImageMagickSetup.EnsureStarted();
-
-            using (var source = new MagickImage(filePath))
-            {
-                source.ColorType = ColorType.Grayscale;
-
-                // Страница переписывается в PNG — единственный формат, который iText
-                // читает сам. Сырые пиксели в document.Add не берутся: картинка молча
-                // не добавляется, и документ закрывается словами «The document has no pages».
-                string grey = Path.Combine(
-                    scratch,
-                    Path.GetFileNameWithoutExtension(filePath) + ".png");
-
-                source.Write(grey);
-
-                iTextSharp.text.Image page = iTextSharp.text.Image.GetInstance(grey);
-
-                page.ScaleToFit(PageSize.A4);
-                page.SetAbsolutePosition(0f, 0f);
-
-                document.Add((IElement)page);
+                return parameters;
             }
         }
 

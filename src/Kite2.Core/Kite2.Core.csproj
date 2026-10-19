@@ -35,7 +35,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="iTextSharp" Version="5.5.13.6" />
+    <!-- PDF собирается форком PDFsharp 1.50 — NAPS2.PdfSharp: он под MIT,
+         тогда как сам PDFsharp 6-й версии уже AGPL, как и iTextSharp. -->
+    <PackageReference Include="NAPS2.PdfSharp" Version="1.0.2" />
     <PackageReference Include="Magick.NET-Q8-x64" Version="14.17.2" />
     <PackageReference Include="NLog" Version="5.5.1" />
   </ItemGroup>
