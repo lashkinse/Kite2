@@ -41,7 +41,6 @@ namespace Kite2.Scan
 
             var twain = new Twain32
             {
-                SourceIndex = sourceIndex,
                 ShowUI = false,
                 ModalUI = false,
                 DisableAfterAcquire = false
@@ -53,6 +52,9 @@ namespace Kite2.Scan
 
                 try
                 {
+                    // Индекс принимается только у открытого диспетчера: до OpenDSM
+                    // библиотека отвечает «менеджер источников данных не открыт».
+                    twain.SourceIndex = sourceIndex;
                     twain.OpenDataSource();
 
                     ApplySettings(twain, dpi, colour);
