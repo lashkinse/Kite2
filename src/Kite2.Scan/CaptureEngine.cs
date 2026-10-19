@@ -32,10 +32,17 @@ namespace Kite2.Scan
 
         // Устройство каталога: источник адресуется не именем, а индексом, поэтому
         // состав обязан воспроизводиться одинаково в команде «sources» и в «acquire».
+        // Device хранится полностью: NAPS2 требует в ScanDevice.ID точный
+        // внутренний идентификатор, и имя для этого не годится.
         private sealed class CatalogEntry
         {
             public string Name;
-            public Driver Driver;
+            public ScanDevice Device;
+
+            // WIA-источник обязан сканироваться через ту же версию API, через
+            // которую его нашли: идентификаторы устройства в WIA 1.0 и WIA 2.0
+            // друг другу не соответствуют.
+            public WiaApiVersion WiaVersion;
         }
 
         // Один способ добраться до сканера. Их у TWAIN-источника несколько:
@@ -72,7 +79,7 @@ namespace Kite2.Scan
             }
 
             var entry = entries[sourceIndex];
-            Log.Info("Источник {0}: {1} ({2})", sourceIndex, entry.Name, entry.Driver);
+            Log.Info("Источник {0}: {1} ({2})", sourceIndex, entry.Name, entry.Device.Driver);
 
             string lastProblem = null;
             var pages = new List<string>();
@@ -81,7 +88,7 @@ namespace Kite2.Scan
             {
                 Log.Info("Попытка: {0}", attempt.Title);
 
-                var result = await RunAttempt(attempt, dpi, colour, directory, pages.Count);
+                var result = await RunAttempt(entry, attempt, dpi, colour, directory, pages.Count);
 
                 if (result.Problem != null)
                     Log.Warn("Попытка не сработала: {0}", result.Problem);
@@ -103,7 +110,7 @@ namespace Kite2.Scan
         }
 
         // Каталог собирается в жёстком порядке: TWAIN по обоим диспетчерам, затем WIA.
-        // затем WIA. Повторы по имени выбрасываются, и первое появление имени
+        // Повторы по имени выбрасываются, и первое появление имени
         // остаётся на своём месте — индексы между запусками не едут.
         private static async Task<List<CatalogEntry>> BuildCatalog()
         {
@@ -138,7 +145,11 @@ namespace Kite2.Scan
                 {
                     if (entries.All(existing => existing.Name != device.Name))
                     {
-                        entries.Add(new CatalogEntry { Name = device.Name, Driver = Driver.Twain });
+                        entries.Add(new CatalogEntry
+                        {
+                            Name = device.Name,
+                            Device = device
+                        });
                     }
                 }
 
@@ -169,7 +180,12 @@ namespace Kite2.Scan
                 {
                     if (entries.All(existing => existing.Name != device.Name))
                     {
-                        entries.Add(new CatalogEntry { Name = device.Name, Driver = Driver.Wia });
+                        entries.Add(new CatalogEntry
+                        {
+                            Name = device.Name,
+                            Device = device,
+                            WiaVersion = version
+                        });
                     }
                 }
             }
@@ -187,7 +203,7 @@ namespace Kite2.Scan
         {
             var attempts = new List<ScanAttempt>();
 
-            if (entry.Driver == Driver.Twain)
+            if (entry.Device.Driver == Driver.Twain)
             {
                 attempts.Add(new ScanAttempt
                 {
@@ -211,7 +227,7 @@ namespace Kite2.Scan
                     Title = "TWAIN (старый диспетчер, передача целиком)"
                 });
             }
-            else if (entry.Driver == Driver.Wia)
+            else if (entry.Device.Driver == Driver.Wia)
             {
                 attempts.Add(new ScanAttempt
                 {
@@ -233,7 +249,7 @@ namespace Kite2.Scan
         }
 
         private static async Task<AttemptResult> RunAttempt(
-            ScanAttempt attempt, int dpi, int colour, string directory, int pagesBefore)
+            CatalogEntry entry, ScanAttempt attempt, int dpi, int colour, string directory, int pagesBefore)
         {
             var result = new AttemptResult();
 
@@ -250,6 +266,10 @@ namespace Kite2.Scan
                     var options = new ScanOptions
                     {
                         Driver = attempt.Driver,
+                        // NAPS2 сканирует только конкретное устройство: пустой Device
+                        // валидатор отвергает ещё до обращения к сканеру.
+                        Device = entry.Device,
+
                         // Решение о податчике отдаём драйверу: он сам знает,
                         // есть ли у него лоток, и молча падает на объявлении
                         // несуществующего источника бумаги.
@@ -258,6 +278,11 @@ namespace Kite2.Scan
                         BitDepth = colour == ScanExchange.BlackAndWhite
                             ? BitDepth.BlackAndWhite
                             : BitDepth.Color,
+
+                        // Рамка скана задаётся всегда — «дефолта драйвера» в NAPS2 нет,
+                        // без явного размера вписывался бы Letter и обрезал низ А4.
+                        PageSize = PageSize.A4,
+
                         TwainOptions = { Dsm = attempt.Dsm, TransferMode = attempt.Mode }
                     };
 
@@ -305,6 +330,13 @@ namespace Kite2.Scan
 
         private static string Describe(Exception error, bool hasPages)
         {
+            // Драйвер уже сообщил человеку об ошибке сам (например, Kyocera на пустом
+            // лотке приходит как OperationError → AlreadyHandled) — NAPS2 в этом месте
+            // молчит. Молчим и мы: сверху не сработавший попытке останется общий текст
+            // «Сканер не отдал ни одной страницы.».
+            if (error is AlreadyHandledDriverException)
+                return null;
+
             if (error is DeviceFeederEmptyException)
                 return hasPages ? null : "В лотке сканера нет бумаги.";
 
@@ -326,8 +358,14 @@ namespace Kite2.Scan
             if (error is DeviceNotFoundException)
                 return "Сканер не найден. Проверьте подключение и обновите список источников.";
 
+            // У DeviceCommunicationException и DeviceException сообщений может не быть
+            // вовсе — NAPS2 делает их без текста, ориентируясь на свой справочник:
+            // поэтому вместо error.Message здесь общий понятный текст.
             if (error is DeviceCommunicationException)
-                return "Драйвер сканера не ответил: " + error.Message;
+                return "Связь со сканером прервалась. Проверьте подключение и повторите.";
+
+            if (error is NoFeederSupportException)
+                return "У сканера нет автоподатчика. Положите лист на стекло планшета.";
 
             if (error is DeviceException)
                 return "Сканер сообщил об ошибке: " + error.Message;
