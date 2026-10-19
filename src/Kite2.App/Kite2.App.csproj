@@ -57,17 +57,18 @@
 
   <!-- Ссылка на сборку обновлятора тоже копирующая, а файлы запуска кладутся
        рядом с программой целью ниже: сами по себе они снаружи не уедут.
-       Помощник теперь несёт целый граф зависимостей NAPS2, поэтому копируются
-       все его DLL, а не отдельный поимённый список: список однажды устареет
-       тихо и именно в момент выпуска новой версии. -->
+       Помощник несёт целый граф зависимостей NAPS2 и помещается в подпапку Scan:
+       отдельные его DLL совпадают по имени с библиотеками приложения, но собраны
+       под другие версии (например, SharpZipLib), и в общей папке одна сборка
+       переписывала бы другую. -->
   <Target Name="CopySidePrograms" AfterTargets="Build">
     <ItemGroup>
       <ScanProgram Include="$(MSBuildThisFileDirectory)..\Kite2.Scan\bin\*\$(Configuration)\**\Kite2.Scan.exe" />
-      <SideFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)**\Kite2.Scan.exe" />
-      <SideFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)**\Kite2.Scan.exe.config" />
-      <SideFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)**\*.dll" />
+      <ScanFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)**\Kite2.Scan.exe" />
+      <ScanFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)**\Kite2.Scan.exe.config" />
+      <ScanFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)**\*.dll" />
       <UpdaterProgram Include="$(MSBuildThisFileDirectory)..\Kite2.Updater\bin\*\$(Configuration)\**\Kite2.Updater.exe" />
-      <SideFile Include="%(UpdaterProgram.RootDir)%(UpdaterProgram.Directory)Kite2.Updater.*" />
+      <UpdaterFile Include="%(UpdaterProgram.RootDir)%(UpdaterProgram.Directory)Kite2.Updater.*" />
     </ItemGroup>
     <Error Condition="'@(ScanProgram)' == ''"
            Text="Помощник захвата не собран: без Kite2.Scan.exe программа не увидит сканер." />
@@ -76,8 +77,11 @@
     <!-- Подпапки (_win32 с нативным twaindsm.dll) копируются с сохранением
          относительного пути: NAPS2 ищет этот файл строго в _win32 рядом
          с помощником, плоского размещения он не увидит. -->
-    <Copy SourceFiles="@(SideFile)"
-          DestinationFiles="@(SideFile->'$(TargetDir)%(RecursiveDir)%(Filename)%(Extension)')"
+    <Copy SourceFiles="@(ScanFile)"
+          DestinationFiles="@(ScanFile->'$(TargetDir)Scan\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(UpdaterFile)"
+          DestinationFiles="@(UpdaterFile->'$(TargetDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
   </Target>
 

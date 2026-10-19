@@ -11,12 +11,15 @@ using NLog;
 namespace Kite2.Core
 {
     // TWAIN-драйвер открывается только 32-разрядным процессом, а приложение x64,
-    // поэтому всю работу со сканером выполняет Kite2.Scan.exe рядом с программой.
-    // Обмен идёт файлом ответа, отмена — закрытием процесса: зависший драйвер
-    // не вернётся сам.
+    // поэтому всю работу со сканером выполняет помощник Kite2.Scan.exe — он живёт
+    // рядом, в подпапке Scan (у его зависимостей сборки тех же имён, но других
+    // версий). Обмен идёт файлом ответа, отмена — закрытием процесса: зависший
+    // драйвер не вернётся сам.
     internal static class ScanHelperClient
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+
+        private const string HelperFolder = "Scan";
 
         private const string HelperName = "Kite2.Scan.exe";
 
@@ -52,12 +55,13 @@ namespace Kite2.Core
             if (!result.Succeeded)
                 throw new InvalidOperationException(result.Error);
 
-            return result.Items.ToArray();        }
+            return result.Items.ToArray();
+        }
 
         // null означает «захват прерван пользователем»: не читается как неудача.
         private static ScanResult Run(string arguments, CancellationToken cancellationToken)
         {
-            string helperPath = Path.Combine(AppPaths.AppDirectory, HelperName);
+            string helperPath = Path.Combine(AppPaths.AppDirectory, HelperFolder, HelperName);
 
             if (!File.Exists(helperPath))
             {
