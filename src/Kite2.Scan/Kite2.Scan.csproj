@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <!-- Помощник 32-разрядный не по выбору, а по необходимости: библиотека TWAIN
+         открывает только 32-разрядный DSM, и в 64-разрядном процессе он не грузится
+         вовсе — источников не будет ни одного. -->
+    <PlatformTarget>x86</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <RootNamespace>Kite2.Scan</RootNamespace>
+    <AssemblyName>Kite2.Scan</AssemblyName>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyTitle>Kite2.Scan</AssemblyTitle>
+    <Description>Захват изображений со сканера</Description>
+  </PropertyGroup>
+
+  <!-- Папка сборки повторяет решение (x64), хотя сама программа 32-разрядная:
+       сборка решения одна на все проекты. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <OutputPath>bin\x64\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OutputPath>bin\x64\Release\</OutputPath>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Страницы пишет System.Drawing.Image, а не библиотека TWAIN. -->
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Kite2.ScanProtocol\Kite2.ScanProtocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Saraff.Twain" Version="1.0.33.756" />
+  </ItemGroup>
+
+</Project>

@@ -20,6 +20,8 @@ namespace Kite2.Core
 
         public const string SourceUnavailable = "Ранее выбранный источник больше недоступен. Выберите источник заново.";
 
+        public const string ScanHelperMissing = "Не найдена программа захвата Kite2.Scan.exe рядом с этой программой.";
+
         public const string Cancel = "Отмена";
     }
 }

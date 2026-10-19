@@ -34,6 +34,34 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Помощник захвата нужен рядом с программой, но не как сборка: он запускается
+         как отдельный процесс и должен остаться 32-разрядным. -->
+    <ProjectReference Include="..\Kite2.Scan\Kite2.Scan.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Формат обмена лежит рядом с обеими программами: без него помощник не
+         запустится. -->
+    <ProjectReference Include="..\Kite2.ScanProtocol\Kite2.ScanProtocol.csproj" />
+  </ItemGroup>
+
+  <!-- Ссылка на сборку помощника копирует только то, что нужно программе при
+       сборке, а сам файл запуска получается отдельным процессом — копируется он
+       здесь, иначе рядом с программой его просто не окажется. -->
+  <Target Name="CopyScanHelper" AfterTargets="Build">
+    <ItemGroup>
+      <ScanHelperBin Include="$(MSBuildThisFileDirectory)..\Kite2.Scan\bin\*\$(Configuration)\**\Kite2.Scan.exe" />
+      <ScanHelperFile Include="%(ScanHelperBin.RootDir)%(ScanHelperBin.Directory)Kite2.Scan.*" />
+      <ScanHelperFile Include="%(ScanHelperBin.RootDir)%(ScanHelperBin.Directory)Saraff.Twain.dll" />
+    </ItemGroup>
+    <Error Condition="'@(ScanHelperFile)' == ''"
+           Text="Помощник захвата не собран: без Kite2.Scan.exe программа не увидит сканер." />
+    <Copy SourceFiles="@(ScanHelperFile)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <ItemGroup>
     <!-- Значок программы читается из exe через System.Drawing.Icon. -->
     <Reference Include="System.Drawing" />
   </ItemGroup>

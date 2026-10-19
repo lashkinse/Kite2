@@ -527,7 +527,17 @@ namespace Kite2.App.ViewModels
 
         private void ChooseSource()
         {
-            var sources = ScannerService.GetSources();
+            IReadOnlyList<string> sources;
+
+            try
+            {
+                sources = ScannerService.GetSources();
+            }
+            catch (Exception ex)
+            {
+                UserDialogs.Error(ex);
+                return;
+            }
 
             if (sources.Count == 0)
             {

@@ -25,10 +25,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Kite2.ScanProtocol\Kite2.ScanProtocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="iTextSharp" Version="5.5.13.6" />
     <PackageReference Include="Magick.NET-Q8-x64" Version="14.17.2" />
     <PackageReference Include="NLog" Version="5.5.1" />
-    <PackageReference Include="Saraff.Twain" Version="1.0.33.756" />
   </ItemGroup>
 
 </Project>
