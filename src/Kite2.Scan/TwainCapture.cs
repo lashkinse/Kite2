@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Drawing.Imaging;
 using System.IO;
 using Kite2.ScanProtocol;
 using NLog;
@@ -16,6 +15,7 @@ namespace Kite2.Scan
     internal static class TwainCapture
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+
         public static List<string> GetSources()
         {
             var sources = new List<string>();
@@ -46,7 +46,6 @@ namespace Kite2.Scan
             var twain = new Twain32
             {
                 ShowUI = false,
-                ModalUI = false,
                 // Отключение после серии обязательно, а не на выбор: без него цикл
                 // сообщений Saraff не заканчивается никогда — источник остаётся
                 // активным, хотя отсканированы все страницы, и Acquire не возвращает
@@ -67,31 +66,36 @@ namespace Kite2.Scan
                     twain.OpenDataSource();
                     Log.Info("Источник открыт: {0}", twain.GetSourceProductName(sourceIndex));
 
-                    ApplySettings(twain, dpi, colour);
-                    Log.Info("Настройки применены: dpi={0}, цвет={1}", dpi, colour == ScanExchange.BlackAndWhite ? "чёрно-белый" : "цветной");
+                    bool uiNeeded = ApplySettings(twain, dpi, colour);
+                    twain.ShowUI = uiNeeded;
 
-                    int index = 0;
-
-                    twain.EndXfer += (sender, args) =>
+                    if (uiNeeded)
                     {
-                        string path = Path.Combine(
-                            directory,
-                            "scan" + (++index).ToString("D3") + ".bmp");
+                        // Драйвер откажет и захвату целиком, если настройки не подошли:
+                        // единственный способ договориться — его собственное окно.
+                        Log.Info("Настройки не приняты, драйвер покажет своё окно");
+                    }
+                    else
+                    {
+                        Log.Info("Настройки приняты: dpi={0}, цвет={1}", dpi, colour == ScanExchange.BlackAndWhite ? "чёрно-белый" : "цветной");
+                    }
 
-                        Save(args.Image, path);
+                    var assembler = new PageAssembler(twain, directory, pages);
 
-                        pages.Add(path);
-
-                        Log.Info("Страница {0} за {1:N1} с: {2}", index, clock.Elapsed.TotalSeconds, path);
-                    };
-
-                    Log.Info("Захват передан драйверу, жду страницы или сигнал о конце серии");
+                    // Слушатели ставятся на все механизмы сразу: какой из них включится,
+                    // решает драйвер своим ICAP_XFERMECH.
+                    twain.SetupMemXferEvent += assembler.OnSetupMemXfer;
+                    twain.MemXferEvent += assembler.OnMemXfer;
+                    twain.EndXfer += assembler.OnEndXfer;
+                    twain.FileXferEvent += assembler.OnFileXfer;
+                    twain.XferDone += assembler.OnXferDone;
 
                     // Драйвер сводит свои отказы в это событие и без подписки они
                     // теряются: захват возвращается с нулём страниц без объяснений.
                     twain.AcquireError += (sender, args) =>
                         Log.Error("Драйвер сообщил об ошибке: {0}", args.Exception?.Message);
 
+                    Log.Info("Захват передан драйверу, жду страницы или сигнал о конце серии");
                     twain.Acquire();
                     clock.Stop();
                     Log.Info("Драйвер вернул управление за {0:N1} с, страниц получено: {1}", clock.Elapsed.TotalSeconds, pages.Count);
@@ -111,15 +115,17 @@ namespace Kite2.Scan
             return pages;
         }
 
-        // Отсутствие сканера — не ошибка, а отсутствие устройств: драйвер
-        // недоступен, значит возвращается пустой список.
-        // Диспетчер TWAIN 2 обязан быть первым, а не запасным: современные драйверы
-        // (например, Kyocera TWAIN(2)) отдают страницы только через него, а старый
-        // twain_32 с ними рукопожатие проходит, но передачу не начинает — и через
-        // таймаут драйвера захват заканчивается нулём страниц. По умолчанию Saraff
-        // выбирает TWAIN 2 только в 64-разрядном процессе, а помощник 32-разрядный.
+        // Сначала старый twain_32, и это не ностальгия: драйвер Kyocera TWAIN(2)
+        // на этой машине отдаёт страницы только через него (то же делает отдельный
+        // инструмент прежней программы), а TWAIN 2 без обратной связи молчит намертво.
+        // TWAIN 2 остаётся запасным для машин, где twain_32 не установлен вовсе.
         private static void OpenSession(Twain32 twain)
         {
+            twain.IsTwain2Enable = false;
+
+            if (twain.OpenDSM())
+                return;
+
             try
             {
                 twain.IsTwain2Enable = true;
@@ -129,35 +135,101 @@ namespace Kite2.Scan
             }
             catch (Exception)
             {
-                // Диспетчера TWAIN 2 на машине может не быть вовсе — остаётся TWAIN 1.
+                // Диспетчера TWAIN 2 на машине может не быть вовсе — остаётся запасной.
             }
 
-            twain.IsTwain2Enable = false;
-
-            if (!twain.OpenDSM())
-                throw new InvalidOperationException(
-                    "Не удалось открыть менеджер TWAIN. Проверьте, установлен ли драйвер сканера.");
+            throw new InvalidOperationException(
+                "Не удалось открыть менеджер TWAIN. Проверьте, установлен ли драйвер сканера.");
         }
 
-        // Возможности, которых нет у конкретного устройства, пропускаются: у сканера
-        // без автоподачи нет счётчика страниц, и из-за него захват срывался целиком.
-        private static void ApplySettings(Twain32 twain, int dpi, int colour)
+        private static bool ApplySettings(Twain32 twain, int dpi, int colour)
         {
+            // Механизм передачи задаётся принудительно, а не на выбор драйвера:
+            // Kyocera отдаёт страницы только через передачу памятью (так делает и
+            // работающий с этим драйвером инструмент прежней программы), а присвоить
+            // механизм на усмотрение драйвера — значит получить захват без страниц.
+            TrySet(() => twain.Capabilities.XferMech.Set(TwSX.Memory));
+
+            LogTransferMechanism(twain);
+
+            // Формат файла нужен только запасному файловому механизму: BMP остальным
+            // пока понятен композиции страниц.
+            TrySet(() => twain.Capabilities.ImageFileFormat.Set(TwFF.Bmp));
+
+            bool uiNeeded = false;
+
+            if (!TrySetResolution(twain, dpi))
+                uiNeeded = true;
+
             TwPixelType pixelType = colour == ScanExchange.BlackAndWhite ? TwPixelType.BW : TwPixelType.RGB;
 
-            var capabilities = twain.Capabilities;
+            if (!TrySetPixelType(twain, pixelType))
+                uiNeeded = true;
 
-            TrySet(() => capabilities.PixelType.Set(pixelType));
-            TrySet(() => capabilities.XResolution.Set(dpi));
-            TrySet(() => capabilities.YResolution.Set(dpi));
-
-            // Минус один означает «сколько отдаст устройство»: у плосконастольных
-            // сканеров это обычно одна страница, у автоподачи — пачка.
-            TrySet(() => capabilities.XferCount.Set(-1));
+            return uiNeeded;
         }
 
-        // Значение передаётся лениво: у неподдерживаемой возможности обращение к ней
-        // уже вызывает у драйвера ошибку, и до проверки доходить не должно.
+        private static void LogTransferMechanism(Twain32 twain)
+        {
+            try
+            {
+                Log.Info("Механизм передачи: {0}", twain.Capabilities.XferMech.GetCurrent());
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Механизм передачи не читается: {0}", ex.Message);
+            }
+        }
+
+        // Значение ставится только из списка поддерживаемых и только с подтверждением:
+        // установка наугад у драйвера не проваливается сразу, а ломает захват целиком.
+        private static bool TrySetResolution(Twain32 twain, int dpi)
+        {
+            try
+            {
+                var enumeration = twain.Capabilities.XResolution.Get();
+
+                for (int i = 0; i < enumeration.Count; i++)
+                    if (dpi == (int)(float)enumeration[i])
+                    {
+                        twain.Capabilities.XResolution.Set((float)dpi);
+                        twain.Capabilities.YResolution.Set((float)dpi);
+                        break;
+                    }
+
+                return dpi == (int)twain.Capabilities.XResolution.GetCurrent()
+                    && dpi == (int)twain.Capabilities.YResolution.GetCurrent();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Разрешение не установлено: {0}", ex.Message);
+                return false;
+            }
+        }
+
+        private static bool TrySetPixelType(Twain32 twain, TwPixelType pixelType)
+        {
+            try
+            {
+                var enumeration = twain.Capabilities.PixelType.Get();
+
+                for (int i = 0; i < enumeration.Count; i++)
+                    if (pixelType == (TwPixelType)enumeration[i])
+                    {
+                        twain.Capabilities.PixelType.Set(pixelType);
+                        break;
+                    }
+
+                return pixelType == (TwPixelType)twain.Capabilities.PixelType.GetCurrent();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Тип пикселей не установлен: {0}", ex.Message);
+                return false;
+            }
+        }
+
+        // Возможности, которых нет у конкретного устройства, пропускаются.
         private static void TrySet(Action apply)
         {
             try
@@ -166,26 +238,8 @@ namespace Kite2.Scan
             }
             catch (Exception)
             {
-                // Возможность у этого устройства есть не всякая, и это не сбой:
-                // страница всё равно придёт, только с настройками по умолчанию.
+                // Возможность у этого устройства есть не всякая, и это не сбой.
             }
-        }
-
-        // Страница сначала пишется во временный файл и переименовывается: помощника
-        // можно закрыть в любой момент, и незаконченный файл в каталог попасть не должен.
-        // Формат BMP, а не JPEG: страница идёт дальше в JPEG один раз, и сжимать её
-        // дважды с разными настройками только добавило бы артефактов.
-        private static void Save(System.Drawing.Image image, string path)
-        {
-            string temporary = path + ".part";
-
-            using (image)
-                image.Save(temporary, ImageFormat.Bmp);
-
-            if (File.Exists(path))
-                File.Delete(path);
-
-            File.Move(temporary, path);
         }
 
         private static void CloseQuietly(Twain32 twain)

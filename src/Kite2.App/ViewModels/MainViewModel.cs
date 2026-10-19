@@ -291,15 +291,19 @@ namespace Kite2.App.ViewModels
             {
                 // Серии повторяются, пока пользователь не скажет «завершить». Вопрос
                 // задаётся между сериями, а не после каждой: один сеанс работы со
-                // сканером — это обычно несколько серий подряд.
+                // сканером — это обычно несколько серий подряд. Серия без страниц —
+                // это провал сканирования, и допрашивать «продолжить?» после него
+                // человек не должен.
+                int scanned;
+
                 do
                 {
                     SetBusy(true);
                     ShowNotice(Messages.Scanning, result: false, cancel: true);
 
-                    await ScanOnce(colour, cancellation.Token);
+                    scanned = await ScanOnce(colour, cancellation.Token);
                 }
-                while (AskToContinue());
+                while (scanned > 0 && AskToContinue());
             }
             catch (OperationCanceledException)
             {
@@ -356,7 +360,7 @@ namespace Kite2.App.ViewModels
             ScanAsync(CurrentColour);
         }
 
-        private async Task ScanOnce(CaptureColour colour, CancellationToken cancellationToken)
+        private async Task<int> ScanOnce(CaptureColour colour, CancellationToken cancellationToken)
         {
             var request = new ScanRequest
             {
@@ -386,6 +390,8 @@ namespace Kite2.App.ViewModels
             var pages = await Task.Run(() => BuildPages(request.Directory), cancellationToken);
 
             AddPages(pages);
+
+            return pages.Count;
         }
 
         // В тестовом режиме вопрос не задаётся: там всё равно никто не сидит перед

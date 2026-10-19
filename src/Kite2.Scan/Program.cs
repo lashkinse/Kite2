@@ -15,6 +15,9 @@ namespace Kite2.Scan
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
+        // Главный поток обязан быть STA: TWAIN-драйвер общается с процессом
+        // COM-сообщениями, которые без STA не доставляются.
+        [STAThread]
         private static int Main(string[] args)
         {
             HelperLogging.Initialize();
