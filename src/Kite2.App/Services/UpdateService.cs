@@ -39,19 +39,36 @@ namespace Kite2.App.Services
         {
             try
             {
+                // Соединение в наших сетях бывает сброшено на раз: быстрых повторов
+                // три. Десятисекундная граница общая для всех попыток, так что
+                // вход в программу в худшем случае тоже задержится несильно.
                 using (var wait = new CancellationTokenSource(NetworkWait))
-                using (HttpResponseMessage response =
-                    await Http.GetAsync(ReleaseCatalog.ReleasesUrl, HttpCompletionOption.ResponseContentRead, wait.Token))
                 {
-                    response.EnsureSuccessStatusCode();
+                    for (int attempt = 1; ; attempt++)
+                    {
+                        try
+                        {
+                            using (HttpResponseMessage response =
+                                await Http.GetAsync(ReleaseCatalog.ReleasesUrl, HttpCompletionOption.ResponseContentRead, wait.Token))
+                            {
+                                response.EnsureSuccessStatusCode();
 
-                    ReleaseCatalog.Entry update = ReleaseCatalog.Latest(await response.Content.ReadAsStringAsync());
+                                ReleaseCatalog.Entry update = ReleaseCatalog.Latest(await response.Content.ReadAsStringAsync());
 
-                    // Обновлением считается только то, что младше не запущено:
-                    // выпуск совпал с установленной версией — вопроса не будет.
-                    Version current = Assembly.GetEntryAssembly().GetName().Version;
+                                // Обновлением считается только то, что младше не запущено:
+                                // выпуск совпал с установленной версией — вопроса не будет.
+                                Version current = Assembly.GetEntryAssembly().GetName().Version;
 
-                    return update != null && current < update.Version ? update : null;
+                                return update != null && current < update.Version ? update : null;
+                            }
+                        }
+                        catch (HttpRequestException) when (attempt < 3)
+                        {
+                            // Сброшенное соединение сигнализирует мгновенно: пауза в
+                            // секунду всегда успеет пройти до отмены по времени.
+                            await Task.Delay(TimeSpan.FromSeconds(1), wait.Token);
+                        }
+                    }
                 }
             }
             catch (OperationCanceledException ex)
