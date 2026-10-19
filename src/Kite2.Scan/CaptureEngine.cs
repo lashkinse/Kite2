@@ -30,6 +30,11 @@ namespace Kite2.Scan
         private static readonly TimeSpan FirstPageQuiet = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan BetweenPagesQuiet = TimeSpan.FromSeconds(60);
 
+        // Перечислениям каталога свой потолок: зависший вызов TWAIN (с этим
+        // столкнулись живьём на старом диспетчере) не утащил бы за собой и
+        // «sources», и подготовку попыток «acquire».
+        private static readonly TimeSpan CatalogWait = TimeSpan.FromSeconds(10);
+
         // Устройство каталога: источник адресуется не именем, а индексом, поэтому
         // состав обязан воспроизводиться одинаково в команде «sources» и в «acquire».
         // Device хранится полностью: NAPS2 требует в ScanDevice.ID точный
@@ -128,6 +133,23 @@ namespace Kite2.Scan
             return entries;
         }
 
+        // Запрос списка с потолком времени: зависший TWAIN-вызов не должен
+        // останавливать сбор каталога — недобежавший список просто попадёт в Warn.
+        private static async Task<List<ScanDevice>> Listed(ScanController controller, ScanOptions options)
+        {
+            var listing = controller.GetDeviceList(options);
+
+            // Отменить сам вызов изнутри нельзя (он сидит в нативном коде), поэтому
+            // ограждение — таймер: не ответившая задача остаётся в фоне, процесс
+            // всё равно одноразовый и закроется сразу после ответа.
+            var done = await Task.WhenAny(listing, Task.Delay(CatalogWait));
+
+            if (done != listing)
+                throw new TimeoutException("Перечисление не ответило за 10 с");
+
+            return await listing;
+        }
+
         private static async Task AddTwain(
             List<CatalogEntry> entries, ScanController controller, TwainDsm dsm)
         {
@@ -139,7 +161,9 @@ namespace Kite2.Scan
 
             try
             {
-                var devices = await controller.GetDeviceList(options);
+                Log.Info("Опрос TWAIN ({0})...", dsm);
+
+                var devices = await Listed(controller, options);
 
                 foreach (var device in devices)
                 {
@@ -174,7 +198,9 @@ namespace Kite2.Scan
 
             try
             {
-                var devices = await controller.GetDeviceList(options);
+                Log.Info("Опрос WIA ({0})...", version);
+
+                var devices = await Listed(controller, options);
 
                 foreach (var device in devices)
                 {
@@ -211,6 +237,13 @@ namespace Kite2.Scan
                     Dsm = TwainDsm.Old,
                     Mode = TwainTransferMode.Memory,
                     Title = "TWAIN (старый диспетчер, передача памятью)"
+                });
+                attempts.Add(new ScanAttempt
+                {
+                    Driver = Driver.Twain,
+                    Dsm = TwainDsm.New,
+                    Mode = TwainTransferMode.Memory,
+                    Title = "TWAIN (новый диспетчер, передача памятью)"
                 });
                 attempts.Add(new ScanAttempt
                 {

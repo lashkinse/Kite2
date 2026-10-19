@@ -21,6 +21,7 @@ namespace Kite2.Scan
         private static async Task<int> Main(string[] args)
         {
             HelperLogging.Initialize();
+            NTwainLogging.Attach();
 
             if (args.Length < 2)
             {

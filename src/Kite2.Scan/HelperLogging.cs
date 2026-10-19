@@ -31,6 +31,10 @@ namespace Kite2.Scan
 
                 var configuration = new LoggingConfiguration();
                 configuration.AddTarget(file);
+
+                // NTwain пишет самыми нижними уровнями, и без отдельного правила
+                // его(debug-)строки утекли бы мимо общей границы Info.
+                configuration.AddRule(LogLevel.Debug, LogLevel.Fatal, file, "NTwain");
                 configuration.AddRule(LogLevel.Info, LogLevel.Fatal, file);
 
                 LogManager.Configuration = configuration;
