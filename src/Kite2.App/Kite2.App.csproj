@@ -17,7 +17,7 @@
     <AssemblyTitle>Kite2</AssemblyTitle>
     <Product>Kite2</Product>
     <Description>Сканирование документов</Description>
-    <Version>1.7.1</Version>
+    <Version>1.7.2</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Значок программы: без него в проводнике и на панели задач Windows
          показывается пустой значок. -->
@@ -73,7 +73,12 @@
            Text="Помощник захвата не собран: без Kite2.Scan.exe программа не увидит сканер." />
     <Error Condition="'@(UpdaterProgram)' == ''"
            Text="Обновлятор не собран: без Kite2.Updater.exe программа не обновится." />
-    <Copy SourceFiles="@(SideFile)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+    <!-- Подпапки (_win32 с нативным twaindsm.dll) копируются с сохранением
+         относительного пути: NAPS2 ищет этот файл строго в _win32 рядом
+         с помощником, плоского размещения он не увидит. -->
+    <Copy SourceFiles="@(SideFile)"
+          DestinationFiles="@(SideFile->'$(TargetDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
   </Target>
 
   <ItemGroup>

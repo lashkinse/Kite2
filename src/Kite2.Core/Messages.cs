@@ -24,6 +24,9 @@ namespace Kite2.Core
 
         public const string ScanHelperMissing = "Не найдена программа захвата Kite2.Scan.exe рядом с этой программой.";
 
+        public const string ScanHelperSilent =
+            "Программа захвата Kite2.Scan.exe завершилась, не передав результат. Пришлите файл Kite2.Scan-*.log из каталога Kite2\\logs.";
+
         public const string Cancel = "Отмена";
 
         // Обновление раздаётся выпусками репозитория, и вопрос задаётся при входе:

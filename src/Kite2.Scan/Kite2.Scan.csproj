@@ -38,6 +38,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Новый TWAIN-диспетчер (2.x) живёт одноимённой нативной dll, которую
+         NuGet-пакеты NAPS2 не раздают вовсе, а сам NAPS2 вендорит из исходников
+         TWAIN Working Group (LGPL, как и Sdk). Без неё оба списка устройств
+         строятся через старый C:\Windows\twain_32.dll, а второе открытие этого
+         диспетчера в одном процессе на части машин зависает. NAPS2 ищет файл
+         в подпапке _win32 (поиск для 32-разрядных сборок). -->
+    <None Include="Native\x86\twaindsm.dll" Link="_win32\twaindsm.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Движок сканирования — NAPS2.Sdk: один API закрывает TWAIN (оба диспетчера)
          и WIA, а разбор страниц при любом механизме передачи сделан внутри
          библиотеки и обкатан на сотнях моделей. Сами пакеты NAPS2 выпущены под

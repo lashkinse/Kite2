@@ -108,7 +108,9 @@ namespace Kite2.Core
                     {
                         Log.Error("Помощник сканирования не ответил, код {0}", helper.ExitCode);
 
-                        return Failed(Messages.ScanHelperMissing);
+                        // Иное дело, чем «не найден»: процесс запустился и умер,
+                        // не успев (или не сумев) записать ответ.
+                        return Failed(Messages.ScanHelperSilent);
                     }
 
                     return ScanExchange.Read(responsePath);

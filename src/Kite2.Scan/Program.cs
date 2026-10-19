@@ -21,6 +21,16 @@ namespace Kite2.Scan
         private static async Task<int> Main(string[] args)
         {
             HelperLogging.Initialize();
+
+            // Тихие сбои фоновых вызовов TWAIN больше нигде не видны: зависания
+            // и падения без этих записей в логе не объяснить. Сюда же попадает
+            // и крах любого фонового потока процесса.
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+                Log.Fatal("Необработанный сбой: {0}", e.ExceptionObject);
+
+            TaskScheduler.UnobservedTaskException += (_, e) =>
+                Log.Warn("Утерянный сбой фоновой задачи: {0}", e.Exception);
+
             NTwainLogging.Attach();
 
             if (args.Length < 2)
@@ -31,6 +41,8 @@ namespace Kite2.Scan
 
             string responsePath = args[args.Length - 1];
 
+            int code;
+
             try
             {
                 if (args[0] == "sources")
@@ -38,10 +50,9 @@ namespace Kite2.Scan
                     Log.Info("Команда sources");
                     List<string> sources = await CaptureEngine.GetSources();
                     Log.Info("Список получен: источников {0}", sources.Count);
-                    return Answer(responsePath, sources);
+                    code = Answer(responsePath, sources);
                 }
-
-                if (args[0] == "acquire" && args.Length == 6)
+                else if (args[0] == "acquire" && args.Length == 6)
                 {
                     Log.Info("Команда acquire: источник={0}, dpi={1}, цвет={2}, каталог={3}",
                         args[1], args[2], args[3], args[4]);
@@ -53,10 +64,13 @@ namespace Kite2.Scan
                         args[4]);
 
                     Log.Info("Захват завершён, страниц {0}", pages.Count);
-                    return Answer(responsePath, pages);
+                    code = Answer(responsePath, pages);
                 }
-
-                Log.Error("Неизвестная команда: {0}, аргументов {1}", args[0], args.Length);
+                else
+                {
+                    Log.Error("Неизвестная команда: {0}, аргументов {1}", args[0], args.Length);
+                    code = 2;
+                }
             }
             catch (Exception ex)
             {
@@ -66,10 +80,19 @@ namespace Kite2.Scan
                 // решила бы, что помощника нет вовсе.
                 ScanExchange.Write(responsePath, false, Describe(ex), null);
 
-                return 1;
+                code = 1;
             }
 
-            return 2;
+            LogManager.Flush();
+
+            // NTwain держит поток насоса сообщений не фоновым, и обычный конец
+            // Main такой процесс не закрывает — приложение же ждёт именно выхода.
+            // Ответ к этому моменту уже записан, поэтому завершаем насмерть,
+            // оборвав и потекшие нативные вызовы зависшего драйвера, которым
+            // на нашей стороне всё равно заняться нельзя.
+            Environment.Exit(code);
+
+            return code;
         }
 
         // Тексты об ошибках сканера уже сказаны по-русски внутри захвата; здесь
