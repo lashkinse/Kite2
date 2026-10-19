@@ -17,7 +17,7 @@
     <AssemblyTitle>Kite2</AssemblyTitle>
     <Product>Kite2</Product>
     <Description>Сканирование документов</Description>
-    <Version>1.0</Version>
+    <Version>1.1</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Значок программы: без него в проводнике и на панели задач Windows
          показывается пустой значок. -->
@@ -47,23 +47,42 @@
     <ProjectReference Include="..\Kite2.ScanProtocol\Kite2.ScanProtocol.csproj" />
   </ItemGroup>
 
-  <!-- Ссылка на сборку помощника копирует только то, что нужно программе при
-       сборке, а сам файл запуска получается отдельным процессом — копируется он
-       здесь, иначе рядом с программой его просто не окажется. -->
-  <Target Name="CopyScanHelper" AfterTargets="Build">
+  <ItemGroup>
+    <!-- Обновлятор нужен рядом с программой как файл, а не как сборка: он
+         запускается отдельным процессом и сам подменяет файлы программы. -->
+    <ProjectReference Include="..\Kite2.Updater\Kite2.Updater.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- Ссылка на сборку обновлятора тоже копирующая, а файлы запуска кладутся
+       рядом с программой целью ниже: сами по себе они снаружи не уедут. -->
+  <Target Name="CopySidePrograms" AfterTargets="Build">
     <ItemGroup>
-      <ScanHelperBin Include="$(MSBuildThisFileDirectory)..\Kite2.Scan\bin\*\$(Configuration)\**\Kite2.Scan.exe" />
-      <ScanHelperFile Include="%(ScanHelperBin.RootDir)%(ScanHelperBin.Directory)Kite2.Scan.*" />
-      <ScanHelperFile Include="%(ScanHelperBin.RootDir)%(ScanHelperBin.Directory)Saraff.Twain.dll" />
+      <ScanProgram Include="$(MSBuildThisFileDirectory)..\Kite2.Scan\bin\*\$(Configuration)\**\Kite2.Scan.exe" />
+      <SideFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)Kite2.Scan.*" />
+      <SideFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)Saraff.Twain.dll" />
+      <UpdaterProgram Include="$(MSBuildThisFileDirectory)..\Kite2.Updater\bin\*\$(Configuration)\**\Kite2.Updater.exe" />
+      <SideFile Include="%(UpdaterProgram.RootDir)%(UpdaterProgram.Directory)Kite2.Updater.*" />
     </ItemGroup>
-    <Error Condition="'@(ScanHelperFile)' == ''"
+    <Error Condition="'@(ScanProgram)' == ''"
            Text="Помощник захвата не собран: без Kite2.Scan.exe программа не увидит сканер." />
-    <Copy SourceFiles="@(ScanHelperFile)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+    <Error Condition="'@(UpdaterProgram)' == ''"
+           Text="Обновлятор не собран: без Kite2.Updater.exe программа не обновится." />
+    <Copy SourceFiles="@(SideFile)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
   </Target>
 
   <ItemGroup>
     <!-- Значок программы читается из exe через System.Drawing.Icon. -->
     <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Обновление работает из комплекта .NET Framework: запросы к GitHub идут
+         через System.Net.Http, а архив новой версии распаковывает ZipFile. -->
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.ZipFile" />
   </ItemGroup>
 
   <ItemGroup>

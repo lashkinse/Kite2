@@ -1,3 +1,5 @@
+using System;
+
 namespace Kite2.Core
 {
     public static class Messages
@@ -23,5 +25,18 @@ namespace Kite2.Core
         public const string ScanHelperMissing = "Не найдена программа захвата Kite2.Scan.exe рядом с этой программой.";
 
         public const string Cancel = "Отмена";
+
+        // Обновление раздаётся выпусками репозитория, и вопрос задаётся при входе:
+        // здесь важнее номер версии, чем описание изменений.
+        public static string UpdateQuestion(Version version) =>
+            "Доступна версия " + version.ToString(2) + ". Обновить сейчас?";
+
+        public const string Updating = "Выполняется загрузка обновления...";
+
+        public static string UpdatingProgress(int percent) =>
+            Updating + " " + percent + "%";
+
+        public const string UpdateFailed =
+            "Обновление установить не удалось. Новую версию можно скачать вручную: https://github.com/lashkinse/Kite2/releases";
     }
 }

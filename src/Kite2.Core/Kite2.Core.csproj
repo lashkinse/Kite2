@@ -25,6 +25,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Каталог выпусков GitHub парсится штатным сериализатором: это сборка из
+         комплектов .NET Framework, и на Windows 7 она уже есть. -->
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Kite2.ScanProtocol\Kite2.ScanProtocol.csproj" />
   </ItemGroup>
 

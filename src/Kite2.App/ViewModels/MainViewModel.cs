@@ -157,6 +157,61 @@ namespace Kite2.App.ViewModels
             {
                 UserDialogs.Error(ex);
             }
+
+            // Проверка обновления тоже после показа окна: вопрос не должен
+            // выскочить раньше, чем оно раскрылось.
+            CheckForUpdateAsync();
+        }
+
+        // --- Обновление ------------------------------------------------------
+
+        // Программа спрашивает об обновлении один раз при входе и только вне
+        // тестового режима: автоматизация не должна зависеть от сети, да и вопрос
+        // в ней кликали бы только зря.
+        private async void CheckForUpdateAsync()
+        {
+            if (FakeScanner.Enabled)
+                return;
+
+            var update = await UpdateService.Latest();
+
+            // Вопрос во время уже идущей операции уводит фокус: не встревает в неё.
+            if (update == null || IsBusy)
+                return;
+
+            Log.Info("Доступно обновление: {0}", update.Version);
+
+            if (!UserDialogs.Confirm("Обновление", Messages.UpdateQuestion(update.Version)))
+                return;
+
+            // Плашка показывает не только факт загрузки, но и её ход: проценты идут
+            // из фонового потока и пишутся в то же свойство.
+            var percent = new Progress<int>(value => NoticeText = Messages.UpdatingProgress(value));
+
+            SetBusy(true);
+            ShowNotice(Messages.Updating, result: false, cancel: false);
+
+            try
+            {
+                await UpdateService.Stage(update, percent);
+
+                // Дальше работает обновлятор: дождётся выхода, подменит файлы и
+                // запустит программу снова, уже новой версии.
+                await Task.Run(() => UpdateService.Launch(update.Version));
+
+                Application.Current.Shutdown();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(ex, "Обновление не применилось");
+
+                HideNotice();
+                UserDialogs.Error(Messages.UpdateFailed);
+            }
+            finally
+            {
+                SetBusy(false);
+            }
         }
 
         // --- Сканирование ----------------------------------------------------
