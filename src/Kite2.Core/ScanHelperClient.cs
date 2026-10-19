@@ -10,10 +10,10 @@ using NLog;
 
 namespace Kite2.Core
 {
-    // Захват идёт в отдельной программе: библиотека TWAIN открывает только
-    // 32-разрядный DSM, а программа собрана под x64, и в своём процессе драйвер не
-    // открывается вовсе — источников не будет ни одного. Старая Kite по той же
-    // причине захватывает страницы отдельной программой.
+    // TWAIN-драйвер открывается только 32-разрядным процессом, а приложение x64,
+    // поэтому всю работу со сканером выполняет Kite2.Scan.exe рядом с программой.
+    // Обмен идёт файлом ответа, отмена — закрытием процесса: зависший драйвер
+    // не вернётся сам.
     internal static class ScanHelperClient
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
@@ -52,19 +52,15 @@ namespace Kite2.Core
             if (!result.Succeeded)
                 throw new InvalidOperationException(result.Error);
 
-            return result.Items.ToArray();
-        }
+            return result.Items.ToArray();        }
 
-        // Ответ при отмене не читается: null означает «захват прерван», и это не
-        // неудача, поэтому дальше по коду это проверяется отдельно.
+        // null означает «захват прерван пользователем»: не читается как неудача.
         private static ScanResult Run(string arguments, CancellationToken cancellationToken)
         {
             string helperPath = Path.Combine(AppPaths.AppDirectory, HelperName);
 
             if (!File.Exists(helperPath))
             {
-                // Это не «сканера нет», а неполная установка: молчать о ней нельзя,
-                // иначе человек ищет неисправность там, где её нет.
                 Log.Error("Помощник сканирования не найден: {0}", helperPath);
 
                 throw new InvalidOperationException(Messages.ScanHelperMissing);
@@ -84,12 +80,12 @@ namespace Kite2.Core
                 using (var helper = Process.Start(startInfo))
                 {
                     if (helper == null)
-                        return Failed(Messages.ScanHelperMissing);
+                        return Failure(Messages.ScanHelperMissing);
 
                     var clock = Stopwatch.StartNew();
                     Log.Info("Помощник запущен: {0}", arguments);
 
-                    using (cancellationToken.Register(() => Kill(helper)))
+                    using (cancellationToken.Register(() => TryKill(helper)))
                     {
                         helper.WaitForExit();
                     }
@@ -108,9 +104,7 @@ namespace Kite2.Core
                     {
                         Log.Error("Помощник сканирования не ответил, код {0}", helper.ExitCode);
 
-                        // Иное дело, чем «не найден»: процесс запустился и умер,
-                        // не успев (или не сумев) записать ответ.
-                        return Failed(Messages.ScanHelperSilent);
+                        return Failure(Messages.ScanHelperSilent);
                     }
 
                     return ScanExchange.Read(responsePath);
@@ -120,7 +114,7 @@ namespace Kite2.Core
             {
                 Log.Error(ex, "Помощник сканирования не отработал");
 
-                return Failed(ex.Message);
+                return Failure(ex.Message);
             }
             finally
             {
@@ -129,7 +123,7 @@ namespace Kite2.Core
             }
         }
 
-        private static void Kill(Process helper)
+        private static void TryKill(Process helper)
         {
             try
             {
@@ -141,7 +135,7 @@ namespace Kite2.Core
             }
         }
 
-        private static ScanResult Failed(string error) =>
+        private static ScanResult Failure(string error) =>
             new ScanResult(false, error, new string[0]);
 
         private static string Reason(ScanResult result) =>

@@ -20,10 +20,8 @@ namespace Kite2.Core
 
         public static readonly IReadOnlyList<string> SupportedExtensions = new[] { ".pdf", ".zip", ".tif", ".jpg", ".png" };
 
-        // Сначала файл пишется рядом под временным именем и только потом переезжает
-        // на место: PDF собирается по частям, и обрывок на середине выглядел бы как
-        // готовый документ. Временное имя берётся в той же папке — перенос работает
-        // только внутри одного тома.
+        // Файл пишется рядом под временным именем и переезжает на место после записи:
+        // обрывок посреди сборки PDF не должен выглядеть готовым документом.
         public static void Export(IReadOnlyList<string> pages, string filePath, ScanMode mode)
         {
             if (pages == null || pages.Count == 0)
@@ -37,9 +35,8 @@ namespace Kite2.Core
             string folder = Path.GetDirectoryName(filePath) ?? ".";
             string name = Path.GetFileNameWithoutExtension(filePath);
 
-            // Черновик отличается от настоящего имени только меткой в середине: при
-            // нескольких страницах условие экспорта даёт не один файл, а несколько
-            // («письмо (1).jpg», «письмо (2).jpg»), и метка должна уехать вместе с ними.
+            // Метка в середине имени: у нескольких картинок («письмо (1).jpg»)
+            // она должна уехать из черновика вместе с файлами.
             string mark = "." + Path.GetRandomFileName().Replace(".", string.Empty);
             string draft = Path.Combine(folder, name + mark + extension);
 
@@ -47,7 +44,7 @@ namespace Kite2.Core
             {
                 Write(pages, draft, mode, extension);
 
-                // Проверяется не имя, а то, что переехало хоть что-то.
+                // Проверяется, что переехало хоть что-то.
                 if (Promote(folder, name, mark) == 0)
                     throw new IOException("Экспорт не создал ни одного файла: " + filePath);
             }
@@ -94,8 +91,7 @@ namespace Kite2.Core
                 SaveAsZip(pages, filePath);
             else if (string.Equals(extension, ".tif", StringComparison.OrdinalIgnoreCase))
                 SaveAsTiff(pages, filePath);
-            else if (string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase))
+            else
                 SaveAsPictures(pages, filePath, extension);
         }
 
@@ -115,11 +111,8 @@ namespace Kite2.Core
             }
         }
 
-        // PDF собирает форк PDFsharp 1.50 — NAPS2.PdfSharp (сам PDFsharp 6-й версии
-        // уже AGPL, и iTextSharp был AGPL тоже, а этот форк — под MIT). Вкладка
-        // страниц происходит как у прежнего сборщика: без полей и с вписыванием
-        // пропорций; серые страницы уже серые с этапа композиции, поэтому
-        // отдельной конвертации, как раньше перед сборкой PDF, больше нет.
+        // PDF собирает форк PDFsharp 1.50 — NAPS2.PdfSharp: сам PDFsharp 6-й версии
+        // AGPL, как и iTextSharp, а этот форк под MIT.
         private static void SaveAsPdf(IReadOnlyList<string> pages, string filePath, ScanMode mode)
         {
             var document = new PdfDocument();
@@ -129,9 +122,7 @@ namespace Kite2.Core
                 PdfPage page = document.AddPage();
                 page.Size = PdfSharpCore.PageSize.A4;
 
-                // Вписывание с сохранением пропорций: обычный лист совпадает с A4
-                // ровно, а перевёрнутый или нестандартный скан лёг без вытягивания,
-                // и выравнивается по центру листа.
+                // Вписывание с сохранением пропорций и выравниванием по центру.
                 using (XGraphics graphics = XGraphics.FromPdfPage(page))
                 {
                     var source = new BitmapPageSource(pageFile, mode == ScanMode.Greyscale);
@@ -156,9 +147,7 @@ namespace Kite2.Core
             document.Close();
         }
 
-        // Поставщик страниц для сборщика PDF: форк PDFsharp тянет картинку своим
-        // контрактом IImageSource (в NAPS2 под то же место своя реализация), а у нас
-        // всё рисуется на System.Drawing.
+        // Поставщик страниц под контракт IImageSource форка PDFsharp.
         private sealed class BitmapPageSource : IImageSource
         {
             private readonly byte[] _bytes;
@@ -166,8 +155,7 @@ namespace Kite2.Core
             private readonly bool _jpeg;
 
             // flatGrey запрещает JPEG-путь: серая страница — однокомпонентный JPEG,
-            // а сборщик объявляет JPEG внутри PDF только как DeviceRGB, и
-            // обсуждение формата зависело бы от снисходительности просмотрщиков.
+            // а сборщик кладёт JPEG в PDF только как DeviceRGB.
             public BitmapPageSource(string path, bool flatGrey)
             {
                 _path = path;
@@ -179,10 +167,9 @@ namespace Kite2.Core
                     Width = image.Width;
                     Height = image.Height;
 
-                    // Определяется формат по содержимому, а не по расширению:
-                    // внутри документа расхождение имени и содержимого недопустимо.
-                    // Имя типа уточняется полностью: без него слово ImageFormat
-                    // указывает на одноимённое свойство интерфейса.
+                    // Формат определяется по содержимому, а не по расширению.
+                    // Полное имя типа — без него ImageFormat указывает на
+                    // одноимённое свойство интерфейса.
                     _jpeg = image.RawFormat.Equals(System.Drawing.Imaging.ImageFormat.Jpeg) && !flatGrey;
                 }
 
@@ -201,8 +188,7 @@ namespace Kite2.Core
             {
                 if (_jpeg)
                 {
-                    // Пересжатие ухудшило бы качество и копило артефакты: байты
-                    // уезжают в документ как есть.
+                    // Без пересжатия: байты уезжают в документ как есть.
                     stream.Write(_bytes, 0, _bytes.Length);
                     return;
                 }
@@ -214,10 +200,8 @@ namespace Kite2.Core
 
             public void SaveAsPdfBitmap(MemoryStream stream)
             {
-                // Контракт сборщика (PdfSharpCore.Pdf.Advanced.PdfImage): буфер
-                // как у LockBits в Format24bppRgb — BGR-байты, верхние строки
-                // первыми, каждая строка добита до 4 байт. Переворот строк и
-                // порядок каналов сборщик разбирает сам.
+                // Контракт сборщика: буфер как у LockBits в Format24bppRgb —
+                // BGR-байты, строки сверху, каждая добита до 4 байт.
                 using (var source = new MemoryStream(_bytes))
                 using (var image = new Bitmap(source))
                 {
@@ -240,8 +224,8 @@ namespace Kite2.Core
 
             public void SaveAsPdfIndexedBitmap(MemoryStream stream)
             {
-                // Палитровые страницы не производятся: страница в документе либо
-                // JPEG, либо плоский RGB.
+                // Палитровые страницы не производятся: страница в PDF либо JPEG,
+                // либо плоский RGB.
                 throw new NotSupportedException("Однобитные страницы в PDF не вкладываются.");
             }
 
@@ -272,8 +256,7 @@ namespace Kite2.Core
             {
                 for (int i = 0; i < pages.Count; i++)
                 {
-                    // Имена задаются явно и с нумерацией: при распаковке страницы
-                    // должны идти в исходном порядке.
+                    // Нумерация в имени даёт при распаковке исходный порядок.
                     var entry = archive.CreateEntry("IMAGE" + i.ToString("D8") + ".jpg");
 
                     using (Stream target = entry.Open())
@@ -291,9 +274,8 @@ namespace Kite2.Core
             {
                 foreach (string page in pages)
                 {
-                    // Картинка не освобождается после добавления в коллекцию: коллекция
-                    // записывается в файл только в конце, и освобождённая картинка к
-                    // тому моменту уже недоступна.
+                    // Картинка не освобождается после добавления: коллекция пишется
+                    // в файл только в конце.
                     var image = new MagickImage(page);
 
                     uint width;
@@ -313,8 +295,8 @@ namespace Kite2.Core
             }
         }
 
-        // PNG не принимает переименование JPEG: файл страницы перекодируется, иначе
-        // под именем .png лежал бы JPEG, а такие файлы некоторые просмотрщики не открывают.
+        // Под именем .png нельзя оставить JPEG: некоторые просмотрщики такие
+        // файлы не открывают, поэтому страница перекодируется.
         private static void SaveAsPictures(IReadOnlyList<string> pages, string filePath, string extension)
         {
             bool convert = !string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase);

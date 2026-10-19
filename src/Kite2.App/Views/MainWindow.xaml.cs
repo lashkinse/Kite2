@@ -4,9 +4,8 @@ using Kite2.App.ViewModels;
 
 namespace Kite2.App.Views
 {
-    // Модель и представления не знают друг о друге: связь между ними ставится здесь,
-    // иначе между ними возник бы круг. Escape перехватывается у окна, а не у
-    // области просмотра: при выделении он снимает его, иначе — просто уходит.
+    // Связь между моделью и представлениями ставится здесь: ни одна из сторон
+    // о другой не знает. Escape перехватывается у окна.
     public partial class MainWindow : Window
     {
         public MainWindow()
@@ -20,8 +19,8 @@ namespace Kite2.App.Views
         {
             Viewer.FragmentRequested += (sender, area) => model.SaveSelectedFragment(area);
 
-            // Полоса команд страниц показывается, пока есть что командовать и пока
-            // лист не едет: ни одной из сторон о другой знать не нужно.
+            // Полоса команд страниц показывается, пока есть что командовать
+            // и пока лист не едет.
             Viewer.SheetDragChanged += (sender, dragging) => UpdateActions(model, dragging);
             model.Pages.CollectionChanged += (sender, args) => UpdateActions(model);
 

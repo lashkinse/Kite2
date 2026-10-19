@@ -2,9 +2,8 @@ namespace Kite2.Core
 {
     public sealed class ScanRequest
     {
-        // Драйвер пишет файлы с именами scan1, scan2 и так далее, поэтому каталог
-        // очищается при создании запроса: иначе в новый документ попали бы сканы
-        // прошлого запуска.
+        // Каталог очищается при создании запроса: иначе в новый документ попали бы
+        // сканы прошлого запуска.
         public int SourceIndex { get; set; } = AppSettings.NotSelected;
 
         public int Dpi { get; set; } = 300;
@@ -20,7 +19,7 @@ namespace Kite2.Core
         {
             Directory = AppPaths.Scan;
 
-            AppPaths.EmptyFolder(Directory);
+            AppPaths.ClearFolder(Directory);
         }
     }
 }

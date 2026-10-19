@@ -1,12 +1,9 @@
-using System.IO;
 using Microsoft.Win32;
 
 namespace Kite2.App.Services
 {
-    // Все форматы перечислены в одном окне: отдельный список под кнопкой «Сохранить»
-    // повторял то, что окно и так спрашивает, и требовал второго щелчка. Расширение
-    // берётся из ядра — иначе интерфейс и ядро разошлись бы во мнении о том, что
-    // вообще можно сохранить.
+    // Все форматы перечислены в одном окне; расширения задаёт ядро, чтобы
+    // интерфейс и ядро не расходились во мнении о том, что можно сохранить.
     public static class SaveFilePicker
     {
         private static readonly string[] Formats =
@@ -25,9 +22,7 @@ namespace Kite2.App.Services
             return Show(Filter, defaultExtension);
         }
 
-        // Формат фрагмента один — PNG: он идёт в документ или в сообщение, где сжатие
-        // JPEG испортило бы мелкий текст, а остальные форматы для куска страницы не
-        // годятся вовсе.
+        // Формат фрагмента один — PNG: сжатие JPEG испортило бы мелкий текст.
         public static string AskFragment()
         {
             return Show("Изображение PNG|*.png", ".png");
@@ -43,12 +38,7 @@ namespace Kite2.App.Services
                 DefaultExt = defaultExtension
             };
 
-            // Выбранный по умолчанию формат задан расширением: порядок строк фильтра
-            // выбирает первый, а без заданного расширения окно открывалось с «Все
-            // файлы» и про формат приходилось гадать.
             return dialog.ShowDialog() == true ? dialog.FileName : null;
         }
-
-        public static string ExtensionOf(string fileName) => Path.GetExtension(fileName);
     }
 }

@@ -12,8 +12,7 @@ namespace Kite2.App.Views
     }
 
     // Отдельное окно, а не MessageBox: у MessageBox из WPF нет привязки к окну,
-    // он всегда встаёт по центру экрана, а не программы. Клавиши написаны прямо
-    // на кнопках: Enter и Esc работают и мышью, и с клавиатуры.
+    // он всегда встаёт по центру экрана, а не программы.
     public partial class MessageWindow : Window
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
@@ -91,8 +90,7 @@ namespace Kite2.App.Views
 
         private void Accept(bool answer)
         {
-            // Ответ пишется в журнал: по журналу видно, на что согласился
-            // пользователь, даже если потом разбираться будет поздно.
+            // Ответ пишется в журнал: видно, на что согласился пользователь.
             Log.Info("Ответ в окне «{0}»: {1}", Title, answer ? "да" : "нет");
 
             Answer = answer;

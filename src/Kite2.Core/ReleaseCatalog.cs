@@ -6,10 +6,8 @@ using System.Web.Script.Serialization;
 
 namespace Kite2.Core
 {
-    // Каталог обновлений — это выпуски репозитория: выпуск называется, например,
-    // «Kite2 1.1», и к нему приложен архив Kite2-1.1.zip. Черновики и предверсии
-    // пропускаются: .NET-версии не умеют приписок после номера, а полуфабрикат
-    // человеку предлагать не годится.
+    // Каталог обновлений — выпуски репозитория; черновики и предверсии
+    // пропускаются: сравнение версий приписок не переносит.
     public static class ReleaseCatalog
     {
         public const string ReleasesUrl = "https://api.github.com/repos/lashkinse/Kite2/releases";
@@ -44,8 +42,7 @@ namespace Kite2.Core
 
         private static Entry ReadEntry(ReleaseJson release)
         {
-            // Черновики человек в каталоге не видит, а предверсии не проходят
-            // сравнение версий: и то и другое молча пропускается.
+            // Черновики человек не видит, а предверсии не пройдут сравнение версий.
             if (release == null || release.draft || release.prerelease)
                 return null;
 
@@ -65,8 +62,6 @@ namespace Kite2.Core
 
         private static Version ReadVersion(string title)
         {
-            // Название может быть любым («Kite2 1.1», «v1.1»): версия — первое
-            // число с точками в нём.
             Match match = VersionPattern.Match(title ?? string.Empty);
 
             return match.Success ? Version.Parse(match.Groups[1].Value) : null;

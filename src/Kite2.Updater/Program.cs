@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 
-namespace Kite2.Update
+namespace Kite2.Updater
 {
     // Запускается программой, не человеком:
     //   Kite2.Updater.exe <файл программы> <каталог новой версии> <перезапуск: true|false>
@@ -39,7 +39,7 @@ namespace Kite2.Update
 
         private static void WaitForExit(string programPath)
         {
-            for (int swing = 0; swing < ExitWait.TotalMilliseconds / 500 && IsRunning(programPath); swing++)
+            for (int attempt = 0; attempt < 60 && IsRunning(programPath); attempt++)
                 Thread.Sleep(500);
         }
 
@@ -58,15 +58,14 @@ namespace Kite2.Update
                     }
                     catch (Exception)
                     {
-                        // Не у всякого процесса модуль прочтёшь: системные закрыты,
-                        // а до программы с её помощником очередь всегда доходит.
+                        // Не у всякого процесса модуль прочтёшь — это не ошибка.
                     }
                 }
             }
             catch (Exception)
             {
-                // Список процессов иногда недоступен — копирование с повторами
-                // само подождёт, если файл ещё занят.
+                // Список процессов иногда недоступен: копирование с повторами
+                // само дождётся освобождения файлов.
             }
 
             return false;
@@ -83,8 +82,7 @@ namespace Kite2.Update
 
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
 
-                // Повторы тут не украшение, а необходимость: файл может быть занят
-                // антивирусом долю секунды, и без повторов замена срывалась бы.
+                // Повторы нужны: файл может быть занят антивирусом долю секунды.
                 for (int attempt = 1; ; attempt++)
                 {
                     try

@@ -4,6 +4,8 @@ using NLog;
 
 namespace Kite2.Core
 {
+    // Инициализация ImageMagick выполняется однажды: повторный вызов сбрасывает
+    // состояние библиотеки на середине работы.
     public static class ImageMagickSetup
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
@@ -12,8 +14,6 @@ namespace Kite2.Core
 
         private static bool _started;
 
-        // Инициализация не идемпотентна: повторный вызов сбросил бы состояние
-        // библиотеки на середине работы программы, поэтому она выполняется один раз.
         public static void EnsureStarted()
         {
             if (_started)

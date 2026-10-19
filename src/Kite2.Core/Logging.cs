@@ -8,10 +8,9 @@ using NLog.Targets;
 
 namespace Kite2.Core
 {
-    // Конфигурация задаётся кодом, а не файлом NLog.config: путь к журналу должен быть
-    // известен из одного места и показываться пользователю вместе с текстом ошибки.
-    // Файл открывается на каждую запись — держать его открытым нельзя: через буфер
-    // последние строки не переживают аварийное завершение процесса.
+    // Конфигурация задаётся кодом: путь к журналу показывается пользователю вместе
+    // с текстом ошибки. Файл открывается на каждую запись — закрытый журнал
+    // переживает аварийное завершение процесса.
     public static class Logging
     {
         private const long MaxFileSize = 2 * 1024 * 1024;
@@ -24,8 +23,7 @@ namespace Kite2.Core
 
         public static string StartupArguments { get; private set; } = string.Empty;
 
-        // Вызывается самым первым, до всякой другой работы программы: с этого момента
-        // любая ошибка попадает в файл.
+        // Вызывается самым первым: с этого момента любая ошибка попадает в файл.
         public static void Initialize(string[] arguments)
         {
             StartupArguments = arguments == null || arguments.Length == 0
@@ -62,8 +60,7 @@ namespace Kite2.Core
             }
         }
 
-        // Flush обязателен: если процесс падает, записанное должно успеть оказаться
-        // в файле.
+        // Flush обязателен: записанное должно пережить аварийное завершение.
         public static void Report(Exception exception, string what)
         {
             string text = what + Environment.NewLine + exception;

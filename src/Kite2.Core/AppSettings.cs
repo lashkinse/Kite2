@@ -26,7 +26,7 @@ namespace Kite2.Core
         {
             if (!File.Exists(AppPaths.SettingsFile))
             {
-                TrySave();
+                Save();
                 return;
             }
 
@@ -41,9 +41,7 @@ namespace Kite2.Core
             }
         }
 
-        public static void Save() => TrySave();
-
-        private static void TrySave()
+        public static void Save()
         {
             var content = new StringBuilder()
                 .AppendLine("; Настройки Kite2. Файл создаётся программой автоматически.")

@@ -3,8 +3,8 @@ using System.Windows.Media;
 
 namespace Kite2.App.Controls
 {
-        // Отдельные свойства, а не часть содержимого кнопки: содержимое уже занято
-    // значком. Заодно вид кнопки описан один раз в стиле, а не в каждой кнопке.
+    // Присоединённые свойства кнопок: содержимое кнопки занято значком,
+    // а вид кнопки описан один раз в стиле.
     public static class CommandBar
     {
         public static readonly DependencyProperty HintProperty =
@@ -14,9 +14,7 @@ namespace Kite2.App.Controls
                 typeof(CommandBar),
                 new PropertyMetadata(string.Empty));
 
-        // Цвет подсказки разный у тёмной и у акцентной кнопки: серая на синем
-        // читалась плохо. В шаблоне он берётся привязкой к самой кнопке, поэтому
-        // общий шаблон подходит обеим.
+        // Цвет подсказки свой: серый на синей акцентной кнопке читается плохо.
         public static readonly DependencyProperty HintBrushProperty =
             DependencyProperty.RegisterAttached(
                 "HintBrush",
@@ -24,9 +22,8 @@ namespace Kite2.App.Controls
                 typeof(CommandBar),
                 new PropertyMetadata(null));
 
-        // Помечает кнопку, по которой пойдёт следующее сканирование: вокруг неё
-        // рисуется та же пунктирная рамка, что вокруг выделения на странице. Без
-        // отметки не видно, какой режим повторит «+»: обе кнопки выглядят одинаково.
+        // Помечает кнопку, которую повторит «+»: обе кнопки сканера выглядят
+        // одинаково, и без отметки не видно текущего режима.
         public static readonly DependencyProperty IsNextProperty =
             DependencyProperty.RegisterAttached(
                 "IsNext",

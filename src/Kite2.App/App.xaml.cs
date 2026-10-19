@@ -25,8 +25,7 @@ namespace Kite2.App
             Logging.Initialize(e.Args);
             Logging.CatchBackgroundFailures();
 
-            // Тестовый режим включается ключом запуска: страницы рисует программа. В заголовке
-            // окна он помечен, чтобы тестовый лист не приняли за настоящий документ.
+            // Тестовый режим включается ключом запуска: страницы рисует программа.
             bool testMode = FakeScanner.EnableFromArguments(e.Args);
 
             Logging.WriteStartup(
@@ -38,6 +37,8 @@ namespace Kite2.App
 
             AppSettings.Load();
 
+            // Сбой процесса: лишь бы показать пользователю; в журнал это запишет
+            // подписка из Logging.CatchBackgroundFailures().
             AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
                 UserDialogs.Error(args.ExceptionObject as Exception);
 

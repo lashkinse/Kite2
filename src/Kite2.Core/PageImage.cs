@@ -1,15 +1,12 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using ImageMagick;
 
 namespace Kite2.Core
 {
-    // Драйвер кладёт рядом файлы PPM (цветные) и PGM (чёрно-белые). Читаются они
-    // прямо здесь, средствами ImageMagick: в прежней версии программы между драйвером
-    // и страницей стоял внешний инструмент pnmtojpeg, и приложение зависело от папки
-    // с чужими программами рядом с собой.
+    // Драйвер может отдать файлы PPM и PGM — они читаются здесь, средствами
+    // ImageMagick, без внешних инструментов рядом с программой.
     public static class PageImage
     {
         // Лист A4 при 300 dpi — в него вписывается скан любого размера.
@@ -58,9 +55,7 @@ namespace Kite2.Core
             using (var scan = new MagickImage(source))
             using (MagickImage sheet = FitOntoSheet(scan))
             {
-                // Оттенки серого, а не порог: отсечка убивала светлые линии и тонкий
-                // текст, а в режиме «Ч/Б» пользователь ждёт именно чёрно-белый скан
-                // с различимыми полутонами.
+                // Оттенки серого, а не порог: отсечка убивала светлые линии и текст.
                 if (mode == ScanMode.Greyscale)
                     sheet.ColorType = ColorType.Grayscale;
 
@@ -110,8 +105,8 @@ namespace Kite2.Core
             {
                 Density density = image.Density;
 
-                // Рамка, вычерченная мышью с одного пикселя, уходит за лист:
-                // фрагмент урезается по краю, а не выходит за границы страницы.
+                // Рамка, вычерченная мышью, может уйти за лист: фрагмент урезается
+                // по краю страницы.
                 int x = Math.Max(0, Math.Min(left, (int)image.Width - 1));
                 int y = Math.Max(0, Math.Min(top, (int)image.Height - 1));
 
@@ -122,8 +117,8 @@ namespace Kite2.Core
 
                 image.Density = density;
 
-                // PNG хранит то, что отдали, без потерь: фрагмент обычно идёт в
-                // документ или в сообщение, где JPEG ухудшил бы мелкий текст.
+                // PNG без потерь: фрагмент обычно идёт в документ, где JPEG
+                // ухудшил бы мелкий текст.
                 image.Format = MagickFormat.Png;
                 image.Write(targetPath);
             }
@@ -135,25 +130,6 @@ namespace Kite2.Core
 
             resultWidth = (uint)(width * scale);
             resultHeight = (uint)(height * scale);
-        }
-
-        // Исключения глотаются: файл может быть занят просмотром, и он удалится при
-        // следующей очистке каталога.
-        public static void Delete(IEnumerable<string> pages)
-        {
-            foreach (string page in pages)
-            {
-                try
-                {
-                    File.Delete(page);
-                }
-                catch (IOException)
-                {
-                }
-                catch (UnauthorizedAccessException)
-                {
-                }
-            }
         }
     }
 }

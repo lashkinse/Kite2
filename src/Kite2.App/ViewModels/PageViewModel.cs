@@ -7,20 +7,19 @@ using Kite2.Core;
 
 namespace Kite2.App.ViewModels
 {
-    // Миниатюра грузится сразу и в нужном размере: тянуть в память лист A4 ради
-    // прямоугольника 110 на 156 пикселей незачем, а колонка перерисовывается при
-    // каждом щелчке.
+    // Миниатюра грузится сразу и в маленьком размере; полная страница — при первом
+    // показе в области просмотра. Держать в памяти десяток листов A4 ради колонки
+    // миниатюр незачем.
     public sealed class PageViewModel : ObservableObject
     {
         private const int ThumbWidth = 110;
 
         public string FilePath { get; }
 
+        private ImageSource _page;
+
         private int _number;
 
-        // Номер принадлежит позиции в документе, а не самой странице: после удаления
-        // или перестановки номера должны сойтись снова, иначе в колонке остаются
-        // пропуски и повторы.
         public int Number
         {
             get => _number;
@@ -35,22 +34,33 @@ namespace Kite2.App.ViewModels
 
         public ImageSource Thumbnail { get; private set; }
 
-        public ImageSource Page { get; private set; }
+        public ImageSource Page
+        {
+            get
+            {
+                if (_page == null)
+                {
+                    _page = Load(FilePath, 0);
+                    OnPropertyChanged();
+                }
+
+                return _page;
+            }
+        }
 
         public PageViewModel(string filePath, int number)
         {
             FilePath = filePath;
             Number = number;
             Thumbnail = Load(filePath, ThumbWidth);
-            Page = Load(filePath, 0);
         }
 
-        // После поворота страница прежняя только по пути, а на экране уже другая:
-        // без перечитывания колонка и просмотр показали бы старое изображение.
+        // После поворота файл прежний, а картинка уже другая: без перечитывания
+        // колонка и просмотр показали бы старое изображение.
         public void Reload()
         {
             Thumbnail = Load(FilePath, ThumbWidth);
-            Page = Load(FilePath, 0);
+            _page = null;
 
             OnPropertyChanged(nameof(Thumbnail));
             OnPropertyChanged(nameof(Page));
@@ -64,7 +74,6 @@ namespace Kite2.App.ViewModels
             // Кэширование на диске выключено: файл перезаписывается на месте, и
             // закэшированная версия показала бы старую страницу после поворота.
             image.CacheOption = BitmapCacheOption.OnLoad;
-            image.CreateOptions = BitmapCreateOptions.None;
 
             if (decodeWidth > 0)
                 image.DecodePixelWidth = decodeWidth;

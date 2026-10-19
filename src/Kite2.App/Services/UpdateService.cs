@@ -13,10 +13,8 @@ using NLog;
 namespace Kite2.App.Services
 {
     // Обновления раздаются архивами в выпусках репозитория: программа спрашивает
-    // человека при входе, скачивает и распаковывает новую версию в хранилище, а
-    // отдельный обновлятор подменяет файлы рядом с запущенной программой и запускает
-    // её заново. Всё общение с сетью — из комплекта .NET Framework: сторонних
-    // пакетов у обновления нет.
+    // человека при входе и распаковывает новую версию в хранилище, а отдельный
+    // обновлятор подменяет файлы и запускает программу заново.
     public static class UpdateService
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
@@ -27,8 +25,8 @@ namespace Kite2.App.Services
 
         private static readonly HttpClient Http = CreateHttp();
 
-        // Дата-хранилище одно на заядлую копию программы, не на каталог: архивы
-        // больших вариантов хранить в Program Files нельзя.
+        // Дата-хранилище одно на пользователя, не на каталог установки:
+        // архивы в Program Files хранить нельзя.
         private static string Storage =>
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -36,15 +34,13 @@ namespace Kite2.App.Services
                 "Update");
 
         // Ответ проверки: само обновление и признак того, что каталог вообще
-        // ответил. Они разные вещи: «обновлений нет» повторов не просит, а вот
-        // сеть, не пустившая запрос, — просит.
+        // ответил. «Обновлений нет» повторов не просит, сеть без ответа — просит.
         public static async Task<(ReleaseCatalog.Entry Update, bool Answered)> Latest()
         {
             try
             {
-                // Соединение в наших сетях бывает сброшено на раз: быстрых повторов
-                // пять. Десятисекундная граница общая для всех попыток, так что
-                // вход в программу в худшем случае тоже задержится несильно.
+                // Граница общая для всех быстрых повторов: вход в программу
+                // в худшем случае задерживается несильно.
                 using (var wait = new CancellationTokenSource(NetworkWait))
                 {
                     for (int attempt = 1; ; attempt++)
@@ -52,7 +48,7 @@ namespace Kite2.App.Services
                         try
                         {
                             using (HttpResponseMessage response =
-                                await Http.GetAsync(ReleaseCatalog.ReleasesUrl, HttpCompletionOption.ResponseContentRead, wait.Token))
+                                await Http.GetAsync(ReleaseCatalog.ReleasesUrl, wait.Token))
                             {
                                 response.EnsureSuccessStatusCode();
 
@@ -70,8 +66,7 @@ namespace Kite2.App.Services
                         }
                         catch (HttpRequestException) when (attempt < 5)
                         {
-                            // Сброшенное соединение сигнализирует мгновенно: пауза в
-                            // полсекунды всегда успеет пройти до отмены по времени.
+                            // Быстрый повтор: пауза всегда умещается в общий срок.
                             await Task.Delay(TimeSpan.FromMilliseconds(500), wait.Token);
                         }
                     }
@@ -100,8 +95,7 @@ namespace Kite2.App.Services
 
             Directory.CreateDirectory(Storage);
 
-            // Папки в хранилище — это недораспакованные копии прошлых обновлений,
-            // они ничего не значат и остаются только мусорить.
+            // Папки в хранилище — остатки прошлых обновлений.
             foreach (string stale in Directory.GetDirectories(Storage))
                 Directory.Delete(stale, true);
 
@@ -112,13 +106,13 @@ namespace Kite2.App.Services
 
             ZipFile.ExtractToDirectory(temporary, versionDirectory);
 
-            // Архив габаритный держать смысла нет: копия уже распакована рядом.
+            // Архив после распаковки не нужен.
             File.Delete(temporary);
         }
 
-        // Подмена файлов возможна только снаружи — сама запущенная программа свои
-        // файлы не перезапишет. Обновлятор поэтому запускается из хранилища, чтобы
-        // его собственный файл не мешал копированию, и дожидается выхода программы.
+        // Подменить свои файлы запущенная программа не может — это делает
+        // обновлятор, запущенный из хранилища (его собственный файл не мешает
+        // копированию).
         public static void Launch(Version version)
         {
             string programPath = Assembly.GetEntryAssembly().Location;
@@ -127,8 +121,8 @@ namespace Kite2.App.Services
 
             File.Copy(updaterSource, target, true);
 
-            // Перезапуск просит обновлятор, а не программа. Аргументов при запуске
-            // не передаётся: тестовый режим до вопроса об обновлении не доходит.
+            // Перезапуск просит обновлятор. Ключей запуска не передаётся:
+            // тестовый режим до вопроса об обновлении не доходит.
             var startInfo = new ProcessStartInfo
             {
                 FileName = target,
@@ -162,8 +156,7 @@ namespace Kite2.App.Services
 
                         done += taken;
 
-                        // Процентов нет, если адрес отдал файл без длины: тогда
-                        // плашка остаётся просто с текстом «Выполняется загрузка».
+                        // Процентов нет, если адрес отдал файл без длины.
                         if (total > 0 && progress != null)
                             progress.Report((int)(done * 100 / total));
                     }

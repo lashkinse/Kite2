@@ -18,8 +18,7 @@ using System.Windows.Threading;
 
 namespace Kite2.App.ViewModels
 {
-    // Долгие операции идут через Task.Run: захват и сохранение считают минуты, и в
-    // главном потоке им места нет. Пока операция идёт, команды заблокированы, а
+    // Долгие операции идут в фоновом потоке: команды блокируются,
     // плашка показывает, что происходит.
     public sealed class MainViewModel : ObservableObject
     {
@@ -63,8 +62,6 @@ namespace Kite2.App.ViewModels
                 MovePageUpCommand, MovePageDownCommand, RotatePageCommand
             };
 
-            // Плашка с результатом («сохранено», «добавлено страниц») убирается сама:
-            // сообщение не должно висеть, пока пользователь смотрит на страницу.
             _resultNoticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(ResultNoticeSeconds) };
             _resultNoticeTimer.Tick += OnResultNoticeTimeout;
         }
@@ -89,8 +86,7 @@ namespace Kite2.App.ViewModels
             private set => SetProperty(ref _noticeVisible, value);
         }
 
-        // Результат в акцентном цвете и убирается сам, ход работы остаётся, пока идёт
-        // операция.
+        // Результат в плашке уходит сам, ход работы остаётся до конца операции.
         public bool NoticeIsResult
         {
             get => _noticeIsResult;
@@ -109,8 +105,7 @@ namespace Kite2.App.ViewModels
             private set => SetProperty(ref _cancelWanted, value);
         }
 
-        // Доступность всех команд меняется по одним и тем же причинам — идёт операция
-        // или нет, выбрана страница или нет, — поэтому они и обновляются одним списком.
+        // Обновляются одной ссылкой: доступность меняется по одним и тем же причинам.
         private readonly RelayCommand[] _commands;
 
         public RelayCommand NewDocumentCommand { get; }
@@ -139,13 +134,13 @@ namespace Kite2.App.ViewModels
 
         private ScanMode CurrentScanMode { get; set; } = ScanMode.Greyscale;
 
-        // Подготовка идёт после показа окна, а не в конструкторе: иначе окно успело бы
-        // повисеть белым, пока чистится каталог и запускается ImageMagick.
+        // Подготовка после показа окна: чистка каталога и запуск ImageMagick
+        // не должны задерживать раскрытие.
         public void Start()
         {
             try
             {
-                AppPaths.EmptyFolder(AppPaths.Scan);
+                AppPaths.ClearFolder(AppPaths.Scan);
             }
             catch (Exception ex)
             {
@@ -161,21 +156,15 @@ namespace Kite2.App.ViewModels
                 UserDialogs.Error(ex);
             }
 
-            // Проверка обновления тоже после показа окна: вопрос не должен
-            // выскочить раньше, чем оно раскрылось.
             CheckForUpdateAsync();
         }
 
         // --- Обновление ------------------------------------------------------
 
-        // Повторная проверка, если первая не получила ответа: сбросы и обрывы в
-        // наших сетях случаются на минуты, а вопрос всё равно нужен при входе —
-        // хотя бы позже, без перезапуска программы.
+        // Повторный вопрос, если сеть не ответила: дешевле, чем перезапуск программы.
         private const int UpdateRepeatDelaySeconds = 5 * 60;
 
-        // Программа спрашивает об обновлении один раз при входе и только вне
-        // тестового режима: автоматизация не должна зависеть от сети, да и вопрос
-        // в ней кликали бы только зря.
+        // Один проверочный вопрос за сеанс и только вне тестового режима.
         private async void CheckForUpdateAsync()
         {
             if (FakeScanner.Enabled)
@@ -185,15 +174,13 @@ namespace Kite2.App.ViewModels
 
             if (update == null)
             {
-                // «Обновлений нет» — окончательный ответ: каталог отвечал, а вот
-                // недоступная сеть повтору подлежит, вопрос всё равно нужен при входе.
+                // «Обновлений нет» — окончательный ответ, недоступная сеть — нет.
                 if (!answered)
                     ScheduleRepeatCheck();
 
                 return;
             }
 
-            // Вопрос во время уже идущей операции уводит фокус: не встревает в неё.
             if (IsBusy)
                 return;
 
@@ -202,8 +189,7 @@ namespace Kite2.App.ViewModels
             if (!UserDialogs.Confirm("Обновление", Messages.UpdateQuestion))
                 return;
 
-            // Плашка показывает не только факт загрузки, но и её ход: проценты идут
-            // из фонового потока и пишутся в то же свойство.
+            // Плашка показывает не только факт, но и ход загрузки.
             var percent = new Progress<int>(value => NoticeText = Messages.UpdatingProgress(value));
 
             SetBusy(true);
@@ -213,8 +199,6 @@ namespace Kite2.App.ViewModels
             {
                 await UpdateService.Stage(update, percent);
 
-                // Дальше работает обновлятор: дождётся выхода, подменит файлы и
-                // запустит программу снова, уже новой версии.
                 await Task.Run(() => UpdateService.Launch(update.Version));
 
                 Application.Current.Shutdown();
@@ -233,33 +217,22 @@ namespace Kite2.App.ViewModels
         }
 
         // Повтор приостанавливается на минуты: чаще дёргать GitHub незачем.
-        private void ScheduleRepeatCheck()
+        private async void ScheduleRepeatCheck()
         {
-            // Ожидание прямо на диспетчере: вопрос поднимается в главном потоке,
-            // как обычный вопрос при входе.
-            async void Delayed()
-            {
-                await Task.Delay(TimeSpan.FromSeconds(UpdateRepeatDelaySeconds));
+            await Task.Delay(TimeSpan.FromSeconds(UpdateRepeatDelaySeconds));
 
-                // Программа могла уже закрыться: вопроса по покойнику быть не должно.
-                if (Application.Current != null && Application.Current.Windows.Count > 0)
-                    CheckForUpdateAsync();
-            }
-
-            Delayed();
+            // Программа могла уже закрыться: вопроса по покойнику быть не должно.
+            if (Application.Current != null && Application.Current.Windows.Count > 0)
+                CheckForUpdateAsync();
         }
 
         // --- Журнал -----------------------------------------------------------
 
-        // Папка одна и та же на всякой машине (%AppData%\Kite2\logs): когда сбой
-        // случился на другом компьютере, оттуда передают файл, как бы он ни был
-        // размещён — кнопка открывает этот каталог в проводнике.
+        // Путь одинаков на всякой машине: по нему журнал передают с другого компьютера.
         private void OpenLogsFolder()
         {
             try
             {
-                // Каталог создаётся и в свежей программе: пустой проводник понятнее
-                // окна сообщения «путь не найден».
                 Directory.CreateDirectory(AppPaths.Logs);
 
                 Process.Start(new ProcessStartInfo { FileName = AppPaths.Logs, UseShellExecute = true });
@@ -272,8 +245,8 @@ namespace Kite2.App.ViewModels
 
         // --- Сканирование ----------------------------------------------------
 
-        // Порядок страниц задаётся временем создания файлов, поэтому композиция идёт
-        // сразу после захвата, пока порядок ещё виден.
+        // Порядок страниц задаётся временем создания файлов, поэтому композиция
+        // идёт сразу после захвата.
         private async void ScanAsync(CaptureColour colour)
         {
             if (!FakeScanner.Enabled && AppSettings.ScanSourceIndex == AppSettings.NotSelected)
@@ -289,11 +262,8 @@ namespace Kite2.App.ViewModels
 
             try
             {
-                // Серии повторяются, пока пользователь не скажет «завершить». Вопрос
-                // задаётся между сериями, а не после каждой: один сеанс работы со
-                // сканером — это обычно несколько серий подряд. Серия без страниц —
-                // это провал сканирования, и допрашивать «продолжить?» после него
-                // человек не должен.
+                // Вопрос задаётся между сериями, но не после серии без страниц:
+                // пустой захват — провал, а не просьба продолжить.
                 int scanned;
 
                 do
@@ -310,10 +280,6 @@ namespace Kite2.App.ViewModels
                 Log.Info("Сканирование прервано пользователем");
                 HideNotice();
             }
-            catch (SourceNotAvailableException)
-            {
-                UserDialogs.Error(Messages.SourceUnavailable);
-            }
             catch (Exception ex)
             {
                 UserDialogs.Error(ex);
@@ -323,10 +289,7 @@ namespace Kite2.App.ViewModels
                 DisposeScanCancellation();
                 SetBusy(false);
 
-                // Плашка «Выполняется сканирование» убирается всегда: после ошибки
-                // она иначе осталась бы висеть, а её «Отмена» уже ничего не отменяет,
-                // потому что источник отмены освобождён. Плашку с результатом не трогаем:
-                // она убирается сама.
+                // Плашку хода убираем всегда, даже после ошибки; результат убирается сам.
                 if (NoticeVisible && !NoticeIsResult)
                     HideNotice();
             }
@@ -334,9 +297,7 @@ namespace Kite2.App.ViewModels
 
         private CaptureColour CurrentColour { get; set; } = CaptureColour.BlackAndWhite;
 
-        // Без отметки не видно, какой режим повторит «+»: кнопки «Ч/Б» и «Цветное»
-        // на панели выглядят одинаково. Отметка нужна и до первого сканирования — «+»
-        // и так повторяет чёрно-белое.
+        // Без отметки не видно, какой режим повторит «+».
         public bool LastScanIsMono { get; private set; } = true;
 
         public bool LastScanIsColour { get; private set; }
@@ -352,9 +313,7 @@ namespace Kite2.App.ViewModels
             OnPropertyChanged(nameof(LastScanIsColour));
         }
 
-        // «+» повторяет предыдущий режим, а не всегда чёрно-белый: иначе после
-        // цветной серии он тихо переключил бы программу в другой режим, и страницы
-        // вышли бы не те, что человек ожидал.
+        // «+» повторяет предыдущий режим, а не всегда чёрно-белый.
         private void ScanAgain()
         {
             ScanAsync(CurrentColour);
@@ -373,11 +332,6 @@ namespace Kite2.App.ViewModels
 
             await Task.Run(() =>
             {
-                // Проверка источника идёт здесь же: она занимает время, а к моменту
-                // разговора с драйвером устройство вполне могло исчезнуть.
-                if (!ScannerService.IsSourceAvailable(request.SourceIndex))
-                    throw new SourceNotAvailableException();
-
                 ScannerService.Capture(request, cancellationToken);
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -385,8 +339,8 @@ namespace Kite2.App.ViewModels
                 return PageImage.ComposeDirectory(request, PageQuality);
             }, cancellationToken);
 
-            // Пока серия идёт, каталог наполняется; страницы забираются сразу, иначе
-            // следующая серия очистит каталог вместе с только что отсканированным.
+            // Страницы забираются сразу: следующая серия очистит каталог
+            // вместе с только что отсканированным.
             var pages = await Task.Run(() => BuildPages(request.Directory), cancellationToken);
 
             AddPages(pages);
@@ -394,8 +348,7 @@ namespace Kite2.App.ViewModels
             return pages.Count;
         }
 
-        // В тестовом режиме вопрос не задаётся: там всё равно никто не сидит перед
-        // окном, а вопрос остановил бы и прогон, и автоматическую проверку.
+        // В тестовом режиме вопрос остановил бы и прогон, и автоматическую проверку.
         private bool AskToContinue()
         {
             if (FakeScanner.Enabled && !FakeScanner.AlwaysAsk)
@@ -419,15 +372,10 @@ namespace Kite2.App.ViewModels
             return pages;
         }
 
-        private void AddPages(IEnumerable<PageViewModel> pages)
+        private void AddPages(List<PageViewModel> pages)
         {
-            int added = 0;
-
             foreach (PageViewModel page in pages)
-            {
                 _pages.Add(page);
-                added++;
-            }
 
             if (_pages.Count > 0)
                 SelectedPage = _pages[_pages.Count - 1];
@@ -435,15 +383,14 @@ namespace Kite2.App.ViewModels
             RenumberPages();
             RefreshCommands();
 
-            // Показано число страниц в этой серии, а не в документе: после вопроса о
-            // продолжении «добавлено 3» относилось бы к предыдущему захвату.
-            if (added > 0)
-                ShowNotice(Messages.PagesAdded(added), result: true, cancel: false);
+            // В плашке — размер серии, а не документа: вопрос о продолжении
+            // относится к следующему захвату.
+            if (pages.Count > 0)
+                ShowNotice(Messages.PagesAdded(pages.Count), result: true, cancel: false);
         }
 
-        // После вставки и удаления между номерами остаются пропуски, и подпись
-        // «страница 2» попадает на страницу 1, 3, 2 — поэтому номера проставляются
-        // подряд каждый раз.
+        // Номера проставляются подряд после всякого изменения состава: иначе
+        // остаются пропуски и повторы.
         private void RenumberPages()
         {
             for (int i = 0; i < _pages.Count; i++)
@@ -471,9 +418,8 @@ namespace Kite2.App.ViewModels
             {
                 await Task.Run(() => DocumentExporter.Export(files, path, mode));
 
-                // В журнал пишется то, что действительно появилось на диске. У картинок
-                // это не запрошенное имя, а отдельные файлы с номерами страниц, поэтому
-                // размер запрошенного пути мог бы и не существовать.
+                // В журнал пишется то, что появилось на диске: у картинок это
+                // отдельные файлы с номерами страниц, а не запрошенное имя.
                 Log.Info("Экспорт завершён: {0}, мс={1}, файлов={2}", path, watch.ElapsedMilliseconds, Describe(path));
 
                 ShowNotice(Messages.Saved + " " + Path.GetFileName(path), result: true, cancel: false);
@@ -544,8 +490,8 @@ namespace Kite2.App.ViewModels
             _pages.Remove(page);
             page.Delete();
 
-            // После удаления выбирается соседняя страница, иначе область просмотра
-            // гаснет, как будто удалены все страницы.
+            // После удаления выбирается соседняя страница: область просмотра
+            // не должна гаснуть.
             SelectedPage = _pages.Count == 0
                 ? null
                 : _pages[Math.Min(index, _pages.Count - 1)];
@@ -618,10 +564,9 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        // Поворот меняет файл, а не только картинку на экране: страница уходит в
-        // документ такой, какой лежит на диске, иначе после сохранения она была бы
-        // повёрнута не так, как показано. Область просмотра следит только за выбором
-        // страницы, поэтому после перечитывания ей это сообщение и нужно.
+        // Поворот меняет файл, а не только картинку на экране. Область просмотра
+        // следит за выбором страницы, поэтому после перечитывания ей это
+        // сообщение и нужно.
         private void RotatePage()
         {
             PageViewModel page = SelectedPage;
@@ -680,8 +625,7 @@ namespace Kite2.App.ViewModels
             CancelWanted = cancel;
             NoticeVisible = true;
 
-            // Отсчёт заново на каждое сообщение: два результата подряд не должны
-            // ждать друг друга.
+            // Отсчёт заново на каждое сообщение.
             _resultNoticeTimer.Stop();
 
             if (result)
@@ -703,8 +647,7 @@ namespace Kite2.App.ViewModels
             HideNotice();
         }
 
-        // Отмена у WPF — это закрытие окна, но закрывать нечего: закрывается сессия
-        // TWAIN, и ждать её поток перестаёт.
+        // Отмена закрывает сессию TWAIN через помощника: ждать её поток перестаёт.
         private void CancelOperation()
         {
             if (_scanCancellation == null)

@@ -8,6 +8,7 @@ namespace Kite2.Core
     // каталог установки может быть доступен только для чтения.
     public static class AppPaths
     {
+        private static string _data;
         private static string _scan;
         private static string _magickNetTemp;
         private static string _logs;
@@ -29,41 +30,37 @@ namespace Kite2.Core
             }
         }
 
-        private static string _data;
-
         public static string Scan => Resolve(ref _scan, "scan");
 
-        public static string MagickNetTemp => Resolve(ref _magickNetTemp, "magicknet");
+        public static string MagickNetTemp => Resolve(ref _magickNetTemp, "magick.net");
 
         public static string Logs => Resolve(ref _logs, "logs");
 
-        public static string SettingsFile => Path.Combine(Data, "settings.ini");
+        public static string SettingsFile => Path.Combine(Data, "Настройки.ini");
 
-        private static string Resolve(ref string cached, string folderName)
+        public static string LogFile => Path.Combine(Logs, "Kite2-" + DateTime.Now.ToString("yyyyMMdd") + ".log");
+
+        // Содержимое стирается, но не сам каталог.
+        public static void ClearFolder(string path)
         {
-            if (string.IsNullOrEmpty(cached))
-                cached = Path.Combine(Data, folderName);
+            foreach (string file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
+                File.Delete(file);
+        }
 
-            EnsureFolder(cached);
+        private static string Resolve(ref string saved, string name)
+        {
+            if (string.IsNullOrEmpty(saved))
+                saved = Path.Combine(Data, name);
 
-            return cached;
+            EnsureFolder(saved);
+
+            return saved;
         }
 
         private static void EnsureFolder(string path)
         {
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
-        }
-
-        // Каталог не удаляется: на него ссылается ImageMagick, и он должен
-        // существовать всё время работы программы.
-        public static void EmptyFolder(string path)
-        {
-            foreach (string file in Directory.GetFiles(path))
-                File.Delete(file);
-
-            foreach (string folder in Directory.GetDirectories(path))
-                EmptyFolder(folder);
         }
     }
 }

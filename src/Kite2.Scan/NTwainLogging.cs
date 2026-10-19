@@ -6,11 +6,9 @@ using NTwain;
 
 namespace Kite2.Scan
 {
-    // NTwain пишет всю хронику TWAIN-вызовов (открытие диспетчера, коды возврата,
-    // выбор источника) через System.Diagnostics.Trace, и без слушателя эти строки
-    // никуда не попадают. Из-за этого последние зависания на «Список TWAIN (Old)»
-    // остались без деталей: не видно, что в это время говорят сами TWAIN-вызовы.
-    // Свой ILog направляет их в общий файл, рядом с логами самого помощника.
+    // NTwain пишет хронику TWAIN-вызовов через System.Diagnostics.Trace, и без
+    // слушателя эти строки никуда не попадают. Свой ILog направляет их в общий
+    // файл журнала помощника.
     internal static class NTwainLogging
     {
         private sealed class NLogLog : ILog
@@ -62,8 +60,7 @@ namespace Kite2.Scan
 
         public static void Attach()
         {
-            // Нет смысла заворачивать в try/catch: если мост не встанет,
-            // собирать TWAIN-диагностику всё равно будет нечем.
+            // Если мост не встанет, собирать TWAIN-диагностику всё равно будет нечем.
             PlatformInfo.Current.Log = new NLogLog();
         }
     }
