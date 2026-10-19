@@ -55,6 +55,7 @@ namespace Kite2.App.ViewModels
             MovePageDownCommand = new RelayCommand(() => MovePage(1), () => !IsBusy && SelectedPage != null);
             RotatePageCommand = new RelayCommand(RotatePage, () => !IsBusy && SelectedPage != null);
             CancelNoticeCommand = new RelayCommand(CancelOperation);
+            LogFolderCommand = new RelayCommand(OpenLogsFolder);
 
             _commands = new[]
             {
@@ -133,6 +134,8 @@ namespace Kite2.App.ViewModels
         public RelayCommand RotatePageCommand { get; }
 
         public RelayCommand CancelNoticeCommand { get; }
+
+        public RelayCommand LogFolderCommand { get; }
 
         private ScanMode CurrentScanMode { get; set; } = ScanMode.Greyscale;
 
@@ -244,6 +247,27 @@ namespace Kite2.App.ViewModels
             }
 
             Delayed();
+        }
+
+        // --- Журнал -----------------------------------------------------------
+
+        // Папка одна и та же на всякой машине (%AppData%\Kite2\logs): когда сбой
+        // случился на другом компьютере, оттуда передают файл, как бы он ни был
+        // размещён — кнопка открывает этот каталог в проводнике.
+        private void OpenLogsFolder()
+        {
+            try
+            {
+                // Каталог создаётся и в свежей программе: пустой проводник понятнее
+                // окна сообщения «путь не найден».
+                Directory.CreateDirectory(AppPaths.Logs);
+
+                Process.Start(new ProcessStartInfo { FileName = AppPaths.Logs, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                UserDialogs.Error(ex);
+            }
         }
 
         // --- Сканирование ----------------------------------------------------

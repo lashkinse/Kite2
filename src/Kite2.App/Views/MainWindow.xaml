@@ -73,6 +73,12 @@
                      захват, а про то, чем захватывают. -->
                 <Button Style="{StaticResource CommandButtonStyle}" Content="Настройки" Tag="{StaticResource IconSettings}"
                         ToolTip="Выбрать источник сканирования" Command="{Binding SettingsCommand}" />
+
+                <!-- Журнал после настроек: обе кнопки — про устройство программы, а
+                     не про документ. Кнопка служит для разбора сбоев, в том числе
+                     произошедших на другой машине. -->
+                <Button Style="{StaticResource CommandButtonStyle}" Content="Журнал" Tag="{StaticResource IconLog}"
+                        ToolTip="Открыть папку, где лежит журнал программы" Command="{Binding LogFolderCommand}" />
             </StackPanel>
         </Border>
 
