@@ -3,14 +3,14 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net48</TargetFramework>
-    <!-- Помощник 32-разрядный не по выбору, а по необходимости: библиотека TWAIN
-         открывает только 32-разрядный DSM, и в 64-разрядном процессе он не грузится
-         вовсе — источников не будет ни одного. -->
+    <!-- Помощник 32-разрядный не по выбору, а по необходимости: драйверы TWAIN
+         грузятся только в 32-разрядный процесс, и в 64-разрядном их не будет вовсе. -->
     <PlatformTarget>x86</PlatformTarget>
     <Platforms>x64</Platforms>
     <RootNamespace>Kite2.Scan</RootNamespace>
     <AssemblyName>Kite2.Scan</AssemblyName>
-    <LangVersion>7.3</LangVersion>
+    <!-- C# 8 нужен ради «await foreach»: страницы прилетают потоком от NAPS2. -->
+    <LangVersion>8.0</LangVersion>
     <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <AssemblyTitle>Kite2.Scan</AssemblyTitle>
@@ -30,11 +30,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Страницы пишет System.Drawing.Image, а не библиотека TWAIN. -->
-    <Reference Include="System.Drawing" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="NLog" Version="5.5.1" />
   </ItemGroup>
 
@@ -43,7 +38,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Saraff.Twain" Version="1.0.33.756" />
+    <!-- Движок сканирования — NAPS2.Sdk: один API закрывает TWAIN (оба диспетчера)
+         и WIA, а разбор страниц при любом механизме передачи сделан внутри
+         библиотеки и обкатан на сотнях моделей. Сами пакеты NAPS2 выпущены под
+         LGPL 2.1 — динамическая сборка не делает нашу программу частью NAPS2. -->
+    <PackageReference Include="NAPS2.Sdk" Version="1.5.0" />
+    <!-- Бэкенд изображений на System.Drawing: он превращает отсканированные
+         страницы в файлы, которые умеет читать страница сжатия программы. -->
+    <PackageReference Include="NAPS2.Images.Gdi" Version="1.5.0" />
   </ItemGroup>
 
 </Project>

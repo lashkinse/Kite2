@@ -56,12 +56,16 @@
   </ItemGroup>
 
   <!-- Ссылка на сборку обновлятора тоже копирующая, а файлы запуска кладутся
-       рядом с программой целью ниже: сами по себе они снаружи не уедут. -->
+       рядом с программой целью ниже: сами по себе они снаружи не уедут.
+       Помощник теперь несёт целый граф зависимостей NAPS2, поэтому копируются
+       все его DLL, а не отдельный поимённый список: список однажды устареет
+       тихо и именно в момент выпуска новой версии. -->
   <Target Name="CopySidePrograms" AfterTargets="Build">
     <ItemGroup>
       <ScanProgram Include="$(MSBuildThisFileDirectory)..\Kite2.Scan\bin\*\$(Configuration)\**\Kite2.Scan.exe" />
-      <SideFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)Kite2.Scan.*" />
-      <SideFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)Saraff.Twain.dll" />
+      <SideFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)**\Kite2.Scan.exe" />
+      <SideFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)**\Kite2.Scan.exe.config" />
+      <SideFile Include="%(ScanProgram.RootDir)%(ScanProgram.Directory)**\*.dll" />
       <UpdaterProgram Include="$(MSBuildThisFileDirectory)..\Kite2.Updater\bin\*\$(Configuration)\**\Kite2.Updater.exe" />
       <SideFile Include="%(UpdaterProgram.RootDir)%(UpdaterProgram.Directory)Kite2.Updater.*" />
     </ItemGroup>

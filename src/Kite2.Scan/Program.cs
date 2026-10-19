@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Threading.Tasks;
 using Kite2.ScanProtocol;
 using NLog;
-using Saraff.Twain;
 
 namespace Kite2.Scan
 {
@@ -15,10 +15,10 @@ namespace Kite2.Scan
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        // Главный поток обязан быть STA: TWAIN-драйвер общается с процессом
-        // COM-сообщениями, которые без STA не доставляются.
+        // STA обязан остаться: и TWAIN, и WIA общаются с процессом COM-сообщениями,
+        // которые без STA не доставляются.
         [STAThread]
-        private static int Main(string[] args)
+        private static async Task<int> Main(string[] args)
         {
             HelperLogging.Initialize();
 
@@ -35,7 +35,7 @@ namespace Kite2.Scan
                 if (args[0] == "sources")
                 {
                     Log.Info("Команда sources");
-                    List<string> sources = TwainCapture.GetSources();
+                    List<string> sources = await CaptureEngine.GetSources();
                     Log.Info("Список получен: источников {0}", sources.Count);
                     return Answer(responsePath, sources);
                 }
@@ -45,7 +45,7 @@ namespace Kite2.Scan
                     Log.Info("Команда acquire: источник={0}, dpi={1}, цвет={2}, каталог={3}",
                         args[1], args[2], args[3], args[4]);
 
-                    List<string> pages = TwainCapture.Capture(
+                    List<string> pages = await CaptureEngine.Capture(
                         Number(args[1]),
                         Number(args[2]),
                         Number(args[3]),
@@ -59,7 +59,7 @@ namespace Kite2.Scan
             }
             catch (Exception ex)
             {
-                Log.Error("Захват не удался: {0}", Describe(ex));
+                Log.Error("Захват не удался: {0}", ex);
 
                 // Ответ пишется всегда, даже при ошибке: программа ждёт файл и иначе
                 // решила бы, что помощника нет вовсе.
@@ -71,10 +71,9 @@ namespace Kite2.Scan
             return 2;
         }
 
-        // Слова драйвера полезны для разбора, но сами по себе ничего не значат:
-        // «It worked!» — это ответ DSM, у которого нет ни одного устройства.
-        private static string Describe(Exception error) =>
-            error is TwainException ? "Драйвер сканера не ответил: " + error.Message : error.Message;
+        // Тексты об ошибках сканера уже сказаны по-русски внутри захвата; здесь
+        // остаётся fall-through для неожиданных сбоев самого помощника.
+        private static string Describe(Exception error) => error.Message;
 
         private static int Answer(string responsePath, List<string> items)
         {
