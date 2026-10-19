@@ -10,6 +10,7 @@ namespace Kite2.Core
     {
         private static string _data;
         private static string _scan;
+        private static string _pages;
         private static string _magickNetTemp;
         private static string _logs;
 
@@ -31,6 +32,9 @@ namespace Kite2.Core
         }
 
         public static string Scan => Resolve(ref _scan, "scan");
+
+        // Файлы страниц хранятся отдельно от каталога сканирования: тот очищается между сериями.
+        public static string Pages => Resolve(ref _pages, "pages");
 
         public static string MagickNetTemp => Resolve(ref _magickNetTemp, "magick.net");
 

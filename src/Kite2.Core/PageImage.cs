@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using ImageMagick;
 
 namespace Kite2.Core
@@ -48,6 +49,22 @@ namespace Kite2.Core
             return extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".ppm", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".pgm", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Копия страницы уходит в постоянное хранилище: следующая серия очистит
+        // каталог сканирования, а документ обязан остаться целым.
+        private static int _storeSequence;
+
+        public static string Store(string file)
+        {
+            int sequence = Interlocked.Increment(ref _storeSequence);
+            string target = Path.Combine(
+                AppPaths.Pages,
+                $"страница-{DateTime.Now:HHmmss}-{sequence}.jpg");
+
+            File.Copy(file, target, true);
+
+            return target;
         }
 
         private static void ComposePage(string source, string target, ScanMode mode, int quality)

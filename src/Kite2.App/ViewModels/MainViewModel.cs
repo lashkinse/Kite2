@@ -140,7 +140,9 @@ namespace Kite2.App.ViewModels
         {
             try
             {
+                // Остатки страниц прошлых запусков не нужны: документ живёт в памяти.
                 AppPaths.ClearFolder(AppPaths.Scan);
+                AppPaths.ClearFolder(AppPaths.Pages);
             }
             catch (Exception ex)
             {
@@ -367,7 +369,7 @@ namespace Kite2.App.ViewModels
             int number = 1;
 
             foreach (string file in Directory.GetFiles(directory, "*.jpg").OrderBy(Path.GetFileName))
-                pages.Add(new PageViewModel(file, number++));
+                pages.Add(new PageViewModel(PageImage.Store(file), number++));
 
             return pages;
         }
