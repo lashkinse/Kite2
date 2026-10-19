@@ -27,9 +27,8 @@ namespace Kite2.Core
         public const string Cancel = "Отмена";
 
         // Обновление раздаётся выпусками репозитория, и вопрос задаётся при входе:
-        // здесь важнее номер версии, чем описание изменений.
-        public static string UpdateQuestion(Version version) =>
-            "Доступна версия " + version.ToString(2) + ". Обновить сейчас?";
+        // человеку достаточно самого факта обновления, номер он увидит после установки.
+        public const string UpdateQuestion = "Доступно обновление. Обновить сейчас?";
 
         public const string Updating = "Выполняется загрузка обновления...";
 

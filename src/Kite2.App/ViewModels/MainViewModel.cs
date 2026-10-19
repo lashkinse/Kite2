@@ -165,6 +165,11 @@ namespace Kite2.App.ViewModels
 
         // --- Обновление ------------------------------------------------------
 
+        // Повторная проверка, если первая не получила ответа: сбросы и обрывы в
+        // наших сетях случаются на минуты, а вопрос всё равно нужен при входе —
+        // хотя бы позже, без перезапуска программы.
+        private const int UpdateRepeatDelaySeconds = 5 * 60;
+
         // Программа спрашивает об обновлении один раз при входе и только вне
         // тестового режима: автоматизация не должна зависеть от сети, да и вопрос
         // в ней кликали бы только зря.
@@ -173,15 +178,25 @@ namespace Kite2.App.ViewModels
             if (FakeScanner.Enabled)
                 return;
 
-            var update = await UpdateService.Latest();
+            var (update, answered) = await UpdateService.Latest();
+
+            if (update == null)
+            {
+                // «Обновлений нет» — окончательный ответ: каталог отвечал, а вот
+                // недоступная сеть повтору подлежит, вопрос всё равно нужен при входе.
+                if (!answered)
+                    ScheduleRepeatCheck();
+
+                return;
+            }
 
             // Вопрос во время уже идущей операции уводит фокус: не встревает в неё.
-            if (update == null || IsBusy)
+            if (IsBusy)
                 return;
 
             Log.Info("Доступно обновление: {0}", update.Version);
 
-            if (!UserDialogs.Confirm("Обновление", Messages.UpdateQuestion(update.Version)))
+            if (!UserDialogs.Confirm("Обновление", Messages.UpdateQuestion))
                 return;
 
             // Плашка показывает не только факт загрузки, но и её ход: проценты идут
@@ -212,6 +227,23 @@ namespace Kite2.App.ViewModels
             {
                 SetBusy(false);
             }
+        }
+
+        // Повтор приостанавливается на минуты: чаще дёргать GitHub незачем.
+        private void ScheduleRepeatCheck()
+        {
+            // Ожидание прямо на диспетчере: вопрос поднимается в главном потоке,
+            // как обычный вопрос при входе.
+            async void Delayed()
+            {
+                await Task.Delay(TimeSpan.FromSeconds(UpdateRepeatDelaySeconds));
+
+                // Программа могла уже закрыться: вопроса по покойнику быть не должно.
+                if (Application.Current != null && Application.Current.Windows.Count > 0)
+                    CheckForUpdateAsync();
+            }
+
+            Delayed();
         }
 
         // --- Сканирование ----------------------------------------------------

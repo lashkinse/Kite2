@@ -35,12 +35,15 @@ namespace Kite2.App.Services
                 "Kite2",
                 "Update");
 
-        public static async Task<ReleaseCatalog.Entry> Latest()
+        // Ответ проверки: само обновление и признак того, что каталог вообще
+        // ответил. Они разные вещи: «обновлений нет» повторов не просит, а вот
+        // сеть, не пустившая запрос, — просит.
+        public static async Task<(ReleaseCatalog.Entry Update, bool Answered)> Latest()
         {
             try
             {
                 // Соединение в наших сетях бывает сброшено на раз: быстрых повторов
-                // три. Десятисекундная граница общая для всех попыток, так что
+                // пять. Десятисекундная граница общая для всех попыток, так что
                 // вход в программу в худшем случае тоже задержится несильно.
                 using (var wait = new CancellationTokenSource(NetworkWait))
                 {
@@ -59,14 +62,17 @@ namespace Kite2.App.Services
                                 // выпуск совпал с установленной версией — вопроса не будет.
                                 Version current = Assembly.GetEntryAssembly().GetName().Version;
 
-                                return update != null && current < update.Version ? update : null;
+                                if (update != null && current < update.Version)
+                                    return (update, true);
+
+                                return (null, true);
                             }
                         }
-                        catch (HttpRequestException) when (attempt < 3)
+                        catch (HttpRequestException) when (attempt < 5)
                         {
                             // Сброшенное соединение сигнализирует мгновенно: пауза в
-                            // секунду всегда успеет пройти до отмены по времени.
-                            await Task.Delay(TimeSpan.FromSeconds(1), wait.Token);
+                            // полсекунды всегда успеет пройти до отмены по времени.
+                            await Task.Delay(TimeSpan.FromMilliseconds(500), wait.Token);
                         }
                     }
                 }
@@ -75,13 +81,13 @@ namespace Kite2.App.Services
             {
                 Log.Debug(ex, "Проверка обновлений прервана по времени");
 
-                return null;
+                return (null, false);
             }
             catch (Exception ex)
             {
                 Log.Warn(ex, "Проверка обновлений не удалась");
 
-                return null;
+                return (null, false);
             }
         }
 
@@ -167,14 +173,19 @@ namespace Kite2.App.Services
 
         private static HttpClient CreateHttp()
         {
-            // Windows 7 может иметь отключённые новые шифры в системных настройках:
-            // явно разрешённый TLS 1.2 не зависит от таких crooked настройек.
+            // Windows 7 может иметь отключённый TLS 1.2 в системных настройках:
+            // явное разрешение от них не зависит.
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
 
-            return new HttpClient(new HttpClientHandler
+            var client = new HttpClient(new HttpClientHandler
             {
                 AutomaticDecompression = DecompressionMethods.GZip
             });
+
+            // GitHub отвечает отказом любому запросу без имени программы в заголовке.
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Kite2");
+
+            return client;
         }
 
         private static string Quote(string value) => "\"" + value + "\"";
