@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Kite2.ScanProtocol;
+using NLog;
 using Saraff.Twain;
 
 namespace Kite2.Scan
@@ -12,29 +13,51 @@ namespace Kite2.Scan
     // Консоли нет — иначе при каждом захвате мелькало бы чёрное окно.
     internal static class Program
     {
+        private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+
         private static int Main(string[] args)
         {
+            HelperLogging.Initialize();
+
             if (args.Length < 2)
+            {
+                Log.Error("Не хватает аргументов: получено {0}", args.Length);
                 return 2;
+            }
 
             string responsePath = args[args.Length - 1];
 
             try
             {
                 if (args[0] == "sources")
-                    return Answer(responsePath, TwainCapture.GetSources());
+                {
+                    Log.Info("Команда sources");
+                    List<string> sources = TwainCapture.GetSources();
+                    Log.Info("Список получен: источников {0}", sources.Count);
+                    return Answer(responsePath, sources);
+                }
 
                 if (args[0] == "acquire" && args.Length == 6)
                 {
-                    return Answer(responsePath, TwainCapture.Capture(
+                    Log.Info("Команда acquire: источник={0}, dpi={1}, цвет={2}, каталог={3}",
+                        args[1], args[2], args[3], args[4]);
+
+                    List<string> pages = TwainCapture.Capture(
                         Number(args[1]),
                         Number(args[2]),
                         Number(args[3]),
-                        args[4]));
+                        args[4]);
+
+                    Log.Info("Захват завершён, страниц {0}", pages.Count);
+                    return Answer(responsePath, pages);
                 }
+
+                Log.Error("Неизвестная команда: {0}, аргументов {1}", args[0], args.Length);
             }
             catch (Exception ex)
             {
+                Log.Error("Захват не удался: {0}", Describe(ex));
+
                 // Ответ пишется всегда, даже при ошибке: программа ждёт файл и иначе
                 // решила бы, что помощника нет вовсе.
                 ScanExchange.Write(responsePath, false, Describe(ex), null);

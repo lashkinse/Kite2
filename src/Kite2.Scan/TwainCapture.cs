@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing.Imaging;
 using System.IO;
 using Kite2.ScanProtocol;
+using NLog;
 using Saraff.Twain;
 
 namespace Kite2.Scan
@@ -13,6 +15,7 @@ namespace Kite2.Scan
     // ожидание заканчивается вместе с ним.
     internal static class TwainCapture
     {
+        private static readonly Logger Log = LogManager.GetCurrentClassLogger();
         public static List<string> GetSources()
         {
             var sources = new List<string>();
@@ -38,17 +41,23 @@ namespace Kite2.Scan
         public static List<string> Capture(int sourceIndex, int dpi, int colour, string directory)
         {
             var pages = new List<string>();
+            var clock = Stopwatch.StartNew();
 
             var twain = new Twain32
             {
                 ShowUI = false,
                 ModalUI = false,
-                DisableAfterAcquire = false
+                // Отключение после серии обязательно, а не на выбор: без него цикл
+                // сообщений Saraff не заканчивается никогда — источник остаётся
+                // активным, хотя отсканированы все страницы, и Acquire не возвращает
+                // управление, пока кто-то не отключит источник.
+                DisableAfterAcquire = true
             };
 
             try
             {
                 OpenSession(twain);
+                Log.Info("Диспетчер открыт за {0:N1} с", clock.Elapsed.TotalSeconds);
 
                 try
                 {
@@ -56,8 +65,10 @@ namespace Kite2.Scan
                     // библиотека отвечает «менеджер источников данных не открыт».
                     twain.SourceIndex = sourceIndex;
                     twain.OpenDataSource();
+                    Log.Info("Источник открыт: {0}", twain.GetSourceProductName(sourceIndex));
 
                     ApplySettings(twain, dpi, colour);
+                    Log.Info("Настройки применены: dpi={0}, цвет={1}", dpi, colour == ScanExchange.BlackAndWhite ? "чёрно-белый" : "цветной");
 
                     int index = 0;
 
@@ -70,18 +81,25 @@ namespace Kite2.Scan
                         Save(args.Image, path);
 
                         pages.Add(path);
+
+                        Log.Info("Страница {0} за {1:N1} с: {2}", index, clock.Elapsed.TotalSeconds, path);
                     };
 
+                    Log.Info("Захват передан драйверу, жду страницы или сигнал о конце серии");
                     twain.Acquire();
+                    clock.Stop();
+                    Log.Info("Драйвер вернул управление за {0:N1} с, страниц получено: {1}", clock.Elapsed.TotalSeconds, pages.Count);
                 }
                 finally
                 {
                     twain.CloseDataSource();
+                    Log.Info("Источник закрыт");
                 }
             }
             finally
             {
                 CloseQuietly(twain);
+                Log.Info("Диспетчер закрыт");
             }
 
             return pages;

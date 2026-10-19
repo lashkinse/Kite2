@@ -86,13 +86,23 @@ namespace Kite2.Core
                     if (helper == null)
                         return Failed(Messages.ScanHelperMissing);
 
+                    var clock = Stopwatch.StartNew();
+                    Log.Info("Помощник запущен: {0}", arguments);
+
                     using (cancellationToken.Register(() => Kill(helper)))
                     {
                         helper.WaitForExit();
                     }
 
+                    clock.Stop();
+
                     if (cancellationToken.IsCancellationRequested)
+                    {
+                        Log.Info("Захват отменён по команде пользователя, помощник работал {0:N1} с", clock.Elapsed.TotalSeconds);
                         return null;
+                    }
+
+                    Log.Info("Помощник завершился за {0:N1} с, код {1}", clock.Elapsed.TotalSeconds, helper.ExitCode);
 
                     if (!File.Exists(responsePath))
                     {

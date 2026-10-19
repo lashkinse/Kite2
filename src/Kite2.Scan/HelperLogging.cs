@@ -1,0 +1,44 @@
+using System;
+using System.IO;
+using NLog;
+using NLog.Config;
+using NLog.Targets;
+
+namespace Kite2.Scan
+{
+    // Журнал составляется кодом, а не файлом конфигурации: путь общий со всей
+    // программой (%AppData%\Kite2\logs), а помощник сам по себе ни одного
+    // конфигурационного файла не несёт. Файл открывается на каждую запись:
+    // после зависшего драйвера всё записанное обязано оказаться на диске.
+    internal static class HelperLogging
+    {
+        public static void Initialize()
+        {
+            try
+            {
+                var file = new FileTarget("helper")
+                {
+                    FileName = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "Kite2",
+                        "logs",
+                        "Kite2.Scan-" + DateTime.Now.ToString("yyyyMMdd") + ".log"),
+                    Layout = "${longdate}|${level:uppercase=true}|${message} ${exception:format=Message}",
+                    ArchiveAboveSize = 2 * 1024 * 1024,
+                    MaxArchiveFiles = 5,
+                    KeepFileOpen = false
+                };
+
+                var configuration = new LoggingConfiguration();
+                configuration.AddTarget(file);
+                configuration.AddRule(LogLevel.Info, LogLevel.Fatal, file);
+
+                LogManager.Configuration = configuration;
+            }
+            catch (Exception)
+            {
+                // Журнал — вспомогательное средство: без него захват обязан работать.
+            }
+        }
+    }
+}
