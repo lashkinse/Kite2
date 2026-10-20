@@ -189,6 +189,21 @@ def click_btn(win, caption):
     win.child_window(title=caption, control_type="Button").click_input()
 
 
+def click_scan_btn(win, caption, expected_total, tries=3):
+    """Кнопку скана с ретраем: бывают проклики, когда верхний оверлей украл
+    фокус прямо перед кликом — целевые страницы обязаны прийти."""
+    deadline_wait = 10.0
+    for i in range(tries):
+        win.set_focus()
+        time.sleep(0.3)
+        click_btn(win, caption)
+        n = wait_pages(win, expected_total, timeout=deadline_wait if i else 8.0)
+        if n == expected_total:
+            return True
+        time.sleep(1.0)
+    return False
+
+
 def wait_pages(win, expected, timeout=12.0):
     deadline = time.time() + timeout
     n = -1
@@ -245,15 +260,11 @@ def phase_start():
 
 
 def phase_scan(win):
-    click_btn(win, "Ч/Б")
-    n = wait_pages(win, 3)
-    check("Скан Ч/Б: +3 страницы", n == 3, f"страниц={n}")
+    check("Скан Ч/Б: +3 страницы", click_scan_btn(win, "Ч/Б", 3), f"страниц={page_count(win)}")
     line = wait_log("Вопрос о продолжении пропущен: тестовый режим", 8)
     check("Скан Ч/Б: лог пропуска вопроса", line is not None)
 
-    click_btn(win, "Цветное")
-    n = wait_pages(win, 6)
-    check("Скан Цветное: +3 страницы", n == 6, f"страниц={n}")
+    check("Скан Цветное: +3 страницы", click_scan_btn(win, "Цветное", 6), f"страниц={page_count(win)}")
 
     # «+» — повторное сканирование прежней цветностью (цветной)
     win.set_focus()
@@ -406,8 +417,7 @@ def phase_settings(win):
 def phase_fragment(win):
     """Фрагмент: протянуть рамку в просмотрщике, сохранить PNG, затем отменить второй."""
     if page_count(win) == 0:
-        click_btn(win, "Ч/Б")
-        wait_pages(win, 3)
+        click_scan_btn(win, "Ч/Б", 3)
     base = page_count(win)
     check("Фрагмент: документ есть", base > 0, f"страниц={base}")
     win.set_focus()
@@ -500,7 +510,7 @@ def phase_ask():
     """Второй запуск с --ask: окно «Сканирование» ведёт серию и завершает её."""
     start_app(extra_args=("--ask",))
     win = main_win()
-    click_btn(win, "Ч/Б")
+    click_scan_btn(win, "Ч/Б", 3)
     time.sleep(3)
     dlg, hwnd = find_dlg("Сканирование", 8)
     check("--ask: окно сканирования появилось", dlg is not None)
