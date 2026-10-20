@@ -29,6 +29,8 @@ namespace Kite2.Scan
             AppDomain.CurrentDomain.UnhandledException += (_, e) =>
                 Log.Fatal("Необработанный сбой: {0}", e.ExceptionObject);
 
+            RegisterFirstChanceDiagnostics();
+
             TaskScheduler.UnobservedTaskException += (_, e) =>
                 Log.Warn("Утерянный сбой фоновой задачи: {0}", e.Exception);
 
@@ -140,6 +142,49 @@ namespace Kite2.Scan
 
         // Тексты ошибок сканера уже сказаны по-русски внутри захвата.
         private static string Describe(Exception error) => error.Message;
+
+        // В момент передачи NAPS2 прячет исключения: насос сообщений Win32
+        // (DefaultTwainHandleManager → Win32MessagePump) глотает их без лога —
+        // у той помпы Logger всегда NullLogger. Поэтому после XferReady
+        // Kyocera TTWAIN(2) может «умереть» в транзите и мы видим только
+        // тишину. FirstChanceException срабатывает ДО любых catch-глотателей:
+        // пишет тип, сообщение и стек того, что было выброшено внутри NTwain.
+        private static void RegisterFirstChanceDiagnostics()
+        {
+            int logged = 0;
+
+            AppDomain.CurrentDomain.FirstChanceException += (_, e) =>
+            {
+                // Сам обработчик обязан быть пустым по эффектам: любой сбой
+                // внутри него циклится и роняет процесс.
+                try
+                {
+                    if (logged >= 40 || e.Exception is OperationCanceledException)
+                    {
+                        return;
+                    }
+
+                    string stack = e.Exception.StackTrace ?? string.Empty;
+                    if (!stack.Contains("NTwain") && !stack.Contains("NAPS2")
+                        && !(e.Exception.GetType().FullName ?? string.Empty).Contains("NTwain"))
+                    {
+                        return;
+                    }
+
+                    Interlocked.Increment(ref logged);
+                    Log.Debug(
+                        "Первичный сбой (пойманный молча): {0}: {1}{2}   в   {3}",
+                        e.Exception.GetType().Name,
+                        e.Exception.Message,
+                        Environment.NewLine,
+                        stack);
+                }
+                catch
+                {
+                    // Тишина: диагностика не должна ломать сам захват.
+                }
+            };
+        }
 
         // Иначе родитель умирает, а ребёнок остаётся с включённым источником:
         // Kyocera продолжала физически сканировать стекло ещё долго после
