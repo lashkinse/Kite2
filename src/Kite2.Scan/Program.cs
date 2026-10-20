@@ -67,12 +67,13 @@ namespace Kite2.Scan
                     Log.Info("Захват завершён, страниц {0}", pages.Count);
                     code = Answer(responsePath, pages);
                 }
-                else if (args[0] == "twain" && args.Length == 10)
+                else if (args[0] == "twain" && args.Length == 11)
                 {
-                    Log.Info("Команда twain (дочерний процесс): диспетчер={0}, режим={1}, dpi={2}, имя={3}",
-                        args[1], args[2], args[3], args[7]);
+                    Log.Info(
+                        "Команда twain (дочерний процесс): диспетчер={0}, режим={1}, dpi={2}, окно={3}, имя={4}",
+                        args[1], args[2], args[3], args[8], args[7]);
 
-                    WatchParent(Number(args[8]));
+                    WatchParent(Number(args[9]));
 
                     var chapter = await CaptureEngine.TryTwainChild(
                         Number(args[1]),
@@ -81,7 +82,8 @@ namespace Kite2.Scan
                         Number(args[4]),
                         args[6],
                         args[7],
-                        Number(args[5]));
+                        Number(args[5]),
+                        args[8] == "1");
 
                     if (chapter.Pages.Count > 0)
                     {

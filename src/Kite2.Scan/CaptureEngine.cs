@@ -88,6 +88,16 @@ namespace Kite2.Scan
                             " Перезапустите сканер и попробуйте ещё раз."));
                 }
 
+                // Родное окно показывалось человеку и закрылось без страниц:
+                // сканирование было отменено в нём. Тихие программные попытки
+                // после этого только просканируют стекло ещё раз без результата.
+                if (attempt.NativeUi && !chapter.Abandoned && chapter.Pages.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        "Окно драйвера закрылось без страницы: сканирование в нём отменено. " +
+                        "Нажмите «Сканировать» ещё раз и выполните скан в окне драйвера.");
+                }
+
                 lastFailure = chapter.Failure ?? (chapter.Abandoned
                     ? string.Format(
                         CultureInfo.CurrentCulture,
@@ -104,15 +114,17 @@ namespace Kite2.Scan
         // диспетчер для себя открывает с чистого листа. Страницы пишутся прямо
         // в каталог серии — их жизнь не зависит от жизни процессов.
         internal static async Task<AttemptChapter> TryTwainChild(
-            int dsm, int mode, int dpi, int colour, string directory, string name, int pagesBefore)
+            int dsm, int mode, int dpi, int colour, string directory, string name, int pagesBefore,
+            bool nativeUi)
         {
             TwainDsm dispatcher = ParseDsm(dsm);
             TwainTransferMode transfer = ParseMode(mode);
 
             Log.Info(
-                "Попытка в дочернем процессе: TWAIN ({0}, передача {1}), {2}",
+                "Попытка в дочернем процессе: TWAIN ({0}, {1}{2}), {3}",
                 dispatcher == TwainDsm.New ? "новый диспетчер" : "старый диспетчер",
-                transfer == TwainTransferMode.Memory ? "памятью" : "целиком",
+                transfer == TwainTransferMode.Memory ? "передача памятью" : "передача целиком",
+                nativeUi ? ", родное окно" : "",
                 name);
 
             var attempt = new ScanAttempt
@@ -121,7 +133,8 @@ namespace Kite2.Scan
                 Device = new ScanDevice(Driver.Twain, name, name),
                 Dsm = dispatcher,
                 Mode = transfer,
-                Title = "TWAIN (дочерний процесс)"
+                NativeUi = nativeUi,
+                Title = nativeUi ? "TWAIN (родное окно драйвера)" : "TWAIN (дочерний процесс)"
             };
 
             var chapter = new AttemptChapter();
@@ -255,9 +268,11 @@ namespace Kite2.Scan
 
         // Лестница попыток: только источник, который выбрал человек. Резервный
         // WIA для TWAIN-источника убран по просьбе пользователя: «как указано
-        // в источнике так и должно быть». Передача целиком идёт первой:
-        // сам NAPS2 для сканеров Kyocera всегда ставит Native вместо памяти,
-        // а память у этого драйвера завершалась без ошибок и без страниц.
+        // в источнике так и должно быть». Самая первая — родное окно драйвера:
+        // программные передачи Kyocera TWAIN(2) не работают (оба диспетчера,
+        // оба режима: после XferReady драйвер не возвращается из триплета и
+        // не отдаёт готовую страницу), а в собственном окне драйвер ведёт
+        // передачу сам. Далее — обычные тихие попытки по убыванию вероятности.
         private static List<ScanAttempt> AttemptsFor(CatalogSource source, List<CatalogSource> sources)
         {
             var attempts = new List<ScanAttempt>();
@@ -267,6 +282,7 @@ namespace Kite2.Scan
                 TwainDsm first = source.TwainDsm == TwainDsm.New ? TwainDsm.New : TwainDsm.Old;
                 TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
 
+                attempts.Add(TwainNativeUiAttempt(source.Device, first));
                 attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
                 attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Memory));
                 attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
@@ -291,6 +307,24 @@ namespace Kite2.Scan
             }
 
             return attempts;
+        }
+
+        private static ScanAttempt TwainNativeUiAttempt(ScanDevice device, TwainDsm dsm)
+        {
+            string dispatcher = dsm == TwainDsm.New ? "новый диспетчер" : "старый диспетчер";
+
+            return new ScanAttempt
+            {
+                Driver = Driver.Twain,
+                Device = device,
+                Dsm = dsm,
+                Mode = TwainTransferMode.Native,
+                // Родное окно вместо программной передачи: молчаливый драйвер
+                // Kyocera программную не отдаёт, а собственным окном ведёт сам.
+                NativeUi = true,
+                Wall = NativeUiWall,
+                Title = "TWAIN (родное окно драйвера, " + dispatcher + ")"
+            };
         }
 
         private static ScanAttempt TwainAttempt(ScanDevice device, TwainDsm dsm, TwainTransferMode mode)
@@ -417,7 +451,7 @@ namespace Kite2.Scan
 
                 string arguments = string.Format(
                     CultureInfo.InvariantCulture,
-                    "twain {0} {1} {2} {3} {4} \"{5}\" \"{6}\" {7} \"{8}\"",
+                    "twain {0} {1} {2} {3} {4} \"{5}\" \"{6}\" {7} {8} \"{9}\"",
                     (int)attempt.Dsm,
                     (int)attempt.Mode,
                     dpi,
@@ -425,6 +459,7 @@ namespace Kite2.Scan
                     pagesBefore,
                     directory,
                     attempt.Device.Name,
+                    attempt.NativeUi ? 1 : 0,
                     self.Id,
                     responsePath);
 
@@ -507,9 +542,14 @@ namespace Kite2.Scan
         {
             using (var quiet = new CancellationTokenSource())
             {
+                // В родном окне драйвера страниц не дождаться и от машинного
+                // вызова: человек должен сам щёлкнуть «Сканер» в диалоге.
+                TimeSpan firstPageWait = attempt.NativeUi ? NativeUiWall : FirstPageWait;
+                TimeSpan pageGapWait = attempt.NativeUi ? NativeUiWall : PageGapWait;
+
                 // CancelAfter перезапускает таймер целиком, поэтому одна и та же
                 // метка отсчитывает тишину и до первой страницы, и между страницами.
-                quiet.CancelAfter(FirstPageWait);
+                quiet.CancelAfter(firstPageWait);
 
                 try
                 {
@@ -551,7 +591,7 @@ namespace Kite2.Scan
                         chapter.Pages.Add(path);
                         Log.Info("Страница {0}: {1} ({2})", pagesBefore + chapter.Pages.Count, path, attempt.Title);
 
-                        quiet.CancelAfter(PageGapWait);
+                        quiet.CancelAfter(pageGapWait);
                     }
                 }
                 catch (OperationCanceledException)
@@ -559,11 +599,18 @@ namespace Kite2.Scan
                     Log.Warn("Попытка прервана по тишине, страниц {0}", chapter.Pages.Count);
 
                     if (chapter.Pages.Count == 0)
-                        chapter.Failure = string.Format(
-                            CultureInfo.CurrentCulture,
-                            "Сканер молчит уже {0} с и не отдал ни одной страницы. " +
-                            "Проверьте, включён ли он и заправлена ли бумага в лоток.",
-                            (int)FirstPageWait.TotalSeconds);
+                    {
+                        chapter.Failure = attempt.NativeUi
+                            ? string.Format(
+                                CultureInfo.CurrentCulture,
+                                "За {0} мин в окне драйвера страница не была просканирована.",
+                                (int)firstPageWait.TotalMinutes)
+                            : string.Format(
+                                CultureInfo.CurrentCulture,
+                                "Сканер молчит уже {0} с и не отдал ни одной страницы. " +
+                                "Проверьте, включён ли он и заправлена ли бумага в лоток.",
+                                (int)FirstPageWait.TotalSeconds);
+                    }
                 }
                 catch (Exception ex)
                 {
