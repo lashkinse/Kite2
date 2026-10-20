@@ -268,11 +268,12 @@ namespace Kite2.Scan
 
         // Лестница попыток: только источник, который выбрал человек. Резервный
         // WIA для TWAIN-источника убран по просьбе пользователя: «как указано
-        // в источнике так и должно быть». Самая первая — родное окно драйвера:
-        // программные передачи Kyocera TWAIN(2) не работают (оба диспетчера,
-        // оба режима: после XferReady драйвер не возвращается из триплета и
-        // не отдаёт готовую страницу), а в собственном окне драйвер ведёт
-        // передачу сам. Далее — обычные тихие попытки по убыванию вероятности.
+        // в источнике так и должно быть». Скан выполняется напрямую, без окна
+        // драйвера (просьба пользователя: «заставить окно не появляться, а
+        // напрямую сканировать»). Родное окно — лишь последний резерв: оно
+        // добирается только в том случае, если все прямые попытки кончились,
+        // не сканировав стекло (иначе сработало бы правило остановки на пустой
+        // передаче — окно лишь заставило бы сканер трудиться заново).
         private static List<ScanAttempt> AttemptsFor(CatalogSource source, List<CatalogSource> sources)
         {
             var attempts = new List<ScanAttempt>();
@@ -282,11 +283,11 @@ namespace Kite2.Scan
                 TwainDsm first = source.TwainDsm == TwainDsm.New ? TwainDsm.New : TwainDsm.Old;
                 TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
 
-                attempts.Add(TwainNativeUiAttempt(source.Device, first));
                 attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
                 attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Memory));
                 attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
                 attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Memory));
+                attempts.Add(TwainNativeUiAttempt(source.Device, first));
             }
             else
             {
@@ -541,6 +542,7 @@ namespace Kite2.Scan
             string directory, int pagesBefore, AttemptChapter chapter, ScanController controller)
         {
             using (var quiet = new CancellationTokenSource())
+            using (var visible = new CancellationTokenSource())
             {
                 // В родном окне драйвера страниц не дождаться и от машинного
                 // вызова: человек должен сам щёлкнуть «Сканер» в диалоге.
@@ -550,6 +552,10 @@ namespace Kite2.Scan
                 // CancelAfter перезапускает таймер целиком, поэтому одна и та же
                 // метка отсчитывает тишину и до первой страницы, и между страницами.
                 quiet.CancelAfter(firstPageWait);
+
+                Task raising = attempt.Driver == Driver.Twain && attempt.NativeUi
+                    ? Task.Run(() => RaiseDriverWindowLoop(visible.Token))
+                    : Task.CompletedTask;
 
                 try
                 {
@@ -616,6 +622,41 @@ namespace Kite2.Scan
                 {
                     Log.Error("Попытка упала: {0}", ex);
                     chapter.Failure = GetFailureMessage(ex, chapter.Pages.Count > 0);
+                }
+                finally
+                {
+                    visible.Cancel();
+                }
+
+                try
+                {
+                    await raising;
+                }
+                catch
+                {
+                    // Подниматель окна не важнее скана: его сбой игнорируем.
+                }
+            }
+        }
+
+        // Пока открыто родное окно драйвера, каждые полсекунды поднимаем его
+        // наверх: без этого окно прячется за окном программы, и человек
+        // «закрывает окно без страницы», могло и не найдя его.
+        private static async Task RaiseDriverWindowLoop(CancellationToken cancellation)
+        {
+            int self = Process.GetCurrentProcess().Id;
+
+            while (!cancellation.IsCancellationRequested)
+            {
+                WindowRaiser.RaiseOwnedWindows(self);
+
+                try
+                {
+                    await Task.Delay(500, cancellation);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
                 }
             }
         }
