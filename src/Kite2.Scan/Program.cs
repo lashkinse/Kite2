@@ -24,6 +24,8 @@ namespace Kite2.Scan
         {
             HelperLogging.Initialize();
 
+            Log.Info("Помощник, версия {0}", typeof(Program).Assembly.GetName().Version);
+
             // Тихие сбои фоновых вызовов TWAIN больше нигде не видны: зависания
             // и падения без этих записей в логе не объяснить.
             AppDomain.CurrentDomain.UnhandledException += (_, e) =>

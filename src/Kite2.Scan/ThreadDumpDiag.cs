@@ -7,29 +7,84 @@ using NLog;
 
 namespace Kite2.Scan
 {
-    // Снимок стеков потоков помощника в момент тишины передачи. После XferReady
-    // драйвер собирает страницу, помпа сообщений NAPS2 свободна, а ни NTwain,
-    // ни NAPS2 ничего не логируют: где висит обработка XferReady — не видно.
-    // Снимок покажет, где застрял поток помпы (внутри вызова triplet'а, в
-    // ожидании на объекте или в чём-то ещё), и заменит догадки точным местом.
+    // Диагностика тишины передачи: после XferReady драйвер не отдаёт страницу.
+    // Основной путь безопасный — состояние потоков берётся из Process.Threads
+    // (время процессора и режим ожидания), это не трогает сам процесс. Полный
+    // снимок стеков живого процесса (ClrMD) включается только переменной
+    // окружения: в процессе с висящим нативным вызовом драйвера такой снимок
+    // убивал помощника (вылет «не передав результат»).
     internal static class ThreadDumpDiag
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        // Один раскрытый стек на поток: глубокиего буфер в стеке бьёт по читаемости
+        // Полный снимок стеков разрешён только при KITE2_STACK_DIAG=1.
+        public static bool FullSnapshotEnabled =>
+            Environment.GetEnvironmentVariable("KITE2_STACK_DIAG") == "1";
+
+        // Один раскрытый стек на поток: глубокий стек бьёт по читаемости
         // журнала, а интересующий вызов всегда в первых кадрах.
         private const int MaxFramesPerThread = 40;
 
         public static void Dump(string reason)
         {
+            DumpThreads(reason);
+
+            if (FullSnapshotEnabled)
+                DumpStacks(reason);
+        }
+
+        // Безопасный срез: время процессора и режим ожидания каждого потока.
+        // Висящий в ядре поток не набирает процессорное время, а жёстко
+        // работающий — набирает: по срезам в 45, 90 и 148 секунд виден вектор.
+        private static void DumpThreads(string reason)
+        {
             try
             {
-                Log.Info("==== Снимок потоков: {0} ====", reason);
+                Log.Info("==== Срез потоков (безопасный): {0} ====", reason);
 
                 var text = new StringBuilder();
 
-                // Снимок живого собственного процесса: PssCreateSnapshot замораживает
-                // момент, а анализ идёт по копии — сам захват при этом не замирает.
+                ProcessThread[] threads = Process.GetCurrentProcess()
+                    .Threads.Cast<ProcessThread>().ToArray();
+
+                // Потоки умирают под руками: каждый в своём перехвате.
+                foreach (ProcessThread thread in threads)
+                {
+                    try
+                    {
+                        bool running = thread.ThreadState == ThreadState.Running;
+                        string mode = running
+                            ? "работает"
+                            : "ожидание: " + thread.WaitReason;
+
+                        text.Append("Поток ").Append(thread.Id)
+                            .Append(": cpu ")
+                            .Append(thread.TotalProcessorTime.TotalMilliseconds.ToString("N0"))
+                            .Append(" мс, ").AppendLine(mode);
+                    }
+                    catch
+                    {
+                        // Поток завершился между снапшотом списка и чтением.
+                    }
+                }
+
+                Log.Info(text.ToString());
+                Log.Info("==== Срез окончен ====");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(ex, "Срез потоков не удался");
+            }
+        }
+
+        private static void DumpStacks(string reason)
+        {
+            try
+            {
+                Log.Info("==== Снимок стеков: {0} ====", reason);
+
+                var text = new StringBuilder();
+
                 using (DataTarget target = DataTarget.CreateSnapshotAndAttach(Process.GetCurrentProcess().Id))
                 using (ClrRuntime runtime = target.ClrVersions.First().CreateRuntime())
                 {
@@ -55,21 +110,17 @@ namespace Kite2.Scan
                         if (frames == 0)
                             text.AppendLine("   (управляемых кадров нет)");
 
-                        // Последнее брошенное исключение потока: его наличие при
-                        // молчащей передаче ответит, что уже поглотили до тишины.
                         if (thread.CurrentException != null)
                             text.AppendLine("   брошено: " + thread.CurrentException);
                     }
                 }
 
                 Log.Info(text.ToString());
-                Log.Info("==== Снимок потоков окончен ====");
+                Log.Info("==== Снимок стеков окончен ====");
             }
             catch (Exception ex)
             {
-                // Диагностика не должна ломать сам захват: любой её сбой только
-                // журналируем и продолжаем.
-                Log.Warn(ex, "Снимок потоков не удался");
+                Log.Warn(ex, "Снимок стеков не удался");
             }
         }
     }
