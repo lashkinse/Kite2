@@ -75,6 +75,19 @@ namespace Kite2.Scan
                     return pages;
                 }
 
+                if (chapter.SawTransfer)
+                {
+                    Log.Warn("Попытка просканировала страницу без результата: лестница остановлена");
+
+                    // Стекло прошло физически, а изображение не доехало. Дальнейшие
+                    // TWAIN-попытки только заново гоняют сканер впустую — человек
+                    // увидит «повторное сканирование» без результата.
+                    throw new InvalidOperationException(
+                        "Сканер просканировал страницу, но драйвер не передал изображение."
+                        + (chapter.Failure != null ? " По данным попытки: " + chapter.Failure :
+                            " Перезапустите сканер и попробуйте ещё раз."));
+                }
+
                 lastFailure = chapter.Failure ?? (chapter.Abandoned
                     ? string.Format(
                         CultureInfo.CurrentCulture,
@@ -240,11 +253,11 @@ namespace Kite2.Scan
             return await listing;
         }
 
-        // Лестница попыток: TWAIN — главная, он и начинается, и ветка целиком
-        // проходится по всем диспетчерам и режимам передачи до всякого WIA.
-        // WIA-запас идёт после TWAIN-ветки, а родное окно WIA-драйвера — самым
-        // последним: молчаливые приложения-драйверы Kyocera часто говорят
-        // только собственному окну.
+        // Лестница попыток: только источник, который выбрал человек. Резервный
+        // WIA для TWAIN-источника убран по просьбе пользователя: «как указано
+        // в источнике так и должно быть». Передача целиком идёт первой:
+        // сам NAPS2 для сканеров Kyocera всегда ставит Native вместо памяти,
+        // а память у этого драйвера завершалась без ошибок и без страниц.
         private static List<ScanAttempt> AttemptsFor(CatalogSource source, List<CatalogSource> sources)
         {
             var attempts = new List<ScanAttempt>();
@@ -254,12 +267,10 @@ namespace Kite2.Scan
                 TwainDsm first = source.TwainDsm == TwainDsm.New ? TwainDsm.New : TwainDsm.Old;
                 TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
 
-                attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Memory));
                 attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
-                attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Memory));
+                attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Memory));
                 attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
-
-                AppendWiaLadder(attempts, sources);
+                attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Memory));
             }
             else
             {
@@ -280,31 +291,6 @@ namespace Kite2.Scan
             }
 
             return attempts;
-        }
-
-        // WIA-запасной для TWAIN-источника ищется по одному устройству: названия
-        // в TWAIN и WIA несхожи («Kyocera TWAIN(2)» и «Kyocera FS-1120MFP WIA
-        // Driver»), но на машине с одним сканером WIA-дубль — всегда последний
-        // в списке, и не совпадать по имени надёжнее.
-        private static void AppendWiaLadder(List<ScanAttempt> attempts, List<CatalogSource> sources)
-        {
-            CatalogSource wia = sources.FirstOrDefault(s => s.Device.Driver == Driver.Wia);
-
-            if (wia == null)
-                return;
-
-            attempts.Add(WiaAttempt(wia, PaperSource.Auto, "WIA (та же модель)"));
-            attempts.Add(WiaAttempt(wia, PaperSource.Feeder, "WIA (та же модель, автоподатчик)"));
-
-            attempts.Add(new ScanAttempt
-            {
-                Driver = Driver.Wia,
-                Device = wia.Device,
-                WiaVersion = wia.WiaVersion,
-                NativeUi = true,
-                Wall = NativeUiWall,
-                Title = "WIA (родное окно драйвера)"
-            });
         }
 
         private static ScanAttempt TwainAttempt(ScanDevice device, TwainDsm dsm, TwainTransferMode mode)
@@ -342,6 +328,11 @@ namespace Kite2.Scan
             // true — попытка брошена по стенке тишины: страницы могли прийти от
             // зависшего вызова позже, и их приём нужен только до брошенной отметки.
             public bool Abandoned;
+
+            // true — драйвер уже просканировал страницу (данные были готовы),
+            // но изображение до захвата не доехало: следующие попытки гоняют
+            // сканер впустую, и лестница обязана остановиться.
+            public bool SawTransfer;
         }
 
         private static async Task<AttemptChapter> TryCapture(
@@ -483,6 +474,10 @@ namespace Kite2.Scan
             {
                 ScanResult result = ScanExchange.Read(child.ResponsePath);
 
+                // Сигнал «данные были готовы» говорит о физическом проходе стекла
+                // даже в случае неудачи: без него повторные попытки гоняют сканер.
+                chapter.SawTransfer = result.HasSignal("xfer");
+
                 if (result.Succeeded)
                 {
                     AppendSortedScans(chapter, result.Items.ToArray());
@@ -594,8 +589,15 @@ namespace Kite2.Scan
             return TwainTransferMode.Memory;
         }
 
-        private static ScanController NewController() =>
-            new ScanController(new ScanningContext(new GdiImageContext()));
+        private static ScanController NewController()
+        {
+            // Диагностика NAPS2 («NAPS2.TW — Invalid memory buffer» и подобные)
+            // иначе никуда не пишется: именно там видна причина молчаливой
+            // передачи памяти Kyocera.
+            var context = new ScanningContext(new GdiImageContext()) { Logger = Naps2Logging.Instance };
+
+            return new ScanController(context);
+        }
 
         private static string GetFailureMessage(Exception error, bool hasPages)
         {

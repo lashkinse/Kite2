@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace Kite2.ScanProtocol
@@ -12,7 +13,9 @@ namespace Kite2.ScanProtocol
     // Формат ответа — строки «ключ=значение», по ключу на строку:
     //   status=ok | failed   — чем закончилась работа помощника;
     //   error=…               — причина неудачи, по-русски и для показа человеку;
-    //   item=…                — источник или путь к готовой странице, по строке на штуку.
+    //   item=…                — источник или путь к готовой странице, по строке на штуку;
+    //   signal=…              — пометка о ходе попытки («xfer» — драйвер уже
+    //                            просканировал страницу и держал данные готовыми).
     // Разделителем считается первый знак «=»: в пути к файлу знаки равны встречаются.
     public static class ScanExchange
     {
@@ -22,12 +25,20 @@ namespace Kite2.ScanProtocol
 
         public const int Colour = 1;
 
-        public static void Write(string path, bool succeeded, string error, IEnumerable<string> items)
+        public static void Write(
+            string path, bool succeeded, string error, IEnumerable<string> items,
+            IEnumerable<string> signals = null)
         {
             var lines = new List<string>
             {
                 "status=" + (succeeded ? "ok" : "failed")
             };
+
+            if (signals != null)
+            {
+                foreach (string signal in signals)
+                    lines.Add("signal=" + signal);
+            }
 
             if (!string.IsNullOrEmpty(error))
                 lines.Add("error=" + error);
@@ -46,6 +57,7 @@ namespace Kite2.ScanProtocol
         public static ScanResult Read(string path)
         {
             var items = new List<string>();
+            var signals = new List<string>();
 
             bool succeeded = false;
             string error = null;
@@ -70,20 +82,26 @@ namespace Kite2.ScanProtocol
                     case "item":
                         items.Add(value);
                         break;
+                    case "signal":
+                        signals.Add(value);
+                        break;
                 }
             }
 
-            return new ScanResult(succeeded, error, items);
+            return new ScanResult(succeeded, error, items, signals);
         }
     }
 
     public sealed class ScanResult
     {
-        public ScanResult(bool succeeded, string error, IReadOnlyList<string> items)
+        public ScanResult(
+            bool succeeded, string error, IReadOnlyList<string> items,
+            IReadOnlyList<string> signals = null)
         {
             Succeeded = succeeded;
             Error = error;
             Items = items;
+            Signals = signals ?? new string[0];
         }
 
         public bool Succeeded { get; }
@@ -91,5 +109,9 @@ namespace Kite2.ScanProtocol
         public string Error { get; }
 
         public IReadOnlyList<string> Items { get; }
+
+        public IReadOnlyList<string> Signals { get; }
+
+        public bool HasSignal(string signal) => Signals.Contains(signal);
     }
 }

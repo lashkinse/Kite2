@@ -93,8 +93,14 @@ namespace Kite2.Scan
                         Log.Warn("Дочерний захват пуст: {0}", chapter.Failure);
 
                         // Ответ и на неудачу: иначе родитель решит, что файла нет.
-                        ScanExchange.Write(responsePath, false,
-                            chapter.Failure ?? "Сканер не отдал ни одной страницы.", null);
+                        // Сигнал «данные были готовы» говорит родителю, что стекло
+                        // прошло физически: повторять для него TWAIN-попытки нельзя.
+                        ScanExchange.Write(
+                            responsePath,
+                            false,
+                            chapter.Failure ?? "Сканер не отдал ни одной страницы.",
+                            null,
+                            NTwainLogging.SawTransferReady ? new[] { "xfer" } : null);
                         code = 1;
                     }
                 }
@@ -109,8 +115,14 @@ namespace Kite2.Scan
                 Log.Error("Захват не удался: {0}", ex);
 
                 // Ответ пишется всегда, даже при ошибке: программа ждёт файл и иначе
-                // решила бы, что помощника нет вовсе.
-                ScanExchange.Write(responsePath, false, Describe(ex), null);
+                // решила бы, что помощника нет вовсе. Сигнал нужен и здесь: сбой мог
+                // случиться после готовности данных, и родителю полезно о ней знать.
+                ScanExchange.Write(
+                    responsePath,
+                    false,
+                    Describe(ex),
+                    null,
+                    NTwainLogging.SawTransferReady ? new[] { "xfer" } : null);
 
                 code = 1;
             }
@@ -127,36 +139,30 @@ namespace Kite2.Scan
         // Тексты ошибок сканера уже сказаны по-русски внутри захвата.
         private static string Describe(Exception error) => error.Message;
 
-        // Осиротевший дочерний процесс висит в драйвере навсегда: приложение
-        // гасит родителей на отмене, а ребёнку остаётся следить за отцом самому.
+        // Иначе родитель умирает, а ребёнок остаётся с включённым источником:
+        // Kyocera продолжала физически сканировать стекло ещё долго после
+        // «Отмены» («повторное сканирование» на втором компьютере). Оба выхода
+        // из осмотра — исключение переиспользованного PID и мёртвый родитель —
+        // обязаны закончиться самоубийством процесса.
         private static void WatchParent(int parentPid)
         {
             var watcher = new Thread(() =>
             {
                 while (true)
                 {
-                    Thread.Sleep(1000);
+                    Thread.Sleep(500);
 
-                    Process parent;
-
-                    try
-                    {
-                        parent = Process.GetProcessById(parentPid);
-                    }
-                    catch (Exception)
-                    {
-                        break;
-                    }
-
-                    bool alive;
+                    bool alive = false;
 
                     try
                     {
+                        // PID мог переиспуститься чужим процессом: имя обязательно.
+                        Process parent = Process.GetProcessById(parentPid);
                         alive = parent.ProcessName == "Kite2.Scan" && !parent.HasExited;
                     }
                     catch (Exception)
                     {
-                        alive = true;
+                        // Родитель мёртв: GetProcessById не справляется.
                     }
 
                     if (alive)
