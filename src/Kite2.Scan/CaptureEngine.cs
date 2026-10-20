@@ -25,15 +25,25 @@ namespace Kite2.Scan
         private static readonly TimeSpan FirstPageWait = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan PageGapWait = TimeSpan.FromSeconds(60);
         private static readonly TimeSpan ListingWait = TimeSpan.FromSeconds(10);
+        // Стенка на всю попытку: таймер тишины доходит до итератора только между
+        // страницами, а молчаливый драйвер может зависнуть внутри вызова TWAIN —
+        // без стенки попытка висела бы часами (15 минут на Kyocera TWAIN(2)).
+        private static readonly TimeSpan AttemptWall = TimeSpan.FromSeconds(120);
 
         public static async Task<List<string>> GetSources()
         {
-            return (await BuildCatalog()).Select(source => source.Name).ToList();
+            return (await BuildCatalog(-1)).Select(source => source.Name).ToList();
         }
 
         public static async Task<List<string>> Capture(int sourceIndex, int dpi, int colour, string directory)
         {
-            CatalogSource source = await FindSource(sourceIndex);
+            List<CatalogSource> sources = await BuildCatalog(sourceIndex);
+
+            if (sources.Count <= sourceIndex)
+                throw new InvalidOperationException(
+                    "Выбранный источник не найден. Обновите список источников и повторите попытку.");
+
+            CatalogSource source = sources[sourceIndex];
 
             Log.Info("Источник {0}: {1} ({2})", sourceIndex, source.Name, source.Device.Driver);
 
@@ -48,6 +58,8 @@ namespace Kite2.Scan
 
                 if (chapter.Failure != null)
                     Log.Warn("Попытка не сработала: {0}", chapter.Failure);
+                else if (chapter.Abandoned)
+                    Log.Warn("Попытка не отвечала {0} с и брошена", (int)AttemptWall.TotalSeconds);
 
                 // Страницы важнее гладкой серии: частичный захват уже полезен,
                 // а пустой даёт шанс следующей попытке.
@@ -57,7 +69,12 @@ namespace Kite2.Scan
                     return pages;
                 }
 
-                lastFailure = chapter.Failure;
+                lastFailure = chapter.Failure ?? (chapter.Abandoned
+                    ? string.Format(
+                        CultureInfo.CurrentCulture,
+                        "Попытка «{0}» не отвечала {1} с и была пропущена; ожидается следующая.",
+                        attempt.Title, (int)AttemptWall.TotalSeconds)
+                    : null);
             }
 
             throw new InvalidOperationException(lastFailure ?? "Сканер не отдал ни одной страницы.");
@@ -67,9 +84,12 @@ namespace Kite2.Scan
         // в «sources» и в «acquire»: сначала TWAIN обоих диспетчеров, затем WIA.
         private sealed class CatalogSource
         {
+            public int Index;
             public string Name;
             public ScanDevice Device;
             public WiaApiVersion WiaVersion;
+            // Диспетчер, чей опрос нашёл устройство: ему первая попытка и доверяем.
+            public TwainDsm TwainDsm = TwainDsm.Old;
         }
 
         private sealed class ScanAttempt
@@ -80,37 +100,34 @@ namespace Kite2.Scan
             public string Title;
         }
 
-        private static async Task<List<CatalogSource>> BuildCatalog()
+        // Одна стройка каталога для «sources» и «acquire»: индексация устройств
+        // обязана совпадать. neededIndex правит ранний выход: acquire не обязан
+        // ждать опрос молчаливого старого диспетчера ради источников дальше.
+        private static async Task<List<CatalogSource>> BuildCatalog(int neededIndex)
         {
             var sources = new List<CatalogSource>();
             var controller = NewController();
+            int index = 0;
 
             foreach (var options in CatalogOptions())
-                await CollectDevices(sources, controller, options);
+            {
+                // Каждая TWAIN-версия счастливо увидит свои устройства; если новый
+                // диспетчер уже что-то нашёл, старая — это чистая трата времени:
+                // молчаливый twain_32 отделялся на 10 с (Kyocera TWAIN(2)).
+                if (options.Driver == Driver.Twain && options.TwainOptions.Dsm == TwainDsm.Old
+                    && sources.Any(s => s.Device.Driver == Driver.Twain))
+                    continue;
+
+                await CollectDevices(sources, controller, options, index);
+                index = sources.Count;
+
+                if (neededIndex >= 0 && neededIndex < sources.Count)
+                    return sources;
+            }
 
             Log.Info("Каталог собран: источников {0}", sources.Count);
 
             return sources;
-        }
-
-        // «acquire» обходит только те опросы, до которых дотягивается индекс:
-        // каждый опрос стоит до 10 с на машине с молчаливым диспетчером, и скан
-        // не обязан ждать все пять.
-        private static async Task<CatalogSource> FindSource(int sourceIndex)
-        {
-            var sources = new List<CatalogSource>();
-            var controller = NewController();
-
-            foreach (var options in CatalogOptions())
-            {
-                await CollectDevices(sources, controller, options);
-
-                if (sourceIndex < sources.Count)
-                    return sources[sourceIndex];
-            }
-
-            throw new InvalidOperationException(
-                "Выбранный источник не найден. Обновите список источников и повторите попытку.");
         }
 
         // Один ScanOptions-экземпляр не переиспользуется между опросами.
@@ -124,7 +141,7 @@ namespace Kite2.Scan
         }
 
         private static async Task CollectDevices(
-            List<CatalogSource> sources, ScanController controller, ScanOptions options)
+            List<CatalogSource> sources, ScanController controller, ScanOptions options, int startIndex)
         {
             string label = OptionsLabel(options);
 
@@ -138,9 +155,11 @@ namespace Kite2.Scan
                 {
                     sources.Add(new CatalogSource
                     {
+                        Index = sources.Count,
                         Name = device.Name,
                         Device = device,
-                        WiaVersion = options.Driver == Driver.Wia ? options.WiaOptions.WiaApiVersion : default
+                        WiaVersion = options.Driver == Driver.Wia ? options.WiaOptions.WiaApiVersion : default,
+                        TwainDsm = options.Driver == Driver.Twain ? options.TwainOptions.Dsm : TwainDsm.Old
                     });
                 }
 
@@ -170,20 +189,29 @@ namespace Kite2.Scan
             return await listing;
         }
 
-        // Порядок попыток — рецепт под молчаливый драйвер Kyocera: старый диспетчер
-        // с передачей памятью, затем тот же режим на новом диспетчере, затем обычные
-        // современные пути. Пропущенная попытка не беда: следующая уже не считается
-        // странной после пустого ответа предыдущей.
+        // Первой идёт попытка на том диспетчере, чей опрос нашёл устройство;
+        // остальные — запасные. Kyocera TWAIN(2) нашлась новым диспетчером, но
+        // зависает внутри старого twain_32 на полдня — попытка там более не первая.
         private static List<ScanAttempt> AttemptsFor(CatalogSource source)
         {
             var attempts = new List<ScanAttempt>();
 
             if (source.Device.Driver == Driver.Twain)
             {
-                attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.Old, Mode = TwainTransferMode.Memory, Title = "TWAIN (старый диспетчер, передача памятью)" });
-                attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.New, Mode = TwainTransferMode.Memory, Title = "TWAIN (новый диспетчер, передача памятью)" });
-                attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.New, Mode = TwainTransferMode.Native, Title = "TWAIN (новый диспетчер, передача целиком)" });
-                attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.Old, Mode = TwainTransferMode.Native, Title = "TWAIN (старый диспетчер, передача целиком)" });
+                if (source.TwainDsm == TwainDsm.New)
+                {
+                    attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.New, Mode = TwainTransferMode.Memory, Title = "TWAIN (новый диспетчер, передача памятью)" });
+                    attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.New, Mode = TwainTransferMode.Native, Title = "TWAIN (новый диспетчер, передача целиком)" });
+                    attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.Old, Mode = TwainTransferMode.Memory, Title = "TWAIN (старый диспетчер, передача памятью)" });
+                    attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.Old, Mode = TwainTransferMode.Native, Title = "TWAIN (старый диспетчер, передача целиком)" });
+                }
+                else
+                {
+                    attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.Old, Mode = TwainTransferMode.Memory, Title = "TWAIN (старый диспетчер, передача памятью)" });
+                    attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.New, Mode = TwainTransferMode.Memory, Title = "TWAIN (новый диспетчер, передача памятью)" });
+                    attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.New, Mode = TwainTransferMode.Native, Title = "TWAIN (новый диспетчер, передача целиком)" });
+                    attempts.Add(new ScanAttempt { Driver = Driver.Twain, Dsm = TwainDsm.Old, Mode = TwainTransferMode.Native, Title = "TWAIN (старый диспетчер, передача целиком)" });
+                }
             }
             else
             {
@@ -199,6 +227,10 @@ namespace Kite2.Scan
 
             // null — попытка тихо закончилась без страниц (пустой лоток и т.п.).
             public string Failure;
+
+            // true — попытка брошена по стенке тишины: страницы могли прийти от
+            // зависшего вызова позже, и их приём нужен только до брошенной отметки.
+            public bool Abandoned;
         }
 
         private static async Task<AttemptChapter> TryCapture(
@@ -207,6 +239,43 @@ namespace Kite2.Scan
             var chapter = new AttemptChapter();
             var controller = NewController();
 
+            var consume = ConsumePages(
+                source, attempt, dpi, colour, directory, pagesBefore, chapter, controller);
+
+            // Стенка на попытку, но не жёсткая: если страницы идут — стенка
+            // перезапускается по каждой пришедшей. Бросаем только когда вызов
+            // TWAIN завис и за всё время не отдал ничего нового.
+            int lastCount = 0;
+
+            while (true)
+            {
+                Task done = await Task.WhenAny(consume, Task.Delay(AttemptWall));
+
+                if (done == consume)
+                    break;
+
+                if (chapter.Pages.Count != lastCount)
+                {
+                    // Страница прокралась ровно в момент стенки: время пошло заново.
+                    lastCount = chapter.Pages.Count;
+                    continue;
+                }
+
+                chapter.Abandoned = true;
+                chapter.Failure ??= string.Format(
+                    CultureInfo.CurrentCulture,
+                    "Попытка молчала больше {0} с: драйвер не отвечает.",
+                    (int)AttemptWall.TotalSeconds);
+                break;
+            }
+
+            return chapter;
+        }
+
+        private static async Task ConsumePages(
+            CatalogSource source, ScanAttempt attempt, int dpi, int colour,
+            string directory, int pagesBefore, AttemptChapter chapter, ScanController controller)
+        {
             using (var quiet = new CancellationTokenSource())
             {
                 // CancelAfter перезапускает таймер целиком, поэтому одна и та же
@@ -232,6 +301,11 @@ namespace Kite2.Scan
 
                     await foreach (var page in controller.Scan(options, quiet.Token))
                     {
+                        // Зависший вызов мог проснуться после броска попытки:
+                        // страница уже не нужна.
+                        if (chapter.Abandoned)
+                            break;
+
                         string path = Path.Combine(
                             directory,
                             "scan" + (pagesBefore + chapter.Pages.Count + 1).ToString("D3") + ".bmp");
@@ -261,8 +335,6 @@ namespace Kite2.Scan
                     Log.Error("Попытка упала: {0}", ex);
                     chapter.Failure = GetFailureMessage(ex, chapter.Pages.Count > 0);
                 }
-
-                return chapter;
             }
         }
 
