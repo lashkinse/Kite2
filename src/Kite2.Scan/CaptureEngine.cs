@@ -283,10 +283,14 @@ namespace Kite2.Scan
                 TwainDsm first = source.TwainDsm == TwainDsm.New ? TwainDsm.New : TwainDsm.Old;
                 TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
 
-                attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
+                // Память первая: на драйвере Kyocera передача памятью единственная
+                // доходила до физического прохода стекла, а нативный режим в
+                // прямом включении иногда отказывался сразу после включения
+                // (заваливал запросами на закрытие, не просканировав).
                 attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Memory));
-                attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
+                attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
                 attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Memory));
+                attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
                 attempts.Add(TwainNativeUiAttempt(source.Device, first));
             }
             else

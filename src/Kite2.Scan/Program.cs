@@ -151,15 +151,19 @@ namespace Kite2.Scan
         // пишет тип, сообщение и стек того, что было выброшено внутри NTwain.
         private static void RegisterFirstChanceDiagnostics()
         {
-            int logged = 0;
-
             AppDomain.CurrentDomain.FirstChanceException += (_, e) =>
             {
                 // Сам обработчик обязан быть пустым по эффектам: любой сбой
                 // внутри него циклится и роняет процесс.
                 try
                 {
-                    if (logged >= 40 || e.Exception is OperationCanceledException)
+                    // Ловим только момент передачи: до XferReady драйвер при
+                    // опросе возможностей невинно роняет исключения в любом
+                    // запросе, и они съедали лимит до точки смерти.
+                    // а окно передачи открывает sniff строки XferReady.
+                    if (!NTwainLogging.TransferWindow ||
+                        NTwainLogging.LoggedInWindow >= 12 ||
+                        e.Exception is OperationCanceledException)
                     {
                         return;
                     }
@@ -171,7 +175,7 @@ namespace Kite2.Scan
                         return;
                     }
 
-                    Interlocked.Increment(ref logged);
+                    Interlocked.Increment(ref NTwainLogging.LoggedInWindow);
                     Log.Debug(
                         "Первичный сбой (пойманный молча): {0}: {1}{2}   в   {3}",
                         e.Exception.GetType().Name,

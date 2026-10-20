@@ -17,6 +17,18 @@ namespace Kite2.Scan
         // драйвером Kyocera страница сканировалась раз за разом без результата).
         public static bool SawTransferReady;
 
+        // Окно диагностики открыто между XferReady (физический проход стекла)
+        // и началом сворачивания захвата. Первичные сбои интересны только
+        // внутри окна: до него NTwain бросает безвредные исключения при опросе
+        // возможностей драйвера, и именно они съедали лимит записей, не давая
+        // заметить глотателя, молчащего в момент передачи.
+        public static volatile bool TransferWindow;
+
+        // Сколько сбоев записано в текущем окне: лимит считается заново на
+        // каждом XferReady, так что длинная сессия перегрузки не глушила
+        // диагностику следующей попытки.
+        public static int LoggedInWindow;
+
         private sealed class NLogLog : ILog
         {
             private readonly Logger _log = LogManager.GetLogger("NTwain");
@@ -58,12 +70,30 @@ namespace Kite2.Scan
                 Error(string.Format(CultureInfo.InvariantCulture, messageFormat, args), exception);
 
             // Готовность данных — единственная строка NTwain, ради которой нужен
-            // разбор текста: «Got TWAIN msg XferReady» фиксирует физический проход.
+            // разбор текста: «Got TWAIN msg XferReady» фиксирует физический проход
+            // и открывает диагностическое окно. Сворачивание захвата окно закрывает:
+            // после ForceStepDown источник Disabled, CloseDSReq и DisableSource
+            // идут уже по чистой линии разматывания.
             private static void Sniff(string message)
             {
-                if (message != null &&
-                    message.IndexOf("Got TWAIN msg XferReady", StringComparison.Ordinal) >= 0)
+                if (message == null)
+                    return;
+
+                if (message.IndexOf("Got TWAIN msg XferReady", StringComparison.Ordinal) >= 0)
+                {
                     NTwainLogging.SawTransferReady = true;
+                    NTwainLogging.TransferWindow = true;
+                    NTwainLogging.LoggedInWindow = 0;
+                    return;
+                }
+
+                if (NTwainLogging.TransferWindow &&
+                    (message.IndexOf("ForceStepDown", StringComparison.Ordinal) >= 0 ||
+                     message.IndexOf("Got TWAIN msg CloseDSReq", StringComparison.Ordinal) >= 0 ||
+                     message.IndexOf("DisableSource", StringComparison.Ordinal) >= 0))
+                {
+                    NTwainLogging.TransferWindow = false;
+                }
             }
 
             // Драйверы могут прислать строку с нулями внутри: лог-файл должен
