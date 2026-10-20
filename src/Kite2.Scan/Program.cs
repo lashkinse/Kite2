@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
+using System.Threading;
 using System.Threading.Tasks;
 using Kite2.ScanProtocol;
 using NLog;
@@ -65,6 +67,37 @@ namespace Kite2.Scan
                     Log.Info("Захват завершён, страниц {0}", pages.Count);
                     code = Answer(responsePath, pages);
                 }
+                else if (args[0] == "twain" && args.Length == 10)
+                {
+                    Log.Info("Команда twain (дочерний процесс): диспетчер={0}, режим={1}, dpi={2}, имя={3}",
+                        args[1], args[2], args[3], args[7]);
+
+                    WatchParent(Number(args[8]));
+
+                    var chapter = await CaptureEngine.TryTwainChild(
+                        Number(args[1]),
+                        Number(args[2]),
+                        Number(args[3]),
+                        Number(args[4]),
+                        args[6],
+                        args[7],
+                        Number(args[5]));
+
+                    if (chapter.Pages.Count > 0)
+                    {
+                        Log.Info("Дочерний захват готов, страниц {0}", chapter.Pages.Count);
+                        code = Answer(responsePath, chapter.Pages);
+                    }
+                    else
+                    {
+                        Log.Warn("Дочерний захват пуст: {0}", chapter.Failure);
+
+                        // Ответ и на неудачу: иначе родитель решит, что файла нет.
+                        ScanExchange.Write(responsePath, false,
+                            chapter.Failure ?? "Сканер не отдал ни одной страницы.", null);
+                        code = 1;
+                    }
+                }
                 else
                 {
                     Log.Error("Неизвестная команда: {0}, аргументов {1}", args[0], args.Length);
@@ -93,6 +126,56 @@ namespace Kite2.Scan
 
         // Тексты ошибок сканера уже сказаны по-русски внутри захвата.
         private static string Describe(Exception error) => error.Message;
+
+        // Осиротевший дочерний процесс висит в драйвере навсегда: приложение
+        // гасит родителей на отмене, а ребёнку остаётся следить за отцом самому.
+        private static void WatchParent(int parentPid)
+        {
+            var watcher = new Thread(() =>
+            {
+                while (true)
+                {
+                    Thread.Sleep(1000);
+
+                    Process parent;
+
+                    try
+                    {
+                        parent = Process.GetProcessById(parentPid);
+                    }
+                    catch (Exception)
+                    {
+                        break;
+                    }
+
+                    bool alive;
+
+                    try
+                    {
+                        alive = parent.ProcessName == "Kite2.Scan" && !parent.HasExited;
+                    }
+                    catch (Exception)
+                    {
+                        alive = true;
+                    }
+
+                    if (alive)
+                        continue;
+
+                    Log.Warn("Родитель умер: дочерний процесс завершается сам");
+
+                    // Драйвер может держать главный поток намертво: убиваем
+                    // сам процесс, а не выходим через Exit.
+                    Process.GetCurrentProcess().Kill();
+                    return;
+                }
+            })
+            {
+                IsBackground = true
+            };
+
+            watcher.Start();
+        }
 
         private static int Answer(string responsePath, List<string> items)
         {
