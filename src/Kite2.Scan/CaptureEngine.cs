@@ -22,8 +22,13 @@ namespace Kite2.Scan
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        private static readonly TimeSpan FirstPageWait = TimeSpan.FromSeconds(30);
-        private static readonly TimeSpan PageGapWait = TimeSpan.FromSeconds(60);
+        // Тишина ждётся терпеливо: на Kyocera обработка XferReady висит внутри
+        // первого триплета (PendingXfers.Get) 12-18 с и неизвестно, вернётся ли
+        // вообще: снимок стеков 15:29 поймал вызов ещё живым, а отсечка 30 с
+        // обрезала попытку в момент разгрузки. 2,5 минуты: и драйверу простор,
+        // и пользователю не вечность.
+        private static readonly TimeSpan FirstPageWait = TimeSpan.FromSeconds(150);
+        private static readonly TimeSpan PageGapWait = TimeSpan.FromSeconds(100);
         private static readonly TimeSpan ListingWait = TimeSpan.FromSeconds(10);
         // Стенка на всю попытку: таймер тишины доходит до итератора только между
         // страницами, а молчаливый драйвер может зависнуть внутри вызова TWAIN —
@@ -557,19 +562,30 @@ namespace Kite2.Scan
                 // метка отсчитывает тишину и до первой страницы, и между страницами.
                 quiet.CancelAfter(firstPageWait);
 
-                // За пару секунд до отмены по тишине — разовый снимок стеков
-                // потоков: если стекла осталось чисто (XferReady был, страницы
-                // нет), снимок покажет, где именно зависла передача.
+                // Срезы стеков по ходу тишины: треть, две трети и за пару секунд
+                // до отмены. По ним видно, держится ли зависание в первом
+                // триплете передачи или разгружается со временем.
                 Task diag = attempt.Driver == Driver.Twain && !attempt.NativeUi
                     ? Task.Run(async () =>
                     {
-                        await Task.Delay(firstPageWait - TimeSpan.FromSeconds(2));
-
-                        if (!quiet.IsCancellationRequested &&
-                            chapter.Pages.Count == 0 &&
-                            NTwainLogging.SawTransferReady)
+                        double wall = firstPageWait.TotalSeconds;
+                        double[] points =
                         {
-                            ThreadDumpDiag.Dump();
+                            wall * 0.3,
+                            wall * 0.6,
+                            wall - 2
+                        };
+
+                        double previous = 0;
+                        foreach (double point in points)
+                        {
+                            await Task.Delay(TimeSpan.FromSeconds(point - previous));
+                            previous = point;
+
+                            if (quiet.IsCancellationRequested || chapter.Pages.Count > 0)
+                                return;
+
+                            ThreadDumpDiag.Dump("тишина при передаче");
                         }
                     })
                     : Task.CompletedTask;
@@ -624,6 +640,11 @@ namespace Kite2.Scan
                 catch (OperationCanceledException)
                 {
                     Log.Warn("Попытка прервана по тишине, страниц {0}", chapter.Pages.Count);
+
+                    // Срез на самой отмене: был ли поток помпы всё ещё внутри
+                    // зависшего вызова или уже разгрузился к этому моменту.
+                    if (attempt.Driver == Driver.Twain && !attempt.NativeUi)
+                        ThreadDumpDiag.Dump("на отмене по тишине");
 
                     if (chapter.Pages.Count == 0)
                     {

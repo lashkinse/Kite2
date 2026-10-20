@@ -20,11 +20,11 @@ namespace Kite2.Scan
         // журнала, а интересующий вызов всегда в первых кадрах.
         private const int MaxFramesPerThread = 40;
 
-        public static void Dump()
+        public static void Dump(string reason)
         {
             try
             {
-                Log.Info("==== Снимок потоков: тишина при передаче ====");
+                Log.Info("==== Снимок потоков: {0} ====", reason);
 
                 var text = new StringBuilder();
 

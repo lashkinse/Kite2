@@ -60,7 +60,7 @@ namespace Kite2.Scan
                     // Скрытая команда: живой снимок стеков потоков. Нужна для
                     // проверки диагностики на машине без сканера.
                     Log.Info("Команда threaddump");
-                    ThreadDumpDiag.Dump();
+                    ThreadDumpDiag.Dump("ручной вызов");
                     code = Answer(responsePath, new List<string>());
                 }
                 else if (args[0] == "acquire" && args.Length == 6)
