@@ -55,6 +55,14 @@ namespace Kite2.Scan
                     Log.Info("Список получен: источников {0}", sources.Count);
                     code = Answer(responsePath, sources);
                 }
+                else if (args[0] == "threaddump")
+                {
+                    // Скрытая команда: живой снимок стеков потоков. Нужна для
+                    // проверки диагностики на машине без сканера.
+                    Log.Info("Команда threaddump");
+                    ThreadDumpDiag.Dump();
+                    code = Answer(responsePath, new List<string>());
+                }
                 else if (args[0] == "acquire" && args.Length == 6)
                 {
                     Log.Info("Команда acquire: источник={0}, dpi={1}, цвет={2}, каталог={3}",

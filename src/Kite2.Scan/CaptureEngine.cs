@@ -557,6 +557,23 @@ namespace Kite2.Scan
                 // метка отсчитывает тишину и до первой страницы, и между страницами.
                 quiet.CancelAfter(firstPageWait);
 
+                // За пару секунд до отмены по тишине — разовый снимок стеков
+                // потоков: если стекла осталось чисто (XferReady был, страницы
+                // нет), снимок покажет, где именно зависла передача.
+                Task diag = attempt.Driver == Driver.Twain && !attempt.NativeUi
+                    ? Task.Run(async () =>
+                    {
+                        await Task.Delay(firstPageWait - TimeSpan.FromSeconds(2));
+
+                        if (!quiet.IsCancellationRequested &&
+                            chapter.Pages.Count == 0 &&
+                            NTwainLogging.SawTransferReady)
+                        {
+                            ThreadDumpDiag.Dump();
+                        }
+                    })
+                    : Task.CompletedTask;
+
                 Task raising = attempt.Driver == Driver.Twain && attempt.NativeUi
                     ? Task.Run(() => RaiseDriverWindowLoop(visible.Token))
                     : Task.CompletedTask;
@@ -630,6 +647,16 @@ namespace Kite2.Scan
                 finally
                 {
                     visible.Cancel();
+                }
+
+                // Снимок короткий и к моменту отмены уже снят: дождаться и забыть.
+                try
+                {
+                    await diag;
+                }
+                catch
+                {
+                    // Диагностика не важнее скана: её сбой игнорируем.
                 }
 
                 try

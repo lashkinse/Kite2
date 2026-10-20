@@ -31,6 +31,8 @@
 
   <ItemGroup>
     <PackageReference Include="NLog" Version="5.5.1" />
+    <!-- Снимки стеков живых потоков для диагностики молчащей передачи. -->
+    <PackageReference Include="Microsoft.Diagnostics.Runtime" Version="3.1.512801" />
   </ItemGroup>
 
   <ItemGroup>
