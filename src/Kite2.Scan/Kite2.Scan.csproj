@@ -38,14 +38,47 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Новый TWAIN-диспетчер (2.x) живёт одноимённой нативной dll, которую
-         NuGet-пакеты NAPS2 не раздают вовсе, а сам NAPS2 вендорит из исходников
-         TWAIN Working Group (LGPL, как и Sdk). Без неё оба списка устройств
-         строятся через старый C:\Windows\twain_32.dll, а второе открытие этого
-         диспетчера в одном процессе на части машин зависает. NAPS2 ищет файл
-         в подпапке _win32 (поиск для 32-разрядных сборок). -->
-    <None Include="Native\x86\twaindsm.dll" Link="_win32\twaindsm.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <!-- Нативный TWAIN-диспетчер 2.x: NuGet-пакеты NAPS2 его не раздают, а сам
+         NAPS2 вендорит из исходников TWAIN Working Group (LGPL, как и Sdk).
+         Без него список устройств строится через старый C:\Windows\twain_32.dll,
+         а второе открытие этого диспетчера в одном процессе на части машин
+         зависает. Файл лежит рядом с помощником: LoadLibrary по умолчанию
+         ищет его в каталоге экзешника, подпапка _win32 не обязательна. -->
+    <None Include="Native\x86\twaindsm.dll" Link="twaindsm.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
+
+  <!-- Лишнее срезается прямо с выхода сборки: помощнику не нужен ни транспорт
+       eSCL для сетевых сканеров (Escl + Grpc + Protobuf + DNS), ни распознавание
+       штрих-кодов (zxing), ни PDF-экспорт внутри NAPS2 (PdfSharpCore,
+       SharpZipLib), ни полсотни спутниковых переводов NAPS2 (кроме потревоженного
+       каталога _win32, twaindsm теперь лежит в корне). Копия ниток и сканера
+       раскладывается в Scan\ через CopySidePrograms — чем меньше файлов, тем
+       компактнее поставка. Драйвер по умолчанию тут TWAIN и WIA, а лог помощь-
+       ник пишет сам, на своём русском. -->
+  <Target Name="TrimScanOutput" AfterTargets="Build">
+    <ItemGroup>
+      <SatelliteTranslations Include="$(TargetDir)*\NAPS2.Sdk.resources.dll" />
+    </ItemGroup>
+    <Delete Files="%(SatelliteTranslations.FullPath)" />
+    <RemoveDir Directories="%(SatelliteTranslations.RootDir)%(SatelliteTranslations.Directory)" />
+    <ItemGroup>
+      <UnusedSideFiles Include="
+        $(TargetDir)_win32\**\*;
+        $(TargetDir)NAPS2.Escl.dll;
+        $(TargetDir)Grpc.Core.Api.dll;
+        $(TargetDir)GrpcDotNetNamedPipes.dll;
+        $(TargetDir)Google.Protobuf.dll;
+        $(TargetDir)Makaretu.Dns.dll;
+        $(TargetDir)Makaretu.Dns.Multicast.New.dll;
+        $(TargetDir)SimpleBase.dll;
+        $(TargetDir)StandardSocketsHttpHandler.dll;
+        $(TargetDir)zxing.dll;
+        $(TargetDir)zxing.presentation.dll;
+        $(TargetDir)PdfSharpCore.dll;
+        $(TargetDir)ICSharpCode.SharpZipLib.dll;" />
+    </ItemGroup>
+    <Delete Files="@(UnusedSideFiles)" />
+  </Target>
 
   <ItemGroup>
     <!-- Движок сканирования — NAPS2.Sdk: один API закрывает TWAIN (оба диспетчера)

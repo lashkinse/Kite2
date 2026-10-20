@@ -40,7 +40,19 @@ namespace Kite2.Core
 
         public static string Logs => Resolve(ref _logs, "logs");
 
-        public static string SettingsFile => Path.Combine(Data, "Настройки.ini");
+        // Имя латиницей: на части машин не-ASCII имя файла ломает архиваторы
+        // и внешние инструменты. Прошлые «Настройки.ini» переезжают при первом
+        // чтении — настройки не теряются.
+        public static string SettingsFile => Path.Combine(Data, "settings.ini");
+
+        // Одноразовый перенос имя с русской на латиницу.
+        public static void MigrateLegacySettings()
+        {
+            string legacy = Path.Combine(Data, "Настройки.ini");
+
+            if (File.Exists(legacy) && !File.Exists(SettingsFile))
+                File.Move(legacy, SettingsFile);
+        }
 
         public static string LogFile => Path.Combine(Logs, "Kite2-" + DateTime.Now.ToString("yyyyMMdd") + ".log");
 

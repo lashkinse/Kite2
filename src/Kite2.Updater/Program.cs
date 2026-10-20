@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -21,8 +22,13 @@ namespace Kite2.Updater
 
             try
             {
-                WaitForExit(args[0]);
-                CopyDirectory(args[1], Path.GetDirectoryName(args[0]));
+                string targetRoot = Path.GetDirectoryName(args[0]);
+                // Помощник может остаться в повисшем драйвере и после выхода
+                // программы: файлы Kite2.Scan.exe он не отдаст, пока жив.
+                WaitForProgramExit(args[0]);
+                KillLingeringHelpers(targetRoot);
+                CopyDirectory(args[1], targetRoot);
+                CleanupStale(args[1], targetRoot);
 
                 if (args[2] == "true")
                     StartAgain(args[0]);
@@ -37,10 +43,33 @@ namespace Kite2.Updater
             return 0;
         }
 
-        private static void WaitForExit(string programPath)
+        private static void WaitForProgramExit(string programPath)
         {
             for (int attempt = 0; attempt < 60 && IsRunning(programPath); attempt++)
                 Thread.Sleep(500);
+        }
+
+        // Зависший в драйвере Kite2.Scan.exe не выйдет сам: после выхода программы
+        // его гасим принудительно — установке данные непосредственно не принадлежат.
+        private static void KillLingeringHelpers(string targetRoot)
+        {
+            foreach (Process process in Process.GetProcessesByName("Kite2.Scan"))
+            {
+                try
+                {
+                    string module = process.MainModule == null ? null : process.MainModule.FileName;
+
+                    if (module != null && module.StartsWith(targetRoot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        process.Kill();
+                        process.WaitForExit(5000);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Не осилил — и ладно: копирование повторами переживёт занятые файлы.
+                }
+            }
         }
 
         private static bool IsRunning(string programPath)
@@ -109,6 +138,57 @@ namespace Kite2.Updater
                 FileName = programPath,
                 UseShellExecute = true
             });
+        }
+
+        // Новая версия перечисляется целиком: всё, что осталось от прошедших
+        // выпусков и не перечислено в пакете, демонтируется уже после копирования.
+        // Иначе пустые папки (`_win32` из прошлой поставки) и снятые с поддержки
+        // сборки копятся в каталоге годами.
+        private static void CleanupStale(string sourceDirectory, string targetRoot)
+        {
+            var kept = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string file in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+                kept.Add(TrimPrefix(file, sourceDirectory));
+
+            foreach (string file in Directory.GetFiles(targetRoot, "*", SearchOption.AllDirectories))
+            {
+                string relative = TrimPrefix(file, targetRoot);
+
+                if (kept.Contains(relative))
+                    continue;
+
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (Exception)
+                {
+                    // Отказавшийся удаляться файл достанется следующему обновлению:
+                    // нельзя дать одной застрявшей dll остановить всю установку.
+                }
+            }
+
+            foreach (string directory in Directory.GetDirectories(targetRoot, "*", SearchOption.AllDirectories))
+            {
+                if (Directory.GetFileSystemEntries(directory).Length == 0)
+                {
+                    try
+                    {
+                        Directory.Delete(directory, false);
+                    }
+                    catch (Exception)
+                    {
+                        // Пустая папка не мешает ничему — просто исчезнет в другой раз.
+                    }
+                }
+            }
+        }
+
+        private static string TrimPrefix(string path, string prefix)
+        {
+            string relative = path.Substring(prefix.Length).TrimStart(Path.DirectorySeparatorChar);
+            return relative;
         }
     }
 }

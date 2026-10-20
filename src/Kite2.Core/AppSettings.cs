@@ -24,6 +24,9 @@ namespace Kite2.Core
         // должен всегда находить файл и видеть, что в нём можно поправить.
         public static void Load()
         {
+            // Прежний «Настройки.ini» успевает переехать до первой проверки файла.
+            AppPaths.MigrateLegacySettings();
+
             if (!File.Exists(AppPaths.SettingsFile))
             {
                 Save();

@@ -60,7 +60,7 @@ namespace Kite2.Core
             int sequence = Interlocked.Increment(ref _storeSequence);
             string target = Path.Combine(
                 AppPaths.Pages,
-                $"страница-{DateTime.Now:HHmmss}-{sequence}.jpg");
+                $"page-{DateTime.Now:HHmmss}-{sequence}.jpg");
 
             File.Copy(file, target, true);
 
