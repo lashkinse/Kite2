@@ -23,6 +23,10 @@ namespace Kite2.App.Services
         // десять секунд, а дальше обновление откладывается до следующего запуска.
         private static readonly TimeSpan NetworkWait = TimeSpan.FromSeconds(10);
 
+        // Запасной вход не ходит через API GitHub: на него лимитов почти нет.
+        private const string ReleasesLatestUrl =
+            "https://github.com/lashkinse/Kite2/releases/latest";
+
         private static readonly HttpClient Http = CreateHttp();
 
         // Дата-хранилище одно на пользователя, не на каталог установки:
@@ -36,6 +40,20 @@ namespace Kite2.App.Services
         // Ответ проверки: само обновление и признак того, что каталог вообще
         // ответил. «Обновлений нет» повторов не просит, сеть без ответа — просит.
         public static async Task<(ReleaseCatalog.Entry Update, bool Answered)> Latest()
+        {
+            (ReleaseCatalog.Entry Update, bool Answered) byCatalog = await LatestByCatalog();
+
+            // Каталог API GitHub ограничен числом запросов в час на компьютер;
+            // исчерпанный лимит раньше оставлял проверку молча пустой до конца
+            // сеанса. Прямая страница выпуска ходит через обычный сайт, на неё
+            // лимиты API не давят, — на таком запасном входе проверка и живёт.
+            if (!byCatalog.Answered)
+                return await LatestByPage();
+
+            return byCatalog;
+        }
+
+        private static async Task<(ReleaseCatalog.Entry Update, bool Answered)> LatestByCatalog()
         {
             try
             {
@@ -182,5 +200,43 @@ namespace Kite2.App.Services
         }
 
         private static string Quote(string value) => "\"" + value + "\"";
+
+        // Запасной вход: обычный сайт вместо API. Адрес обязательного выпуска
+        // (releases/latest) уходит редиректом на страницу самого выпуска, а
+        // версия видна прямо в адресе приземления. Архив складывается из версии:
+        // имя актива всегда ходит в ногу с ней.
+        private static async Task<(ReleaseCatalog.Entry Update, bool Answered)> LatestByPage()
+        {
+            try
+            {
+                using (HttpResponseMessage response = await Http.GetAsync(
+                    ReleasesLatestUrl, HttpCompletionOption.ResponseHeadersRead))
+                {
+                    Version version = ReleaseCatalog.ReadVersion(
+                        response.RequestMessage.RequestUri?.ToString());
+
+                    if (version == null)
+                    {
+                        Log.Warn("Страница выпуска не отдала версии: {0}",
+                            response.RequestMessage.RequestUri);
+                        return (null, false);
+                    }
+
+                    Log.Info("Прямая страница выпуска: {0} (каталог API был недоступен)", version);
+
+                    var update = new ReleaseCatalog.Entry(version, DownloadUrl(version));
+
+                    return (update, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(ex, "Полный сбой проверки обновлений");
+                return (null, false);
+            }
+        }
+
+        private static string DownloadUrl(Version version) =>
+            "https://github.com/lashkinse/Kite2/releases/download/v" + version + "/Kite2-" + version + ".zip";
     }
 }

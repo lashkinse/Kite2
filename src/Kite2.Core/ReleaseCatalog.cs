@@ -60,7 +60,8 @@ namespace Kite2.Core
             return new Entry(version, asset.browser_download_url);
         }
 
-        private static Version ReadVersion(string title)
+        // Публично: запасной путь проверки ищет версию в строке адреса выпуска.
+        public static Version ReadVersion(string title)
         {
             Match match = VersionPattern.Match(title ?? string.Empty);
 
