@@ -240,10 +240,11 @@ namespace Kite2.Scan
             return await listing;
         }
 
-        // Лестница попыток уходит от старой иерархии «весь TWAIN, потом WIA»:
-        // у Kyocera молчит TWAIN, а родное окно WIA-драйвера работает там, где
-        // программная передача падает. Лестница перемешана так, чтобы самый
-        // вероятный успех не ждал за самыми долгими попытками.
+        // Лестница попыток: TWAIN — главная, он и начинается, и ветка целиком
+        // проходится по всем диспетчерам и режимам передачи до всякого WIA.
+        // WIA-запас идёт после TWAIN-ветки, а родное окно WIA-драйвера — самым
+        // последним: молчаливые приложения-драйверы Kyocera часто говорят
+        // только собственному окну.
         private static List<ScanAttempt> AttemptsFor(CatalogSource source, List<CatalogSource> sources)
         {
             var attempts = new List<ScanAttempt>();
@@ -253,35 +254,12 @@ namespace Kite2.Scan
                 TwainDsm first = source.TwainDsm == TwainDsm.New ? TwainDsm.New : TwainDsm.Old;
                 TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
 
-                // WIA-запасной ищется по одному устройству: названия в TWAIN и WIA
-                // несхожи («Kyocera TWAIN(2)» и «Kyocera FS-1120MFP WIA Driver»),
-                // но на машине с одним сканером WIA-дубль — он всегда последний в
-                // списке, и не совпадать по имени дешевле и надёжнее.
-                CatalogSource wia = sources.FirstOrDefault(s => s.Device.Driver == Driver.Wia);
-
                 attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Memory));
-
-                if (wia != null)
-                    attempts.Add(WiaAttempt(wia, PaperSource.Auto, "WIA (та же модель)"));
-
-                if (wia != null)
-                    attempts.Add(WiaAttempt(wia, PaperSource.Feeder, "WIA (та же модель, автоподатчик)"));
-
                 attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
-
-                if (wia != null)
-                    attempts.Add(new ScanAttempt
-                    {
-                        Driver = Driver.Wia,
-                        Device = wia.Device,
-                        WiaVersion = wia.WiaVersion,
-                        NativeUi = true,
-                        Wall = NativeUiWall,
-                        Title = "WIA (родное окно драйвера)"
-                    });
-
                 attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Memory));
                 attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
+
+                AppendWiaLadder(attempts, sources);
             }
             else
             {
@@ -302,6 +280,31 @@ namespace Kite2.Scan
             }
 
             return attempts;
+        }
+
+        // WIA-запасной для TWAIN-источника ищется по одному устройству: названия
+        // в TWAIN и WIA несхожи («Kyocera TWAIN(2)» и «Kyocera FS-1120MFP WIA
+        // Driver»), но на машине с одним сканером WIA-дубль — всегда последний
+        // в списке, и не совпадать по имени надёжнее.
+        private static void AppendWiaLadder(List<ScanAttempt> attempts, List<CatalogSource> sources)
+        {
+            CatalogSource wia = sources.FirstOrDefault(s => s.Device.Driver == Driver.Wia);
+
+            if (wia == null)
+                return;
+
+            attempts.Add(WiaAttempt(wia, PaperSource.Auto, "WIA (та же модель)"));
+            attempts.Add(WiaAttempt(wia, PaperSource.Feeder, "WIA (та же модель, автоподатчик)"));
+
+            attempts.Add(new ScanAttempt
+            {
+                Driver = Driver.Wia,
+                Device = wia.Device,
+                WiaVersion = wia.WiaVersion,
+                NativeUi = true,
+                Wall = NativeUiWall,
+                Title = "WIA (родное окно драйвера)"
+            });
         }
 
         private static ScanAttempt TwainAttempt(ScanDevice device, TwainDsm dsm, TwainTransferMode mode)

@@ -17,7 +17,7 @@
     <AssemblyTitle>Kite2</AssemblyTitle>
     <Product>Kite2</Product>
     <Description>Сканирование документов</Description>
-    <Version>1.7.6</Version>
+    <Version>1.7.7</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Значок программы: без него в проводнике и на панели задач Windows
          показывается пустой значок. -->
@@ -57,10 +57,10 @@
 
   <!-- Ссылка на сборку обновлятора тоже копирующая, а файлы запуска кладутся
        рядом с программой целью ниже: сами по себе они снаружи не уедут.
-       Помощник несёт целый граф зависимостей NAPS2 и помещается в подпапку Scan:
-       отдельные его DLL совпадают по имени с библиотеками приложения, но собраны
-       под другие версии (например, SharpZipLib), и в общей папке одна сборка
-       переписывала бы другую. -->
+       Помощник несёт целый граф зависимостей NAPS2, и все они кладутся рядом
+       с программой одним каталогом: версии общих сборок (NLog, SixLabors.Fonts,
+       семейство System.*) выровнены в csproj помощника и приложения так, чтобы
+       один и тот же файл годился обоим процессам. -->
   <Target Name="CopySidePrograms" AfterTargets="Build">
     <ItemGroup>
       <ScanProgram Include="$(MSBuildThisFileDirectory)..\Kite2.Scan\bin\*\$(Configuration)\**\Kite2.Scan.exe" />
@@ -74,10 +74,10 @@
            Text="Помощник захвата не собран: без Kite2.Scan.exe программа не увидит сканер." />
     <Error Condition="'@(UpdaterProgram)' == ''"
            Text="Обновлятор не собран: без Kite2.Updater.exe программа не обновится." />
-    <!-- Всё, что лежит рядом с Kite2.Scan.exe (exe, конфиг, dll, twaindsm),
-         уезжает одним рекурсивным переносом в Scan\. -->
+    <!-- Рядом, а не в подпапке: и приложение, и TWAIN-помощник живут из одного
+         каталога, как просил пользователь. -->
     <Copy SourceFiles="@(ScanFile)"
-          DestinationFiles="@(ScanFile->'$(TargetDir)Scan\%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(ScanFile->'$(TargetDir)%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(UpdaterFile)"
           DestinationFiles="@(UpdaterFile->'$(TargetDir)%(Filename)%(Extension)')"
@@ -100,6 +100,15 @@
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="NLog" Version="5.5.1" />
+    <!-- Версии общих библиотек жёстко совпадают с версиями помощника: два
+         процесса берут сборки из одного каталога, и следить отдельно за
+         «лежащим в Scan» набором больше не требуется. -->
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.10" />
+    <PackageReference Include="System.Buffers" Version="4.6.1" />
+    <PackageReference Include="System.Memory" Version="4.6.3" />
+    <PackageReference Include="System.Numerics.Vectors" Version="4.6.1" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
+    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
   </ItemGroup>
 
 </Project>
