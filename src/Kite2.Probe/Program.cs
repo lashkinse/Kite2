@@ -28,7 +28,15 @@ namespace Kite2.Probe
                     return Experiment.Run(args);
                 if (args[0] == "stackdump")
                 {
-                    StackSnap.Foreign(int.Parse(args[1]), args[2]);
+                    try
+                    {
+                        StackSnap.Foreign(int.Parse(args[1]), args[2]);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine("снимок стеков не удался: " + ex.Message);
+                        return 5;
+                    }
                     return 0;
                 }
                 Console.WriteLine("Режимы программы: run [wallSec] [фильтр] | exp <idx> <wallMs> <logPath> | stackdump <pid> <out>");
@@ -109,7 +117,19 @@ namespace Kite2.Probe
                         killed = true;
                         // Сначала снимок стеков, только потом убийство: снимок и
                         // есть источник знаний о том, где именно ребёнок висит.
-                        StackSnap.Foreign(child.Id, stackFile);
+                        // Сбой снимка (нет ClrMD и т.п.) сам прогон не саботирует.
+                        try
+                        {
+                            StackSnap.Foreign(child.Id, stackFile);
+                        }
+                        catch (Exception ex)
+                        {
+                            try
+                            {
+                                File.WriteAllText(stackFile, "снимок стеков не удался: " + ex.Message, new UTF8Encoding(false));
+                            }
+                            catch { }
+                        }
                         try { child.Kill(); } catch { }
                         verdict = -1;
                     }
