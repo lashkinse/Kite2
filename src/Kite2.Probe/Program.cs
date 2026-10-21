@@ -82,6 +82,24 @@ namespace Kite2.Probe
                 Console.WriteLine("ПРЕДУПРЕЖДЕНИЕ: " + dllNote);
             report.AppendLine("twaindsm.dll около программы: " + (Dsm.NewAvailable ? "есть" : "НЕТ"));
             report.AppendLine("twain_32.dll системы: " + (Dsm.OldAvailable ? "есть" : "НЕТ"));
+
+            // Лог DS-шима Kyocera (kcTwain03DS2.ds) пишет в C:\twsrc.log.
+            // Судя по коду, файл должен существовать — заводим пустой.
+            // На системах без прав записи в корень диска остается честно отметить.
+            string twsrcNote;
+            try
+            {
+                string twsrcLog = Path.Combine(Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\", "twsrc.log");
+                if (!File.Exists(twsrcLog))
+                    File.WriteAllText(twsrcLog, "", new UTF8Encoding(false));
+                twsrcNote = "заведён/существует, будет забран в конце отчёта";
+            }
+            catch (Exception ex)
+            {
+                twsrcNote = "создать не удалось: " + ex.Message;
+            }
+            report.AppendLine("C:\\twsrc.log (лог шима Kyocera): " + twsrcNote);
+            report.AppendLine("TWAINDSM_LOG включается в каждом ребёнке (лог DSM 2.x = expNN.dsmlog.txt).");
             report.AppendLine();
 
             string self = Assembly.GetEntryAssembly().Location;
@@ -110,6 +128,10 @@ namespace Kite2.Probe
                         UseShellExecute = false,
                         CreateNoWindow = true
                     };
+                    // Встроенный лог 2.x DSM: env-переменная TWAINDSM_LOG.
+                    // Свой файл на каждый эксперимент, чтобы не перемешивать.
+                    child.StartInfo.EnvironmentVariables["TWAINDSM_LOG"] =
+                        Path.Combine(dir, "exp" + idx.ToString("00") + ".dsmlog.txt");
                     child.Start();
                     bool finished = child.WaitForExit(wall * 1000);
                     if (!finished)
@@ -160,8 +182,41 @@ namespace Kite2.Probe
                     report.AppendLine("── stacks (снят при повейровании) ──");
                     report.AppendLine(File.ReadAllText(stackFile));
                 }
+                // Хвост лога DSM 2.x — самая честная хроника: там видно, что
+                // DSM узнал и что отправил приложению (включая DAT_EVENT).
+                string dsmLogPath = Path.Combine(dir, "exp" + idx.ToString("00") + ".dsmlog.txt");
+                if (File.Exists(dsmLogPath))
+                {
+                    try
+                    {
+                        var dsmLines = File.ReadAllLines(dsmLogPath, Encoding.UTF8);
+                        report.AppendLine();
+                        report.AppendLine("── хвост лога TWAINDSM (" + dsmLines.Length + " строк, целиком: exp" + idx.ToString("00") + ".dsmlog.txt) ──");
+                        foreach (var line in dsmLines.Skip(Math.Max(0, dsmLines.Length - 150)))
+                            report.AppendLine(line);
+                    }
+                    catch { }
+                }
                 report.AppendLine();
             }
+
+            // Лог DS-шима Kyocera — в хвост отчёта (там вся хроника самого DS).
+            try
+            {
+                string twsrcLog = Path.Combine(Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\", "twsrc.log");
+                if (File.Exists(twsrcLog))
+                {
+                    var dsLines = File.ReadAllLines(twsrcLog, Encoding.GetEncoding(1251));
+                    if (dsLines.Length > 0)
+                    {
+                        report.AppendLine();
+                        report.AppendLine("━━━ Лог DS-шима C:\\twsrc.log (" + dsLines.Length + " строк) ━━━");
+                        foreach (var line in dsLines.Skip(Math.Max(0, dsLines.Length - 200)))
+                            report.AppendLine(line);
+                    }
+                }
+            }
+            catch { }
 
             string reportPath = Path.Combine(dir, "REPORT.txt");
             File.WriteAllText(reportPath, report.ToString(), new UTF8Encoding(false));
