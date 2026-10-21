@@ -1,7 +1,10 @@
-// С bfsida window: создаётся один раз на эксперимент, используется и как
+// Окно-родитель: создаётся один раз на эксперимент, используется и как
 // «родитель» OPENDSM/ENABLEDS, и как очередь оконных сообщений драйвера
 // (DAT_EVENT MSG_PROCESSEVENT — тот же путь, что NTwain.IsTwainMessage).
-// Окно message-only (HWND_MESSAGE): не попадает в Alt-Tab и не мигает.
+// Раньше это было message-only окно (HWND_MESSAGE); на Kyocera готовность
+// не приходила ни через колбэк, ни через DAT_EVENT, а капы читались мусором.
+// NTwain в работающей связке держит настоящее скрытое окно верхнего
+// уровня (HwndSource) — теперь так же: WS_OVERLAPPED без показа, parent = 0.
 using System;
 using System.Runtime.InteropServices;
 
@@ -12,6 +15,7 @@ namespace Kite2.Probe
         private readonly LineLog _log;
         private IntPtr _hwnd;
         private ushort _registeredClass; // полезна для DestroyClass
+        private int _seen;               // сколько сообщений уже показали в журнале
 
         public PumpWindow(LineLog log)
         {
@@ -38,10 +42,12 @@ namespace Kite2.Probe
                 _log.Info("RegisterClassW не удался (код {0}) — окно всё равно попробуем", err);
             }
 
+            // Настоящее окно верхнего уровня: parent = 0, стиль WS_OVERLAPPED
+            // без WS_VISIBLE — скрытый, как окно NTwain.
             _hwnd = Native32.CreateWindowExW(
                 0, atom != 0 ? cls.Name : "STATIC", "Kite2.Probe",
                 0 /* WS_OVERLAPPED без показа */, 0, 0, 0, 0,
-                Native32.HwndMessage, IntPtr.Zero, inst, IntPtr.Zero);
+                IntPtr.Zero, IntPtr.Zero, inst, IntPtr.Zero);
 
             if (_hwnd == IntPtr.Zero)
             {
@@ -50,17 +56,24 @@ namespace Kite2.Probe
                 return IntPtr.Zero;
             }
 
-            _log.Info("окно программы: {0}", _hwnd);
+            _log.Info("окно программы: {0} (верхнего уровня, скрытое)", _hwnd);
             return _hwnd;
         }
 
         // Прокачать очередь сообщений окна; колбэк на каждое: может
-        // остановить выгрузку (готовность пришла).
+        // остановить выгрузку (готовность пришла). Первые дюжина сообщений
+        // печатается в журнал — чтобы на снимке видно было, приходили ли
+        // сообщения драйвера вообще.
         public void Drain(Func<Native32.MinimumMsg, bool> visitor)
         {
             uint race = 0; // PM_NOREMOVE не нужен: выгребаем всё живое.
             while (Native32.PeekMessageW(out var m, _hwnd, 0, 0, race | 1))
             {
+                if (_seen < 12)
+                {
+                    _log.Info("окно ← msg 0x{0:X4} wp 0x{1:X} lp 0x{2:X}", m.Message, m.WParam.ToInt64(), m.LParam.ToInt64());
+                    ++_seen;
+                }
                 Native32.TranslateMessage(ref m);
                 Native32.DispatchMessage(ref m);
                 if (visitor(m))

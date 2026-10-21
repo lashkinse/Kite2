@@ -13,7 +13,7 @@
     <PlatformTarget>x86</PlatformTarget>
     <RootNamespace>Kite2.Probe</RootNamespace>
     <AssemblyName>Kite2.Probe</AssemblyName>
-    <Version>1.0.1</Version>
+    <Version>1.0.3</Version>
     <LangVersion>8.0</LangVersion>
     <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>

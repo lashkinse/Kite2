@@ -518,6 +518,21 @@ namespace Kite2.Probe
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern IntPtr LoadLibrary([MarshalAs(UnmanagedType.LPWStr)] string path);
 
+        // Контейнеры капов — GlobalAlloc-хэндлы (в чистом виде копия
+        // WinMemoryManager вендоренного NTwain): флаг 64 = GMEM_ZEROINIT
+        // без MOVEABLE, т.е. фиксированный блок, чей «хэндл» совпадает
+        // с адресом; 1.x-драйверы читают/пишут их через GlobalLock, поэтому
+        // сырой AllocHGlobal-указатель наполнить мусором — не выйдет.
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr GlobalLock(IntPtr handle);
+
+        [DllImport("kernel32.dll", SetLastError = false)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool GlobalUnlock(IntPtr handle);
+
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern void GlobalFree(IntPtr h);
 
@@ -584,6 +599,22 @@ namespace Kite2.Probe
             [MarshalAs(UnmanagedType.LPWStr)]
             public string Name;
             public IntPtr IconSm;
+        }
+    }
+
+    // Обёртка над GlobalAlloc-контейнерами: Alloc → Lock → правка → Unlock → Free.
+    internal static class WinMem
+    {
+        public const uint ZeroInit = 64;
+
+        public static IntPtr Alloc(uint size)
+        {
+            return Native32.GlobalAlloc(ZeroInit, new UIntPtr(size));
+        }
+
+        public static void Free(IntPtr h)
+        {
+            if (h != IntPtr.Zero) Native32.GlobalFree(h);
         }
     }
 }

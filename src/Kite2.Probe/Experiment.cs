@@ -314,21 +314,37 @@ namespace Kite2.Probe
 
         private static void ReadCap(LineLog log, bool newDsm, TWIdentity app, TWIdentity ds, string name, ushort cap)
         {
-            IntPtr c = Marshal.AllocHGlobal(256);
+            // Контейнер — GlobalAlloc-хэндл (GMEM_ZEROINIT), как у NTwain:
+            // драйвер заполняет его через GlobalLock, поэтому нулевая исходная
+            // память честно отличает «драйвер не писал» от «мусор».
+            IntPtr h = WinMem.Alloc(256);
             try
             {
-                var capObj = new TWCapability(cap, TwOn.DontCare16, c);
+                var capObj = new TWCapability(cap, TwOn.DontCare16, h);
                 var rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Capability, Msg.Get, capObj);
                 if (rc != TwRc.Success)
                 {
                     log.Info("{0}: {1}", name, TwRc.Name(rc));
                     return;
                 }
-                log.Info("{0}: {1}", name, DescribeCap(c, capObj.ConType));
+                IntPtr p = Native32.GlobalLock(h);
+                if (p == IntPtr.Zero)
+                {
+                    log.Info("{0}: GlobalLock не удался — контейнер пуст?", name);
+                    return;
+                }
+                try
+                {
+                    log.Info("{0}: {1}", name, DescribeCap(p, capObj.ConType));
+                }
+                finally
+                {
+                    Native32.GlobalUnlock(h);
+                }
             }
             finally
             {
-                Marshal.FreeHGlobal(c);
+                WinMem.Free(h);
             }
         }
 
@@ -352,47 +368,66 @@ namespace Kite2.Probe
 
         private static void SetXferMech(LineLog log, bool newDsm, TWIdentity app, TWIdentity ds, ushort mech)
         {
-            IntPtr c = Marshal.AllocHGlobal(8);
-            Marshal.WriteInt16(c, 0, (short)TwTy.UInt16);
-            Marshal.WriteInt16(c, 2, (short)mech);
+            // OneValue-контейнер как у вендоренного NTwain (Pack=2):
+            // itemType u16 @0, значение u32 @2, всего 6 байт; пишем через
+            // GlobalLock прямо в фиксированный GlobalAlloc-блок.
+            IntPtr h = WinMem.Alloc(6);
             try
             {
+                IntPtr p = Native32.GlobalLock(h);
+                if (p == IntPtr.Zero)
+                {
+                    log.Info("ICAP_XFERMECH: GlobalAlloc/GlobalLock не удался");
+                    return;
+                }
+                Marshal.WriteInt16(p, 0, (short)TwTy.UInt16);
+                Marshal.WriteInt32(p, 2, mech);
+                Native32.GlobalUnlock(h);
+
                 var rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Capability, Msg.Set,
-                    new TWCapability(CapId.ICapXferMech, TwOn.OneValue, c));
+                    new TWCapability(CapId.ICapXferMech, TwOn.OneValue, h));
                 log.Info("ICAP_XFERMECH = {0}: {1}", mech == Twsx.Memory ? "memory" : "native", TwRc.Name(rc));
             }
             finally
             {
-                Marshal.FreeHGlobal(c);
+                WinMem.Free(h);
             }
         }
 
-        private static string DescribeCap(IntPtr c, ushort containerType)
+        private static string DescribeCap(IntPtr p, ushort containerType)
         {
-            ushort itemType = (ushort)Marshal.ReadInt16(c, 0);
+            ushort itemType = (ushort)Marshal.ReadInt16(p, 0);
             if (containerType == TwOn.OneValue)
-                return "onevalue itemType " + itemType + " = " + ReadValue(c, 2, itemType);
+            {
+                // Раскладка дремучих OneValue двоякая: у NTwain значение
+                // пойдёт на 2 (Pack=2), у педантичных драйверов — на 4
+                // (Reserved на 2). Печатаем оба сырых чтения, спорить
+                // будем по факту.
+                return "onevalue itemType " + itemType
+                    + " | u32@2 " + ReadValue(p, 2, TwTy.UInt32)
+                    + " | u32@4 " + ReadValue(p, 4, TwTy.UInt32);
+            }
             if (containerType == TwOn.Enum)
             {
-                ushort numItems = (ushort)Marshal.ReadInt16(c, 2);
-                short current = (short)Marshal.ReadInt16(c, 4);
+                ushort numItems = (ushort)Marshal.ReadInt16(p, 2);
+                short current = (short)Marshal.ReadInt16(p, 4);
                 if (numItems > 0 && current >= 0 && current < numItems)
                 {
                     int itemSize = ItemSize(itemType);
                     int offset = 8 + (int)(current * itemSize);
                     return "enum[" + numItems + "]" + " itemType " + itemType
-                        + " = value on current " + current + ": " + ReadValue(c, offset, itemType);
+                        + " = value on current " + current + ": " + ReadValue(p, offset, itemType);
                 }
                 return "enum[" + numItems + "] itemType " + itemType + " (индекс " + current + " туповой)";
             }
             if (containerType == TwOn.Range)
             {
-                return "range itemType " + itemType + " min " + Marshal.ReadInt32(c, 2)
-                    + " max " + Marshal.ReadInt32(c, 6)
-                    + " step " + Marshal.ReadInt32(c, 10)
-                    + " current " + Marshal.ReadInt32(c, 18);
+                return "range itemType " + itemType + " min " + Marshal.ReadInt32(p, 2)
+                    + " max " + Marshal.ReadInt32(p, 6)
+                    + " step " + Marshal.ReadInt32(p, 10)
+                    + " current " + Marshal.ReadInt32(p, 18);
             }
-            ushort count = (ushort)Marshal.ReadInt16(c, 2);
+            ushort count = (ushort)Marshal.ReadInt16(p, 2);
             return "container " + containerType + " itemType " + itemType + " элементы " + count;
         }
 
