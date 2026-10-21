@@ -13,21 +13,12 @@ namespace Kite2.Probe
     internal sealed class PumpWindow
     {
         private readonly LineLog _log;
-        private readonly bool _visible;
         private IntPtr _hwnd;
         private ushort _registeredClass; // полезна для DestroyClass
 
-        /// <summary>
-        /// Качать сообщения всей очереди потока, а не только нашего окна.
-        /// Включается для ShowUI=1: диалог драйвера шлёт сообщения своим
-        /// собственным окнам, фильтр по hwnd не возьмёт.
-        /// </summary>
-        public bool PumpAll { get; set; }
-
-        public PumpWindow(LineLog log, bool visible)
+        public PumpWindow(LineLog log)
         {
             _log = log;
-            _visible = visible;
         }
 
         public IntPtr Create()
@@ -51,10 +42,10 @@ namespace Kite2.Probe
             }
 
             // Настоящее окно верхнего уровня: parent = 0, стиль WS_OVERLAPPED
-            // (скрытое; для варианта «видимое» немедленно показываем).
+            // без WS_VISIBLE — скрытый, как окно NTwain.
             _hwnd = Native32.CreateWindowExW(
                 0, atom != 0 ? cls.Name : "STATIC", "Kite2.Probe",
-                (uint)(_visible ? 0x10000000 : 0) /* WS_VISIBLE */, 0, 0, 0, 0,
+                0 /* WS_OVERLAPPED без показа */, 0, 0, 0, 0,
                 IntPtr.Zero, IntPtr.Zero, inst, IntPtr.Zero);
 
             if (_hwnd == IntPtr.Zero)
@@ -64,19 +55,17 @@ namespace Kite2.Probe
                 return IntPtr.Zero;
             }
 
-            _log.Info("окно программы: {0} (верхнего уровня, {1})", _hwnd, _visible ? "видимое" : "скрытое");
+            _log.Info("окно программы: {0} (верхнего уровня, скрытое)", _hwnd);
             return _hwnd;
         }
 
         // Прокачать очередь сообщений окна; колбэк на каждое: может
         // остановить выгрузку (готовность пришла). Каждое сообщение пишется
-        // в журнал — сообщений немного (системные 0x031F и зарегистрированные
-        // 0xC000+ от драйвера), а их список и есть карта TWAIN-канала.
+        // в журнал — сообщений немного, а их список и есть карта TWAIN-канала.
         public void Drain(Func<Native32.MinimumMsg, bool> visitor)
         {
             uint race = 0; // PM_NOREMOVE не нужен: выгребаем всё живое.
-            IntPtr filter = PumpAll ? IntPtr.Zero : _hwnd;
-            while (Native32.PeekMessageW(out var m, filter, 0, 0, race | 1))
+            while (Native32.PeekMessageW(out var m, _hwnd, 0, 0, race | 1))
             {
                 _log.Info("окно ← msg 0x{0:X4} wp 0x{1:X} lp 0x{2:X}", m.Message, m.WParam.ToInt64(), m.LParam.ToInt64());
                 Native32.TranslateMessage(ref m);

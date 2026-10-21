@@ -51,7 +51,7 @@ namespace Kite2.Probe
 
         private static int RunAll(string[] args)
         {
-            int wall = 120;
+            int wall = 90;
             if (args.Length > 1)
                 int.TryParse(args[1], out wall);
             if (wall < 30)
@@ -103,10 +103,10 @@ namespace Kite2.Probe
             report.AppendLine();
 
             string self = Assembly.GetEntryAssembly().Location;
-            for (int idx = 1; idx <= Cases.Count; idx++)
+            foreach (int idx in Cases.Battery)
             {
                 var caseInfo = Cases.Get(idx);
-                Console.WriteLine("=== Эксперимент {0}/{1}: {2}", idx, Cases.Count, caseInfo.Title);
+                Console.WriteLine("=== Эксперимент {0} (поводок {1} с): {2}", idx, wall, caseInfo.Title);
                 var logPath = Path.Combine(dir, "exp" + idx.ToString("00") + ".txt");
                 var stackFile = Path.Combine(dir, "exp" + idx.ToString("00") + ".stacks.txt");
 

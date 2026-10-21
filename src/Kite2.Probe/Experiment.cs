@@ -22,14 +22,16 @@ namespace Kite2.Probe
         public bool NewDsm;
         public bool Memory;
         public Kind Handshake;
-        public bool VisibleWindow; // стиль WS_VISIBLE вместо скрытого
-        public bool ZeroParent;    // ENABLEDS с hParent = 0
-        public bool ShowUi;        // ENABLEDS с ShowUI = 1 (диалог драйвера)
     }
 
     internal static class Cases
     {
-        private const int Total = 12;
+        private const int Total = 9;
+
+        // Прогон (run) берёт только этот список: логи DSM делают
+        // прочие комбинации избыточными. exp <idx> всё ещё можно
+        // запустить вручную для любого номера 1..9.
+        internal static readonly int[] Battery = { 1, 2, 5, 7 };
 
         internal static Case Get(int idx)
         {
@@ -62,15 +64,6 @@ namespace Kite2.Probe
                 case 9:
                     return Make(false, true, Case.Kind.Direct,
                         "Old-DSM Memory: прямой MEMXFER");
-                case 10:
-                    return Make(true, false, Case.Kind.Direct,
-                        "Native: окно ВИДИМОЕ (WS_VISIBLE), прямой NATIVEXFER");
-                case 11:
-                    return Make(true, false, Case.Kind.Direct,
-                        "Native: ENABLEDS с родителем 0, прямой NATIVEXFER");
-                case 12:
-                    return Make(true, false, Case.Kind.Direct,
-                        "Native: ShowUI=1 (диалог драйвера), NATIVEXFER");
                 default:
                     return null;
             }
@@ -132,10 +125,7 @@ namespace Kite2.Probe
             var ds = TWIdentity.Empty();
 
             // 1. Окно программы: его DSM берёт себе «родителем».
-            var pump = new PumpWindow(log, caseInfo.VisibleWindow)
-            {
-                PumpAll = caseInfo.ShowUi
-            };
+            var pump = new PumpWindow(log);
             IntPtr hwnd = pump.Create();
 
             // 2. MSG_OPENDSM (DAT_PARENT, pData — указатель на HWND).
@@ -235,19 +225,12 @@ namespace Kite2.Probe
                 var state = new HandshakeState();
                 try
                 {
-                    // 7. Enable. Родитель и видимость — по варианту эксперимента.
-                    var ui = new TWUserInterface
-                    {
-                        ShowUI = (ushort)(caseInfo.ShowUi ? 1 : 0),
-                        ModalUI = 0,
-                        HParent = caseInfo.ZeroParent ? IntPtr.Zero : hwnd
-                    };
+                    // 7. Enable (NoUI, настоящий скрытый родитель).
+                    var ui = new TWUserInterface { ShowUI = 0, ModalUI = 0, HParent = hwnd };
                     sw.Restart();
                     rc = Dsm.Call(caseInfo.NewDsm, app, ds, Dg.Control, Dat.UserInterface, Msg.EnableDS, ui);
-                    log.Info("ENABLEDS (ShowUI={0}, родитель {1}): {2} за {3:N0} мс",
-                        caseInfo.ShowUi ? 1 : 0,
-                        caseInfo.ZeroParent ? "0" : hwnd.ToString(),
-                        TwRc.Name(rc), sw.ElapsedMilliseconds);
+                    log.Info("ENABLEDS (NoUI, родитель {0}): {1} за {2:N0} мс",
+                        hwnd, TwRc.Name(rc), sw.ElapsedMilliseconds);
                     if (rc != TwRc.Success)
                     {
                         LogStatus(log, caseInfo.NewDsm, app, ds);
@@ -330,17 +313,12 @@ namespace Kite2.Probe
             return null;
         }
 
-        // Чтение капс «на этапе 4» — просто все ключевые за одну строку.
+        // Чтение капс «на этапе 4» — ключевые без балласта.
         private static void WatchCaps(LineLog log, bool newDsm, TWIdentity app, TWIdentity ds)
         {
             ReadCap(log, newDsm, app, ds, "ICAP_XFERMECH", CapId.ICapXferMech);
-            ReadCap(log, newDsm, app, ds, "ICAP_COMPRESSION", CapId.ICapCompression);
-            ReadCap(log, newDsm, app, ds, "ICAP_PIXELTYPE", CapId.ICapPixelType);
-            ReadCap(log, newDsm, app, ds, "ICAP_UNITS", CapId.ICapUnits);
-            ReadCap(log, newDsm, app, ds, "ICAP_BITDEPTH", CapId.ICapBitDepth);
             ReadCap(log, newDsm, app, ds, "ICAP_XRESOLUTION", CapId.ICapXResolution);
-            ReadCap(log, newDsm, app, ds, "ICAP_SUPPORTEDSIZES", CapId.ICapSupportedSizes);
-            ReadCap(log, newDsm, app, ds, "CAP_XFERCOUNT", CapId.CapXferCount);
+            ReadCap(log, newDsm, app, ds, "ICAP_BITDEPTH", CapId.ICapBitDepth);
             ReadCap(log, newDsm, app, ds, "CAP_FEEDERENABLED", CapId.CapFeederEnabled);
         }
 
