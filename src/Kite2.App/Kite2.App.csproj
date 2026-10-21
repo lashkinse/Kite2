@@ -17,7 +17,7 @@
     <AssemblyTitle>Kite2</AssemblyTitle>
     <Product>Kite2</Product>
     <Description>Сканирование документов</Description>
-    <Version>1.7.16</Version>
+    <Version>1.7.17</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Значок программы: без него в проводнике и на панели задач Windows
          показывается пустой значок. -->

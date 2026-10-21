@@ -34,7 +34,9 @@ namespace Kite2.Scan
         // страницами, а молчаливый драйвер может зависнуть внутри вызова TWAIN —
         // без стенки попытка висела бы часами (Kyocera TWAIN(2) молчала 15 минут
         // в twain_32 и без результата на новом диспетчере).
-        private static readonly TimeSpan AttemptWall = TimeSpan.FromSeconds(75);
+        // Стенка родителя длиннее детской тишины (150 с): иначе попытку гасит
+        // родитель, не дав детской отмене сработать и донести состояние.
+        private static readonly TimeSpan AttemptWall = TimeSpan.FromSeconds(180);
         // Родное окно драйвера требует участия человека: ждали бы неизвестно
         // сколько, поэтому стенка щедрая, но не бесконечная.
         private static readonly TimeSpan NativeUiWall = TimeSpan.FromMinutes(6);
