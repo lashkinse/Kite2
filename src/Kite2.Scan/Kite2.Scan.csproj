@@ -17,7 +17,7 @@
     <Description>Захват изображений со сканера</Description>
     <!-- Версия ходит в ногу с программой: штамп в журнале помощника говорит,
          какой именно бинарь исполнялся на компьютере пользователя. -->
-    <Version>1.7.19</Version>
+    <Version>1.7.20</Version>
   </PropertyGroup>
 
   <!-- Папка сборки повторяет решение (x64), хотя сама программа 32-разрядная:
@@ -40,6 +40,18 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Kite2.ScanProtocol\Kite2.ScanProtocol.csproj" />
+    <!-- Вендоренный NTwain с локальной правкой: перед виснущим на Kyocera
+         DAT_PENDINGXFERS/MSG_GET делается спек-легальный звонок
+         DAT_IMAGEINFO/MSG_GET (только для KYOCERA-драйверов). Пакет
+         NAPS2.NTwain от этого исключается — его место занимает наша сборка
+         с тем же именем и той же версией (1.0.0.0). -->
+    <ProjectReference Include="..\Kite2.NTwain\NTwain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Запретить транзитивный NAPS2.NTwain: иначе рядом положат пакетный
+         NTwain.dll без правки, и кто-то из двух загрузится первым. -->
+    <PackageReference Include="NAPS2.NTwain" Version="1.0.1" ExcludeAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -90,3 +102,4 @@
   </ItemGroup>
 
 </Project>
+
