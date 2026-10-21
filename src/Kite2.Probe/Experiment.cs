@@ -22,11 +22,14 @@ namespace Kite2.Probe
         public bool NewDsm;
         public bool Memory;
         public Kind Handshake;
+        public bool VisibleWindow; // стиль WS_VISIBLE вместо скрытого
+        public bool ZeroParent;    // ENABLEDS с hParent = 0
+        public bool ShowUi;        // ENABLEDS с ShowUI = 1 (диалог драйвера)
     }
 
     internal static class Cases
     {
-        private const int Total = 9;
+        private const int Total = 12;
 
         internal static Case Get(int idx)
         {
@@ -59,6 +62,15 @@ namespace Kite2.Probe
                 case 9:
                     return Make(false, true, Case.Kind.Direct,
                         "Old-DSM Memory: прямой MEMXFER");
+                case 10:
+                    return Make(true, false, Case.Kind.Direct,
+                        "Native: окно ВИДИМОЕ (WS_VISIBLE), прямой NATIVEXFER");
+                case 11:
+                    return Make(true, false, Case.Kind.Direct,
+                        "Native: ENABLEDS с родителем 0, прямой NATIVEXFER");
+                case 12:
+                    return Make(true, false, Case.Kind.Direct,
+                        "Native: ShowUI=1 (диалог драйвера), NATIVEXFER");
                 default:
                     return null;
             }
@@ -120,7 +132,10 @@ namespace Kite2.Probe
             var ds = TWIdentity.Empty();
 
             // 1. Окно программы: его DSM берёт себе «родителем».
-            var pump = new PumpWindow(log);
+            var pump = new PumpWindow(log, caseInfo.VisibleWindow)
+            {
+                PumpAll = caseInfo.ShowUi
+            };
             IntPtr hwnd = pump.Create();
 
             // 2. MSG_OPENDSM (DAT_PARENT, pData — указатель на HWND).
@@ -210,26 +225,43 @@ namespace Kite2.Probe
                     rc = Dsm.Call(caseInfo.NewDsm, app, ds, Dg.Control, Dat.SetupMemXfer, Msg.Set, setup);
                     log.Info("DAT_SETUPMEMXFER SET (min {0}, max {1}): {2}",
                         setup.MinBufSize, setup.MaxBufSize, TwRc.Name(rc));
+                    if (rc != TwRc.Success)
+                    {
+                        LogStatus(log, caseInfo.NewDsm, app, ds);
+                        log.Info("   (продолжаем с буфером 1 МБ — драйвер справится по своему дефолту)");
+                    }
                 }
 
                 var state = new HandshakeState();
                 try
                 {
-                    // 7. Enable.
-                    var ui = new TWUserInterface { ShowUI = 0, ModalUI = 0, HParent = hwnd };
+                    // 7. Enable. Родитель и видимость — по варианту эксперимента.
+                    var ui = new TWUserInterface
+                    {
+                        ShowUI = (ushort)(caseInfo.ShowUi ? 1 : 0),
+                        ModalUI = 0,
+                        HParent = caseInfo.ZeroParent ? IntPtr.Zero : hwnd
+                    };
                     sw.Restart();
                     rc = Dsm.Call(caseInfo.NewDsm, app, ds, Dg.Control, Dat.UserInterface, Msg.EnableDS, ui);
-                    log.Info("ENABLEDS (NoUI, родитель {0}): {1} за {2:N0} мс", hwnd, TwRc.Name(rc), sw.ElapsedMilliseconds);
+                    log.Info("ENABLEDS (ShowUI={0}, родитель {1}): {2} за {3:N0} мс",
+                        caseInfo.ShowUi ? 1 : 0,
+                        caseInfo.ZeroParent ? "0" : hwnd.ToString(),
+                        TwRc.Name(rc), sw.ElapsedMilliseconds);
                     if (rc != TwRc.Success)
                     {
                         LogStatus(log, caseInfo.NewDsm, app, ds);
                         return 2;
                     }
 
+                    // 7б. Повторное чтение капы после ENABLEDS (состояние 5) —
+                    //     сравнить с дожавшимися нулями из состояния 4.
+                    ReadCap(log, caseInfo.NewDsm, app, ds, "после ENABLEDS ICAP_XFERMECH", CapId.ICapXferMech);
+
                     // 8. Готовность.
                     sw.Restart();
                     int left = wall - (int)sw.ElapsedMilliseconds;
-                    bool ok = WaitReady(caseInfo.NewDsm, app, ds, pump, Math.Max(15000, left));
+                    bool ok = WaitReady(caseInfo.NewDsm, app, ds, pump, log, Math.Max(15000, left));
                     if (!ok)
                     {
                         log.Info("XferReady не пришёл за {0:N1} с", sw.Elapsed.TotalSeconds);
@@ -605,7 +637,20 @@ namespace Kite2.Probe
                 log.Info("   TW STATUS: код {0} ({1})", status.ConditionCode, TwCc.Name(status.ConditionCode));
         }
 
-        private static bool WaitReady(bool newDsm, TWIdentity app, TWIdentity ds, PumpWindow pump, int limitMs)
+        private static string MessageName(ushort msg)
+        {
+            switch (msg)
+            {
+                case Msg.Null: return "NULL";
+                case Msg.XferReady: return "XFERREADY(257)";
+                case Msg.CloseDSReq: return "CLOSEDSREQ(258)";
+                case Msg.CloseDSOK: return "CLOSEDSOK(259)";
+                case Msg.CloseDSCancel: return "CLOSEDSCANCEL(260)";
+                default: return "неведомый " + msg;
+            }
+        }
+
+        private static bool WaitReady(bool newDsm, TWIdentity app, TWIdentity ds, PumpWindow pump, LineLog log, int limitMs)
         {
             int left = limitMs;
             const int slice = 25;
@@ -620,7 +665,9 @@ namespace Kite2.Probe
                 {
                     // Каждое сообщение окна превращаем в DAT_EVENT PROC
                     // (эквивалент NTwain.IsTwainMessage): источник решает,
-                    // относится ли это к TWAIN.
+                    // относится ли это к TWAIN. Результат печатаем честно —
+                    // это единственный способ увидеть, признал ли драйвер
+                    // «своим» поступившее сообщение.
                     var raw = new WinMsg { HWnd = m.HWnd, Message = m.Message, WParam = m.WParam, LParam = m.LParam };
                     IntPtr evBuf = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(WinMsg)));
                     try
@@ -628,6 +675,10 @@ namespace Kite2.Probe
                         Marshal.StructureToPtr(raw, evBuf, false);
                         var ev = new TWEvent { PEvent = evBuf };
                         ushort rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Event, Msg.ProcessEvent, ev);
+                        string verdict = rc == TwRc.DSEvent
+                            ? "DSEVENT, TwMessage=" + MessageName(ev.TwMessage)
+                            : TwRc.Name(rc);
+                        log.Info("EVENT PROC msg 0x{0:X4}: {1}", m.Message, verdict);
                         if (rc == TwRc.DSEvent)
                         {
                             Dsm.Messages.Push(ev.TwMessage);

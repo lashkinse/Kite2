@@ -44,6 +44,8 @@ namespace Kite2.Probe
         public const ushort QuerySupport = 8;
         public const ushort XferReady = 257;
         public const ushort CloseDSReq = 258;
+        public const ushort CloseDSOK = 259;
+        public const ushort CloseDSCancel = 260;
         public const ushort OpenDSM = 769;
         public const ushort CloseDSM = 770;
         public const ushort OpenDS = 1025;
