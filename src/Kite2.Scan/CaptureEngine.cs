@@ -413,6 +413,19 @@ namespace Kite2.Scan
                     : ConsumePages(
                         attempt, dpi, colour, directory, pagesBefore, chapter, NewController());
 
+                // Внешние снимки стеков: ребёнок со вмороженным нативным вызовом
+                // умирает от собственного ClrMD-снимка, поэтому его стеки снимает
+                // соседний процесс на 25/60/100/140-й секунде попытки. Съёмка на
+                // 25-й отвечает на главный вопрос: поток помпы висит внутри
+                // триплета передачи или давно свободен.
+                if (child != null)
+                {
+                    ForeignSnapshot(child, 25000, "25с");
+                    ForeignSnapshot(child, 60000, "60с");
+                    ForeignSnapshot(child, 100000, "100с");
+                    ForeignSnapshot(child, 140000, "140с");
+                }
+
                 // Стенка на попытку, но не жёсткая: если страницы идут — стенка
                 // перезапускается по каждой пришедшей. Бросаем только когда вызов
                 // TWAIN завис и за всё время не отдал ничего нового.
@@ -453,6 +466,69 @@ namespace Kite2.Scan
                 FillPagesFromDirectory(chapter, directory);
 
             return chapter;
+        }
+
+        // Один запланированный внешний снимок: съёмщик живёт не дольше 20 с, а
+        // всякий сбой остаётся записью в общем журнале — попытке он не враг.
+        private static Task ForeignSnapshot(TwainChild child, int delayMs, string tag)
+        {
+            return Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(delayMs);
+
+                    if (child.Process.HasExited)
+                        return;
+
+                    int targetPid = child.Process.Id;
+
+                    string logs = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "Kite2",
+                        "logs");
+
+                    string outPath = Path.Combine(
+                        logs,
+                        string.Format(CultureInfo.InvariantCulture, "stack-{0}-{1}.txt", targetPid, tag));
+
+                    var snap = Process.Start(new ProcessStartInfo(
+                        Process.GetCurrentProcess().MainModule.FileName,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "stackdump {0} \"{1}\" \"{2}\"",
+                            targetPid,
+                            outPath,
+                            Path.Combine(Path.GetTempPath(), "kite2-snap-" + Guid.NewGuid().ToString("N") + ".txt")))
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+
+                    // Съёмщик не должен пережить попытку.
+                    if (!snap.WaitForExit(20000))
+                    {
+                        try { snap.Kill(); } catch { }
+                        Log.Warn("Съёмщик стеков не уложился в 20 с ({0})", tag);
+                        return;
+                    }
+
+                    if (!File.Exists(outPath) || new FileInfo(outPath).Length == 0)
+                    {
+                        Log.Warn("Съёмщик стеков не оставил файл {0}", outPath);
+                        return;
+                    }
+
+                    Log.Info(
+                        "==== Внешний снимок стеков ({0}) ====" + Environment.NewLine + "{1}==== Снимок окончен ====",
+                        tag,
+                        File.ReadAllText(outPath));
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn(ex, "Внешний снимок стеков не удался");
+                }
+            });
         }
 
         private static void FillPagesFromDirectory(AttemptChapter chapter, string directory)

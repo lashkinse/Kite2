@@ -65,6 +65,15 @@ namespace Kite2.Scan
                     ThreadDumpDiag.Dump("ручной вызов");
                     code = Answer(responsePath, new List<string>());
                 }
+                else if (args[0] == "stackdump" && args.Length == 4)
+                {
+                    // Скрытая команда: снимок стеков ПОСТОРОННЕГО процесса
+                    // (пассивное чтение памяти). Ребёнок с вмороженным нативным
+                    // вызовом не может снять себя — его стеки снимает сосед.
+                    Log.Info("Команда stackdump: цель {0}", args[1]);
+                    ThreadDumpDiag.DumpForeign(Number(args[1]), args[2]);
+                    code = Answer(responsePath, new List<string> { args[2] });
+                }
                 else if (args[0] == "acquire" && args.Length == 6)
                 {
                     Log.Info("Команда acquire: источник={0}, dpi={1}, цвет={2}, каталог={3}",
