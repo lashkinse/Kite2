@@ -128,6 +128,16 @@ namespace Kite2.Probe
             var pump = new PumpWindow(log);
             IntPtr hwnd = pump.Create();
 
+            // Канал legacy-DSM: регистрация того же имени, каким старый
+            // twain_32.dll шлёт XferReady/ClosedDsReq приложению.
+            uint dsmAppMsg = 0;
+            try { dsmAppMsg = Native32.RegisterWindowMessageA("DSMAPPMESSAGE32"); }
+            catch { }
+            if (dsmAppMsg != 0)
+                log.Info("канал legacy-DSM «DSMAPPMESSAGE32»: 0x{0:X}", dsmAppMsg);
+            else
+                log.Info("канал legacy-DSM «DSMAPPMESSAGE32»: НЕ ЗАРЕГИСТРИРОВАН");
+
             // 2. MSG_OPENDSM (DAT_PARENT, pData — указатель на HWND).
             ushort rc;
             var dsw = Stopwatch.StartNew();
@@ -244,7 +254,7 @@ namespace Kite2.Probe
                     // 8. Готовность.
                     sw.Restart();
                     int left = wall - (int)sw.ElapsedMilliseconds;
-                    bool ok = WaitReady(caseInfo.NewDsm, app, ds, pump, log, Math.Max(15000, left));
+                    bool ok = WaitReady(caseInfo.NewDsm, app, ds, pump, log, Math.Max(15000, left), dsmAppMsg);
                     if (!ok)
                     {
                         log.Info("XferReady не пришёл за {0:N1} с", sw.Elapsed.TotalSeconds);
@@ -628,7 +638,7 @@ namespace Kite2.Probe
             }
         }
 
-        private static bool WaitReady(bool newDsm, TWIdentity app, TWIdentity ds, PumpWindow pump, LineLog log, int limitMs)
+        private static bool WaitReady(bool newDsm, TWIdentity app, TWIdentity ds, PumpWindow pump, LineLog log, int limitMs, uint dsmAppMsg)
         {
             int left = limitMs;
             const int slice = 25;
@@ -641,6 +651,44 @@ namespace Kite2.Probe
                 bool stop = false;
                 pump.Drain(m =>
                 {
+                    // Канал legacy-DSM (Microsoft InboxTwainDsm): DSMAPPMESSAGE32
+                    // с GlobalAlloc-хэндлом блока из 5 dword в wParam. Наш PROC
+                    // на этот канал у нового DSM отвечает TWRC_NOTDSEVENT —
+                    // сообщение принадлежит twain_32.dll. Поэтому расшифровываем
+                    // блок сами и считаем готовность без PROC.
+                    bool channel = dsmAppMsg != 0 && m.Message == dsmAppMsg;
+                    if (channel)
+                    {
+                        log.Info("КАНАЛ DSMAPPMESSAGE32: wp 0x{0:X} lp 0x{1:X}", m.WParam.ToInt64(), m.LParam.ToInt64());
+                        if (m.WParam != IntPtr.Zero)
+                        {
+                            IntPtr p = Native32.GlobalLock(m.WParam);
+                            if (p != IntPtr.Zero)
+                            {
+                                // Нужно успеть до PROC: старый DSM после PROC
+                                // освобождает блок (CB_AdvDataHandler передаёт
+                                // владение приложению, PROC его съедает).
+                                int a = Marshal.ReadInt32(p, 0);
+                                int b = Marshal.ReadInt32(p, 4);
+                                int c = Marshal.ReadInt32(p, 8);
+                                int d = Marshal.ReadInt32(p, 12);
+                                int e = Marshal.ReadInt32(p, 16);
+                                Native32.GlobalUnlock(m.WParam);
+                                log.Info("payload: [{0}, {1}, {2}, {3}, {4}]", a, b, c, d, e);
+                                if (a == 257)
+                                    log.Info("payload[0] = 257 (MSG_XFERREADY) — канал подтверждён напрямую");
+                            }
+                            else
+                            {
+                                log.Info("GlobalLock(wParam) не удался (код {0})",
+                                    Marshal.GetLastWin32Error());
+                            }
+                        }
+                        // Сами считаем это готовностью: в эксперименте 5 (v1.0.6)
+                        // PROC отвечал NOTDSEVENT, а канал был настоящим.
+                        stop = true;
+                    }
+
                     // Каждое сообщение окна превращаем в DAT_EVENT PROC
                     // (эквивалент NTwain.IsTwainMessage): источник решает,
                     // относится ли это к TWAIN. Результат печатаем честно —

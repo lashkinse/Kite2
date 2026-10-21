@@ -541,6 +541,14 @@ namespace Kite2.Probe
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern ushort RegisterClassExW(ref WndClass cls);
 
+        // Канал legacy-DSM: Microsoft InboxTwainDsm регистрирует
+        // «DSMAPPMESSAGE32» (строковый ресурс twain_32.dll №103) и постит
+        // окну приложения PostMessageA(hwnd, msgId, hMem=GlobalAlloc(0x14), 0)
+        // при получении DDE-advise (TwDdeCli::CB_AdvDataHandler).
+        // А/у формы дают одинаковый идентификатор для одного имени.
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Ansi)]
+        public static extern uint RegisterWindowMessageA(string name);
+
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern IntPtr CreateWindowExW(
             uint exStyle,
