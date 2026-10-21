@@ -166,9 +166,12 @@ namespace Kite2.Probe
                     return 2;
                 }
 
-                // 5. Открыть источник.
+                // 5. Открыть источник. ВАЖНО: как вендоренный NTwain, OPENDS
+                //    идёт с адресатом = NULL (перегрузка DsmEntry(origin, msg,
+                //    TWIdentity) передаёт IntPtr.Zero как pDest) — иначе
+                //    драйвер отвечает FAILURE (CC5 на новом, CC11 на старом).
                 var sw = Stopwatch.StartNew();
-                rc = Dsm.Call(caseInfo.NewDsm, app, ds, Dg.Control, Dat.Identity, Msg.OpenDS, ds);
+                rc = Dsm.Call(caseInfo.NewDsm, app, null, Dg.Control, Dat.Identity, Msg.OpenDS, ds);
                 log.Info("MSG_OPENDS: {0} (id {1}) за {2:N0} мс", TwRc.Name(rc), ds.Id, sw.ElapsedMilliseconds);
                 if (rc != TwRc.Success)
                 {
@@ -248,7 +251,7 @@ namespace Kite2.Probe
                     }
                     rc = Dsm.Call(caseInfo.NewDsm, app, ds, Dg.Control, Dat.UserInterface, Msg.DisableDS, new TWUserInterface());
                     log.Info("MSG_DISABLEDS: {0}", TwRc.Name(rc));
-                    rc = Dsm.Call(caseInfo.NewDsm, app, ds, Dg.Control, Dat.Identity, Msg.CloseDS, ds);
+                    rc = Dsm.Call(caseInfo.NewDsm, app, null, Dg.Control, Dat.Identity, Msg.CloseDS, ds);
                     log.Info("MSG_CLOSEDS: {0}", TwRc.Name(rc));
                 }
 

@@ -207,8 +207,9 @@ namespace Kite2.Probe
 
         public static TWIdentity App(bool newDsm)
         {
-            // Для нового DSM — как вендоренный NTwain: протокол 2.3 и
-            // SupportedGroups с битом DF_APP2; для старого — 1.9 без него.
+            // Как вендоренный NTwain: одна идентичность на оба диспетчера —
+            // протокол 2.3 и бит DF_APP2 в SupportedGroups; строки тихие
+            // (не заполнены), драйверы воспринимают её одинаково хорошо.
             return new TWIdentity
             {
                 Id = 0,
@@ -220,13 +221,13 @@ namespace Kite2.Probe
                     Country = 0x0E7,
                     Info = "Kite2.Probe"
                 },
-                ProtocolMajor = (ushort)(newDsm ? 2 : 1),
-                ProtocolMinor = (ushort)(newDsm ? 3 : 9),
-                SupportedGroups = (newDsm ? 0x20000000u : 0u) | Dg.Control | Dg.Image,
+                ProtocolMajor = 2,
+                ProtocolMinor = 3,
+                SupportedGroups = 0x20000000u | Dg.Control | Dg.Image,
                 Manufacturer = "Kite2",
                 ProductFamily = "Kite2",
                 ProductName = "Kite2.Probe",
-                Protocol = "TWAIN Protocol." + (newDsm ? "2" : "1")
+                Protocol = string.Empty
             };
         }
 
