@@ -60,6 +60,10 @@ namespace Kite2.Scan
 
             var pages = new List<string>();
             string lastFailure = null;
+            // Стекло прошло физически, но изображение не доехало: жалоба
+            // откладывается до конца лестницы, ведь следующая попытка (с другой
+            // передачей) всё ещё может довезти результат.
+            bool sawTransfer = false;
 
             foreach (ScanAttempt attempt in AttemptsFor(source, sources))
             {
@@ -82,17 +86,14 @@ namespace Kite2.Scan
                     return pages;
                 }
 
+                // Раньше тишина после XferReady останавливала лестницу: казалось,
+                // что повторное стекло — впустую. Данные NAPS2 (#577) показывают
+                // обратное: Kyocera молчит в памяти, но отдаёт картинку в
+                // нативной передаче (8.1.3: Ecosys → Native). Поэтому лестницу
+                // ведём до конца, а жалобу переоткрываем у выхода.
                 if (chapter.SawTransfer)
                 {
-                    Log.Warn("Попытка просканировала страницу без результата: лестница остановлена");
-
-                    // Стекло прошло физически, а изображение не доехало. Дальнейшие
-                    // TWAIN-попытки только заново гоняют сканер впустую — человек
-                    // увидит «повторное сканирование» без результата.
-                    throw new InvalidOperationException(
-                        "Сканер просканировал страницу, но драйвер не передал изображение."
-                        + (chapter.Failure != null ? " По данным попытки: " + chapter.Failure :
-                            " Перезапустите сканер и попробуйте ещё раз."));
+                    sawTransfer = true;
                 }
 
                 // Родное окно показывалось человеку и закрылось без страниц:
@@ -111,6 +112,17 @@ namespace Kite2.Scan
                         "Попытка «{0}» не отвечала {1} с и была пропущена; ожидается следующая.",
                         attempt.Title, (int)(attempt.Wall ?? AttemptWall).TotalSeconds)
                     : null);
+            }
+
+            if (sawTransfer)
+            {
+                // Хотя бы одна попытка дозвала стекло, но ни одна не довезла
+                // изображение: это особый случай, он собрату-человеку понятнее
+                // общей тишины.
+                throw new InvalidOperationException(
+                    "Сканер просканировал страницу, но драйвер не передал изображение."
+                    + (lastFailure != null ? " По данным попытки: " + lastFailure :
+                        " Перезапустите сканер и попробуйте ещё раз."));
             }
 
             throw new InvalidOperationException(lastFailure ?? "Сканер не отдал ни одной страницы.");
@@ -290,15 +302,22 @@ namespace Kite2.Scan
                 TwainDsm first = source.TwainDsm == TwainDsm.New ? TwainDsm.New : TwainDsm.Old;
                 TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
 
-                // Память первая: на драйвере Kyocera передача памятью единственная
-                // доходила до физического прохода стекла, а нативный режим в
-                // прямом включении иногда отказывался сразу после включения
-                // (заваливал запросами на закрытие, не просканировав).
-                attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Memory));
+                // Нативная передача первой: NAPS2 ради этой же болезни Kyocera
+                // (молчание после XferReady, issue #577) с 8.1.3 переключает
+                // Ecosys с памяти на нативный режим и подтверждает результат
+                // (коммит 633aff91). Если нативный снова откажется сразу после
+                // включения — он отработает быстро, и память догонит своей
+                // очередью: память доходила до стекла, но изображение не везла.
                 attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
-                attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Memory));
+                attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Memory));
                 attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
+                attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Memory));
                 attempts.Add(TwainNativeUiAttempt(source.Device, first));
+
+                // Старый диспетчер за долгие прогоны ни разу не завёл стекло на
+                // этом драйвере: не держим его 2,5 минуты, бросаем раньше.
+                attempts[2].Wall = TimeSpan.FromSeconds(105);
+                attempts[3].Wall = TimeSpan.FromSeconds(105);
             }
             else
             {
