@@ -22,6 +22,7 @@ namespace Kite2.Probe
         public bool NewDsm;
         public bool Memory;
         public Kind Handshake;
+        public bool ShowUi;   // ENABLEDS с ShowUI=1 (родной диалог драйвера)
     }
 
     internal static class Cases
@@ -31,7 +32,7 @@ namespace Kite2.Probe
         // Прогон (run) берёт только этот список: логи DSM делают
         // прочие комбинации избыточными. exp <idx> всё ещё можно
         // запустить вручную для любого номера 1..9.
-        internal static readonly int[] Battery = { 1, 2, 5, 7 };
+        internal static readonly int[] Battery = { 1, 2, 5, 7, 10 };
 
         internal static Case Get(int idx)
         {
@@ -64,14 +65,17 @@ namespace Kite2.Probe
                 case 9:
                     return Make(false, true, Case.Kind.Direct,
                         "Old-DSM Memory: прямой MEMXFER");
+                case 10:
+                    return Make(true, false, Case.Kind.Direct,
+                        "Native: ShowUI=1 (диалог драйвера), NATIVEXFER", true);
                 default:
                     return null;
             }
         }
 
-        private static Case Make(bool newDsm, bool memory, Case.Kind handshake, string title)
+        private static Case Make(bool newDsm, bool memory, Case.Kind handshake, string title, bool showUi = false)
         {
-            return new Case { NewDsm = newDsm, Memory = memory, Handshake = handshake, Title = title };
+            return new Case { NewDsm = newDsm, Memory = memory, Handshake = handshake, Title = title, ShowUi = showUi };
         }
 
         internal static int Count
@@ -219,6 +223,7 @@ namespace Kite2.Probe
                 WatchCaps(log, caseInfo.NewDsm, app, ds);
                 WatchXferGroup(log, caseInfo.NewDsm, app, ds);
                 SetXferMech(log, caseInfo.NewDsm, app, ds, caseInfo.Memory ? Twsx.Memory : Twsx.Native);
+                SetXferCount(log, caseInfo.NewDsm, app, ds);
                 if (caseInfo.Memory)
                 {
                     var setup = new TWSetupMemXfer { MinBufSize = 8192, MaxBufSize = 1048576, DesiredBytes = 1048576 };
@@ -235,12 +240,14 @@ namespace Kite2.Probe
                 var state = new HandshakeState();
                 try
                 {
-                    // 7. Enable (NoUI, настоящий скрытый родитель).
-                    var ui = new TWUserInterface { ShowUI = 0, ModalUI = 0, HParent = hwnd };
+                    // 7. Enable. Родитель настоящий, ShowUI — по варианту
+                    //    (родной диалог драйвера в exp10, PumpAll для его помпы).
+                    pump.PumpAll = caseInfo.ShowUi;
+                    var ui = new TWUserInterface { ShowUI = (ushort)(caseInfo.ShowUi ? 1 : 0), ModalUI = 0, HParent = hwnd };
                     sw.Restart();
                     rc = Dsm.Call(caseInfo.NewDsm, app, ds, Dg.Control, Dat.UserInterface, Msg.EnableDS, ui);
-                    log.Info("ENABLEDS (NoUI, родитель {0}): {1} за {2:N0} мс",
-                        hwnd, TwRc.Name(rc), sw.ElapsedMilliseconds);
+                    log.Info("ENABLEDS (ShowUI={0}, родитель {1}): {2} за {3:N0} мс",
+                        caseInfo.ShowUi ? 1 : 0, hwnd, TwRc.Name(rc), sw.ElapsedMilliseconds);
                     if (rc != TwRc.Success)
                     {
                         LogStatus(log, caseInfo.NewDsm, app, ds);
@@ -407,6 +414,68 @@ namespace Kite2.Probe
                 var rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Capability, Msg.Set,
                     new TWCapability(CapId.ICapXferMech, TwOn.OneValue, h));
                 log.Info("ICAP_XFERMECH = {0}: {1}", mech == Twsx.Memory ? "memory" : "native", TwRc.Name(rc));
+            }
+            finally
+            {
+                WinMem.Free(h);
+            }
+        }
+
+        private static void SetXferCount(LineLog log, bool newDsm, TWIdentity app, TWIdentity ds)
+        {
+            // CAP_XFERCOUNT = 1 (TWTY_INT16) — ровно то, что NAPS2/NTwain
+            // делает перед ENABLEDS. OneValue-контейнер 6 байт (Pack=2).
+            IntPtr h = WinMem.Alloc(6);
+            try
+            {
+                IntPtr p = Native32.GlobalLock(h);
+                if (p == IntPtr.Zero)
+                {
+                    log.Info("CAP_XFERCOUNT = 1: GlobalLock не удался");
+                    return;
+                }
+                Marshal.WriteInt16(p, 0, (short)TwTy.Int16);
+                Marshal.WriteInt32(p, 2, 1);
+                Native32.GlobalUnlock(h);
+
+                var rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Capability, Msg.Set,
+                    new TWCapability(CapId.CapXferCount, TwOn.OneValue, h));
+                log.Info("CAP_XFERCOUNT = 1: SET {0}", TwRc.Name(rc));
+                if (rc == TwRc.Success)
+                    ReadCurrent(log, newDsm, app, ds, "CAP_XFERCOUNT (после SET)", CapId.CapXferCount);
+            }
+            finally
+            {
+                WinMem.Free(h);
+            }
+        }
+
+        private static void ReadCurrent(LineLog log, bool newDsm, TWIdentity app, TWIdentity ds, string name, ushort cap)
+        {
+            IntPtr h = WinMem.Alloc(64);
+            try
+            {
+                var capObj = new TWCapability(cap, TwOn.DontCare16, h);
+                var rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Capability, Msg.GetCurrent, capObj);
+                if (rc != TwRc.Success)
+                {
+                    log.Info("{0}: {1}", name, TwRc.Name(rc));
+                    return;
+                }
+                IntPtr p = Native32.GlobalLock(h);
+                if (p == IntPtr.Zero)
+                {
+                    log.Info("{0}: GlobalLock не удался — контейнер пуст?", name);
+                    return;
+                }
+                try
+                {
+                    log.Info("{0}: {1}", name, DescribeCap(p, capObj.ConType));
+                }
+                finally
+                {
+                    Native32.GlobalUnlock(h);
+                }
             }
             finally
             {

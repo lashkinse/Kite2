@@ -16,6 +16,13 @@ namespace Kite2.Probe
         private IntPtr _hwnd;
         private ushort _registeredClass; // полезна для DestroyClass
 
+        /// <summary>
+        /// Качать сообщения всей очереди потока, а не только нашего окна.
+        /// Для ShowUI=1: диалог драйвера шлёт сообщения своим окнам,
+        /// фильтр по hwnd их не возьмёт.
+        /// </summary>
+        public bool PumpAll { get; set; }
+
         public PumpWindow(LineLog log)
         {
             _log = log;
@@ -65,7 +72,8 @@ namespace Kite2.Probe
         public void Drain(Func<Native32.MinimumMsg, bool> visitor)
         {
             uint race = 0; // PM_NOREMOVE не нужен: выгребаем всё живое.
-            while (Native32.PeekMessageW(out var m, _hwnd, 0, 0, race | 1))
+            IntPtr filter = PumpAll ? IntPtr.Zero : _hwnd;
+            while (Native32.PeekMessageW(out var m, filter, 0, 0, race | 1))
             {
                 _log.Info("окно ← msg 0x{0:X4} wp 0x{1:X} lp 0x{2:X}", m.Message, m.WParam.ToInt64(), m.LParam.ToInt64());
                 Native32.TranslateMessage(ref m);
