@@ -9748,7 +9748,7 @@ namespace NTwain.Triplets
 		{
 			Session.VerifyState(4, 7, DataGroups.Control, DataArgumentType.PendingXfers, NTwain.Data.Message.Get);
 
-			// Kyocera TWAIN(2) на первом DAT_PENDINGXFERS/MSG_GET виснет навсегда
+			// Kyocera TWAIN на первом DAT_PENDINGXFERS/MSG_GET виснет навсегда
 			// (проверено обследователем на машине пользователя: окно приложения
 			// получает MSG_XFERREADY, а PendingXfers не возвращается). Перед ним
 			// нужен спек-легальный DAT_IMAGEINFO/MSG_GET — с ним тот же драйвер

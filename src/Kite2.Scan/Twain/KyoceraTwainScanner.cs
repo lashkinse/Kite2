@@ -1,6 +1,6 @@
 // Свой клиент TWAIN для драйвера Kyocera.
 //
-// Зачем он нужен рядом с NAPS2: этот драйвер (Kyocera TWAIN(2), протокол 1.8)
+// Зачем он нужен рядом с NAPS2: этот драйвер (Kyocera TWAIN, протокол 1.8)
 // в тихом режиме сканирование не начинает — движок ждёт, пока человек нажмёт
 // «Скан» в собственном окне драйвера. NAPS2 такого окна для TWAIN не
 // показывает, поэтому для Kyocera захват ведёт этот клиент.
@@ -77,7 +77,7 @@ namespace Kite2.Scan.Twain
 
             try
             {
-                // 2. Источник по умолчанию (Kyocera TWAIN(2)).
+                // 2. Источник по умолчанию (Kyocera TWAIN).
                 rc = Dsm.Call(true, app, null, Dg.Control, Dat.Identity, Msg.GetDefault, ds);
                 if (rc != TwRc.Success)
                 {

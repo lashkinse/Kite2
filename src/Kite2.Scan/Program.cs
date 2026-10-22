@@ -206,7 +206,7 @@ namespace Kite2.Scan
         // В момент передачи NAPS2 прячет исключения: насос сообщений Win32
         // (DefaultTwainHandleManager → Win32MessagePump) глотает их без лога —
         // у той помпы Logger всегда NullLogger. Поэтому после XferReady
-        // Kyocera TTWAIN(2) может «умереть» в транзите и мы видим только
+        // Kyocera TWAIN может «умереть» в транзите и мы видим только
         // тишину. FirstChanceException срабатывает ДО любых catch-глотателей:
         // пишет тип, сообщение и стек того, что было выброшено внутри NTwain.
         private static void RegisterFirstChanceDiagnostics()
