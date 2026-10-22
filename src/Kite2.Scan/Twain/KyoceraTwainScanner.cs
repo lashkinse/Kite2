@@ -12,7 +12,7 @@
 //   → ENABLEDS с ShowUI=0 (тихий режим работает, окно драйвера не нужно)
 //   → ждём MSG_XFERREADY (приходит в колбэк диспетчера)
 //   → DAT_IMAGEINFO → DAT_PENDINGXFERS → DAT_IMAGENATIVEXFER
-//   → снова ждём готовность и повторяем передачу, пока податчик не опустеет
+//   → один лист — и сессия кончается
 //   → MSG_DISABLEDS. Закрытие источника (MSG_CLOSEDS)
 //     на этом драйвере рвёт процесс, поэтому его не вызываем вовсе.
 //
@@ -23,9 +23,19 @@
 //   * хэндл DIB приходит и при TWRC_XFERDONE, а не только при TWRC_SUCCESS;
 //   * готовность приходит в колбэк, а не в DAT_EVENT: на ветке legacy диспетчер
 //     отвечает DSEVENT с TwMessage=NULL почти на каждое оконное сообщение;
-//   * податчик опустошается только в той же сессии: оборвать сессию после
-//     первой страницы значит оставить следующий лист застрявшим — драйвер
-//     держит его и в новой серии молчит.
+//   * тихая сессия отдаёт РОВНО ОДИН лист: сразу после передачи летит
+//     фальшивая готовность, за которой никакой картинки не бывает никогда
+//     (20 с опросов IMAGEINFO пустые). Дальше на ветке состояния 7 водить
+//     пальцем по драйверу опасно — DAT_PENDINGXFERS Get висит намертво, а
+//     MSG_CLOSEDS рвёт процесс. Поэтому серия берёт один лист, а остальные
+//     добираются следующими сериями: приложение для этого спрашивает
+//     «продолжить?»;
+//   * перед выключением источника сбрасываем ветку передач звонком
+//     DAT_PENDINGXFERS/MSG_ENDXFER: без него драйвер остаётся на ветке 7,
+//     двигатель ждёт передачу (панель принтера моргает «Сканирование»),
+//     а следующая серия отваливается с TWRC_FAILURE за 0 мс и оживает
+//     только спустя минуту. Звонок ограждён часовым: если зависнет,
+//     процесс завершается принудительно — ответ родителю уже записан.
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -151,8 +161,6 @@ namespace Kite2.Scan.Twain
                 ReadOneCap(app, ds, "ICAP_XFERMECH (после включения)", CapId.ICapXferMech);
 
                 // 9. Ждём готовности: колбэк диспетчера или канал legacy-DSM.
-                DateTime deadline = DateTime.UtcNow.Add(wall);
-
                 if (!WaitReady(app, ds, pump, wall))
                 {
                     Log.Warn("Kyocera: готовность не пришла за {0:N0} с", wall.TotalSeconds);
@@ -160,39 +168,16 @@ namespace Kite2.Scan.Twain
                     return null;
                 }
 
-                // 10. Передача листов. Первый лист идёт ровно по рецепту
-                //     обследователя, следующие — той же сессией и только по
-                //     готовности: после передачи любые вопросы драйверу
-                //     (счётчик передач) на ветке состояния 7 висят намертво
-                //     и убивают серию — проверено журналом, родитель ждал 45
-                //     секунд вмороженного звонка. Поэтому между листами мы
-                //     молчим и ждём только событие MSG_XFERREADY.
-                while (true)
-                {
-                    if (Pages.Count > 0)
-                    {
-                        // Лист податчика кормится быстро (готовность доходила
-                        // по 12-14 с), стекло нового листа не даёт: не
-                        // дождались — в податчике пусто, сессия кончилась.
-                        TimeSpan gap = TimeSpan.FromSeconds(30);
-
-                        if (TimeSpan.Zero < deadline - DateTime.UtcNow)
-                            gap = Min(gap, deadline - DateTime.UtcNow);
-                        else
-                            break;
-
-                        if (!WaitReady(app, ds, pump, gap))
-                        {
-                            Log.Info(
-                                "Kyocera: следующей готовности не дождались, страниц {0}",
-                                Pages.Count);
-                            break;
-                        }
-                    }
-
-                    if (!TransferOne(app, ds, directory, skipPending, ref failure))
-                        break;
-                }
+                // 10. Один лист за сессию. После передачи драйвер тут же
+                //     сигналит вторую готовность, но это фикция: опросы
+                //     DAT_IMAGEINFO 20 секунд подряд отвечают пустотой, второй
+                //     картинки не бывает никогда (журнал, серия 13:44). Любые
+                //     же вопросы на ветке состояния 7 после передачи висят
+                //     намертво. Поэтому сессия берёт ровно один лист и
+                //     закрывается; следующий лист добирается следующей серией,
+                //     приложение для этого спрашивает «продолжить?».
+                if (!TransferOne(app, ds, directory, skipPending, ref failure))
+                    return null;
 
                 // Уже полученные страницы ценнее текста о неудаче: отдаём их,
                 // даже если следующий лист сорвался.
@@ -207,27 +192,12 @@ namespace Kite2.Scan.Twain
             }
         }
 
-        // Меньшее из двух времён.
-        private static TimeSpan Min(TimeSpan one, TimeSpan other) =>
-            one < other ? one : other;
-
-        // Передача одного листа. Первый — полным рецептом. Готовность
-        // следующего листа драйвер даёт раньше, чем лист просканирован:
-        // IMAGEINFO отвечает пустотой (0×0), а передача — TWRC_FAILURE.
-        // Поэтому после готовности листа даём драйверу время опросами
-        // IMAGEINFO: картинка считается настоящей, когда размер больше
-        // нуля. true — страница сохранена и числится в Pages.
+        // Передача одного листа полным рецептом: DAT_IMAGEINFO,
+        // DAT_PENDINGXFERS (если не пропущен) и DAT_IMAGENATIVEXFER.
+        // true — страница сохранена и числится в Pages.
         private static bool TransferOne(
             TWIdentity app, TWIdentity ds, string directory, bool skipPending, ref string failure)
         {
-            if (Pages.Count > 0 && !WaitForRealImage(app, ds))
-            {
-                // Готовность была, но лист за 20 с так и не просканировался:
-                // в податчике пусто. Странички уже есть, текста ошибки не надо.
-                Log.Info("Kyocera: лист не просканирован — податчик пуст, сессию заканчиваем");
-                return false;
-            }
-
             IntPtr handle;
             ushort rc;
 
@@ -240,11 +210,10 @@ namespace Kite2.Scan.Twain
                     TwRc.Name(rc), info.ImageWidth, info.ImageLength, info.BitsPerPixel);
 
                 // Счётчик спрашивать не обязательно, а на этом драйвере звонок
-                // иногда срывает процесс. Первый лист идёт по рецепту
-                // обследователя (звонок до передачи — в состоянии 6 — безвреден);
-                // на следующих листах картинка уже в состоянии 7, где вопросы
-                // висят намертво, — идём сразу к картинке.
-                if (!skipPending && Pages.Count == 0)
+                // иногда срывает процесс. Звонок до передачи — в состоянии 6 —
+                // безвреден (проверено журналом: отвечал «ожидают 1»); при
+                // пропуске идём сразу к картинке.
+                if (!skipPending)
                     PendingKnown(app, ds, out _);
 
                 var sw = Stopwatch.StartNew();
@@ -277,40 +246,6 @@ namespace Kite2.Scan.Twain
             return false;
         }
 
-        // Дожидаемся настоящей картинки: после сигнала готовности нового
-        // листа драйвер отвечает пустотой, пока податчик кормит лист
-        // (12-14 с), а сканированный лист опрос отдаёт сразу. Лимит 20 с —
-        // иначе по листу, которого нет, сидели бы минутами.
-        private static bool WaitForRealImage(TWIdentity app, TWIdentity ds)
-        {
-            DateTime until = DateTime.UtcNow.AddSeconds(20);
-
-            while (DateTime.UtcNow < until)
-            {
-                var info = new TWImageInfo { BitsPerSample = new short[8] };
-
-                ushort rc;
-                try
-                {
-                    rc = Dsm.Call(true, app, ds, Dg.Image, Dat.ImageInfo, Msg.Get, info);
-                }
-                catch (Exception error)
-                {
-                    // Срыв звона не решает судьбу серии: вдруг следующий
-                    // опрос пройдёт.
-                    Log.Warn("Kyocera: опрос DAT_IMAGEINFO сорвался ({0})", error.Message);
-                    rc = TwRc.Failure;
-                }
-
-                if (rc == TwRc.Success && info.ImageWidth > 0 && info.ImageLength > 0)
-                    return true;
-
-                Thread.Sleep(2000);
-            }
-
-            return false;
-        }
-
         // Счётчик ожидающих передач. true — вызов прошёл и известно, есть ли
         // ещё листы в податчике (в stillPending).
         private static bool PendingKnown(TWIdentity app, TWIdentity ds, out bool stillPending)
@@ -332,20 +267,64 @@ namespace Kite2.Scan.Twain
             }
         }
 
-        // Закрыть источник и диспетчер. Вызывается после того, как ответ
-        // родителю уже записан: MSG_CLOSEDS на этом драйвере рвёт процесс
-        // (сбой доступа к памяти внутри DSM_Entry), поэтому закрытие не
-        // вызываем вовсе. Процесс и так завершается сразу после: Windows
-        // выгружает драйвер вместе с процессом и освобождает его поименованный
-        // мьютекс, а MSG_DISABLEDS заранее останавливает двигатель сканера.
+        // Уборка после ответа. MSG_CLOSEDS на этом драйвере рвёт процесс
+        // (сбой доступа к памяти внутри DSM_Entry), поэтому закрытие источника
+        // и диспетчера не вызываем вовсе: процесс и так завершается сразу
+        // после, Windows выгрузит драйвер вместе с процессом и освободит его
+        // поименованный мьютекс.
+        //
+        // Но просто MSG_DISABLEDS мало: если после передачи листа ветку
+        // состояния 7 не сбросить звонком DAT_PENDINGXFERS/MSG_ENDXFER,
+        // драйвер считает, что лист ещё не отдан, — двигатель сканера ждёт
+        // передачу (на панели принтера моргает «Сканирование»), а следующая
+        // серия отваливается: все капы и MSG_ENABLEDS отвечают TWRC_FAILURE
+        // за 0 мс, и оживают только спустя минуту (журнал, серия 13:44).
+        // Звонок ENDXFER ограждён часовым: Get на этой ветке зависал
+        // намертво, а ответ родителю к моменту уборки уже записан — худшее,
+        // что случится, процесс завершится часовым принудительно.
         public static void Close()
         {
-            if (_app == null || _ds == null)
+            var app = _app;
+            var ds = _ds;
+            _app = null;
+            _ds = null;
+
+            if (app == null || ds == null)
                 return;
+
+            // Часовой. Фоновый поток: пока уборка жива, он не держит процесс,
+            // а если DSM_Entry замерз — завершает процесс сам.
+            var guard = new Thread(() =>
+            {
+                Thread.Sleep(10000);
+                Log.Warn("Kyocera: уборка не уложилась в 10 с — процесс закрывает часовой");
+                try { LogManager.Flush(); } catch { }
+                Environment.Exit(0);
+            });
+            guard.IsBackground = true;
+            guard.Start();
+
+            // Сброс ветки передач (7 → 6): двигатель отпускаем раньше отключения.
+            if (Pages.Count > 0)
+            {
+                try
+                {
+                    var pending = new TWPendingXfers { Count = 0 };
+                    ushort reset = Dsm.Call(
+                        true, app, ds, Dg.Control, Dat.PendingXfers, Msg.EndXfer, pending);
+                    Log.Info("Kyocera: DAT_PENDINGXFERS ENDXFER: {0}", TwRc.Name(reset));
+                    try { LogManager.Flush(); } catch { }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("Kyocera: сброс передач сорвался ({0}) — дальше говорит часовой", ex.Message);
+                    try { LogManager.Flush(); } catch { }
+                }
+            }
 
             try
             {
-                Dsm.Call(true, _app, _ds, Dg.Control, Dat.UserInterface, Msg.DisableDS, new TWUserInterface());
+                Dsm.Call(true, app, ds, Dg.Control, Dat.UserInterface, Msg.DisableDS, new TWUserInterface());
                 Log.Info("Kyocera: источник отключён; закрытие не вызываем — оно рвёт процесс");
             }
             catch (Exception ex)
@@ -354,8 +333,7 @@ namespace Kite2.Scan.Twain
             }
             finally
             {
-                _app = null;
-                _ds = null;
+                try { LogManager.Flush(); } catch { }
             }
         }
 
