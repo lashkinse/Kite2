@@ -27,12 +27,13 @@ namespace Kite2.Probe
 
     internal static class Cases
     {
-        private const int Total = 9;
+        private const int Total = 10;
 
-        // Прогон (run) берёт только этот список: логи DSM делают
-        // прочие комбинации избыточными. exp <idx> всё ещё можно
-        // запустить вручную для любого номера 1..9.
-        internal static readonly int[] Battery = { 1, 2, 5, 7, 10 };
+        // Прогон (run) берёт только сценарий 10: родное окно драйвера
+        // (ShowUI=1) — единственный вариант, в котором движ Kyocera
+        // гарантированно доходит до готовности. Остальные сценарии
+        // остаются доступны вручную: exp <idx> для любого номера 1..10.
+        internal static readonly int[] Battery = { 10 };
 
         internal static Case Get(int idx)
         {
