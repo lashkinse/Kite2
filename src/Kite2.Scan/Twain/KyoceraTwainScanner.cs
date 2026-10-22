@@ -123,9 +123,19 @@ namespace Kite2.Scan.Twain
                 _ds = ds;
 
                 // 4. Колбэк: в него диспетчер приносит MSG_XFERREADY.
-                rc = Dsm.Call(true, app, ds, Dg.Control, Dat.Callback2, Msg.RegisterCallback,
-                    new TWCallback2(Dsm.SharedCallback));
-                Log.Info("Kyocera: регистрация DAT_CALLBACK2: {0}", TwRc.Name(rc));
+                //     С родным окном драйвера колбэк не регистрируем: там
+                //     готовность приходит через окно, а лишний канал с
+                //     диспетчером рвал процесс на 12-й секунде (журнал 8).
+                if (!showUi)
+                {
+                    rc = Dsm.Call(true, app, ds, Dg.Control, Dat.Callback2, Msg.RegisterCallback,
+                        new TWCallback2(Dsm.SharedCallback));
+                    Log.Info("Kyocera: регистрация DAT_CALLBACK2: {0}", TwRc.Name(rc));
+                }
+                else
+                {
+                    Log.Info("Kyocera: с окном драйвера колбэк не регистрируем");
+                }
 
                 // 5. Опрос возможностей и группы передачи. Обследователь шёл
                 //    ровно так: без этих звонков мост legacy-диспетчера к
@@ -161,7 +171,20 @@ namespace Kite2.Scan.Twain
                 ReadOneCap(app, ds, "ICAP_XFERMECH (после включения)", CapId.ICapXferMech);
 
                 // 9. Ждём готовности: колбэк диспетчера или канал legacy-DSM.
-                if (!WaitReady(app, ds, pump, wall))
+                //     С родным окном драйвера ждём иначе: сообщения окна
+                //     драйвера перехватывать нельзя (журнал 8: ребёнок умирал
+                //     на 12-й секунде), поэтому готовность смотрим опросом
+                //     DAT_IMAGEINFO, а не событием.
+                if (showUi)
+                {
+                    if (!WaitImage(app, ds, pump, wall))
+                    {
+                        Log.Warn("Kyocera: картинка не появилась за {0:N0} с", wall.TotalSeconds);
+                        failure = "Драйвер не отдал изображение страницы.";
+                        return null;
+                    }
+                }
+                else if (!WaitReady(app, ds, pump, wall))
                 {
                     Log.Warn("Kyocera: готовность не пришла за {0:N0} с", wall.TotalSeconds);
                     failure = "Драйвер не сообщил о готовности сканирования.";
@@ -171,21 +194,30 @@ namespace Kite2.Scan.Twain
                 // 10. Листы. Первый идёт полным рецептом. В тихом режиме сессия
                 //     отдаёт один лист: фиктивная готовность после передачи
                 //     и повторные звонки в той же сессии следующего листа не
-                //     дают (журналы 5–7). С родным окном драйвера пачку ведёт
-                //     сам драйвер: готовность каждого следующего листа
-                //     приходит настоящей, её и ждём, пока податчик не опустеет.
+                //     дают (журналы 5–7).
                 if (!TransferOne(app, ds, directory, skipPending, ref failure))
                     return null;
 
                 if (showUi)
                 {
-                    while (WaitReady(app, ds, pump, TimeSpan.FromSeconds(45)))
+                    // С окном драйвера пачку ведёт сам драйвер: следующий
+                    // лист он поднимает по запросу DAT_PENDINGXFERS/MSG_ENDXFER
+                    // (разбор драйвера: именно этот звонок отправляет
+                    // интерфейсу команду на следующий лист, и только он).
+                    // Ответ счётчика говорит, есть ли ещё листы.
+                    while (RequestNextSheet(app, ds))
                     {
+                        if (!WaitImage(app, ds, pump, TimeSpan.FromSeconds(60)))
+                        {
+                            Log.Info("Kyocera: следующая картинка не появилась, страниц {0}", Pages.Count);
+                            break;
+                        }
+
                         if (!TransferOne(app, ds, directory, skipPending, ref failure))
                             break;
                     }
 
-                    Log.Info("Kyocera: следующей готовности нет — пачка окончена, страниц {0}", Pages.Count);
+                    Log.Info("Kyocera: пачка окончена, страниц {0}", Pages.Count);
                 }
 
                 // Уже полученные страницы ценнее текста о неудаче: отдаём их,
@@ -253,6 +285,78 @@ namespace Kite2.Scan.Twain
             failure = "Драйвер не отдал изображение страницы.";
             Log.Warn("Kyocera: {0}", failure);
             return false;
+        }
+
+        // Ожидание картинки опросом DAT_IMAGEINFO. Нужно там, где событие
+        // готовности недоступно: с родным окном драйвера перехватывать
+        // оконные сообщения нельзя, а без готовности ждать нечего.
+        // true — картинка появилась (размер больше нуля).
+        private static bool WaitImage(TWIdentity app, TWIdentity ds, PumpWindow pump, TimeSpan wall)
+        {
+            DateTime deadline = DateTime.UtcNow.Add(wall);
+
+            while (DateTime.UtcNow < deadline)
+            {
+                var info = new TWImageInfo { BitsPerSample = new short[8] };
+
+                ushort rc;
+                try
+                {
+                    rc = Dsm.Call(true, app, ds, Dg.Image, Dat.ImageInfo, Msg.Get, info);
+                }
+                catch (Exception error)
+                {
+                    Log.Warn("Kyocera: опрос DAT_IMAGEINFO сорвался ({0})", error.Message);
+                    rc = TwRc.Failure;
+                }
+
+                if (rc == TwRc.Success && info.ImageWidth > 0 && info.ImageLength > 0)
+                {
+                    Log.Info(
+                        "Kyocera: картинка появилась: {0}×{1}",
+                        info.ImageWidth, info.ImageLength);
+                    return true;
+                }
+
+                // Сообщения окна драйвера приходят в наш поток (там и клики
+                // мыши, и нажатия клавиш — по журналу 8). Раздаём их, иначе
+                // окно не рисуется и кнопку «Скан» не нажать. Диспетчеру
+                // их не пересылаем: повторная обработка внутри драйвера рвала
+                // процесс на 12-й секунде.
+                pump.Drain(m => false);
+
+                Thread.Sleep(500);
+            }
+
+            return false;
+        }
+
+        // Запрос следующего листа у драйвера. Разбор бинарника драйвера
+        // показал: следующий лист податчика поднимает только звонок
+        // DAT_PENDINGXFERS/MSG_ENDXFER — именно он отправляет интерфейсу
+        // драйвера команду на следующий лист (сообщение 0x4c8), а тот
+        // вызывает KmUsbScnNextPageReq. Ответ счётчика: 0 — листов больше
+        // нет, иначе — лист будет.
+        private static bool RequestNextSheet(TWIdentity app, TWIdentity ds)
+        {
+            try
+            {
+                var pending = new TWPendingXfers { Count = 0 };
+
+                ushort rc = Dsm.Call(
+                    true, app, ds, Dg.Control, Dat.PendingXfers, Msg.EndXfer, pending);
+
+                Log.Info(
+                    "Kyocera: запрос следующего листа (ENDXFER): {0}, осталось {1}",
+                    TwRc.Name(rc), pending.Count);
+
+                return rc == TwRc.Success && pending.Count > 0;
+            }
+            catch (Exception error)
+            {
+                Log.Warn("Kyocera: запрос следующего листа сорвался ({0})", error.Message);
+                return false;
+            }
         }
 
         // Счётчик ожидающих передач. true — вызов прошёл и известно, есть ли
