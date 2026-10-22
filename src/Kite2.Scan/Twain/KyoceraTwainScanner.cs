@@ -30,6 +30,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 using NLog;
 
 namespace Kite2.Scan.Twain
@@ -210,12 +211,23 @@ namespace Kite2.Scan.Twain
         private static TimeSpan Min(TimeSpan one, TimeSpan other) =>
             one < other ? one : other;
 
-        // Передача одного листа полным рецептом: DAT_IMAGEINFO,
-        // DAT_PENDINGXFERS (если не пропущен) и DAT_IMAGENATIVEXFER.
-        // true — страница сохранена и числится в Pages.
+        // Передача одного листа. Первый — полным рецептом. Готовность
+        // следующего листа драйвер даёт раньше, чем лист просканирован:
+        // IMAGEINFO отвечает пустотой (0×0), а передача — TWRC_FAILURE.
+        // Поэтому после готовности листа даём драйверу время опросами
+        // IMAGEINFO: картинка считается настоящей, когда размер больше
+        // нуля. true — страница сохранена и числится в Pages.
         private static bool TransferOne(
             TWIdentity app, TWIdentity ds, string directory, bool skipPending, ref string failure)
         {
+            if (Pages.Count > 0 && !WaitForRealImage(app, ds))
+            {
+                // Готовность была, но лист за 20 с так и не просканировался:
+                // в податчике пусто. Странички уже есть, текста ошибки не надо.
+                Log.Info("Kyocera: лист не просканирован — податчик пуст, сессию заканчиваем");
+                return false;
+            }
+
             IntPtr handle;
             ushort rc;
 
@@ -262,6 +274,40 @@ namespace Kite2.Scan.Twain
 
             failure = "Драйвер не отдал изображение страницы.";
             Log.Warn("Kyocera: {0}", failure);
+            return false;
+        }
+
+        // Дожидаемся настоящей картинки: после сигнала готовности нового
+        // листа драйвер отвечает пустотой, пока податчик кормит лист
+        // (12-14 с), а сканированный лист опрос отдаёт сразу. Лимит 20 с —
+        // иначе по листу, которого нет, сидели бы минутами.
+        private static bool WaitForRealImage(TWIdentity app, TWIdentity ds)
+        {
+            DateTime until = DateTime.UtcNow.AddSeconds(20);
+
+            while (DateTime.UtcNow < until)
+            {
+                var info = new TWImageInfo { BitsPerSample = new short[8] };
+
+                ushort rc;
+                try
+                {
+                    rc = Dsm.Call(true, app, ds, Dg.Image, Dat.ImageInfo, Msg.Get, info);
+                }
+                catch (Exception error)
+                {
+                    // Срыв звона не решает судьбу серии: вдруг следующий
+                    // опрос пройдёт.
+                    Log.Warn("Kyocera: опрос DAT_IMAGEINFO сорвался ({0})", error.Message);
+                    rc = TwRc.Failure;
+                }
+
+                if (rc == TwRc.Success && info.ImageWidth > 0 && info.ImageLength > 0)
+                    return true;
+
+                Thread.Sleep(2000);
+            }
+
             return false;
         }
 
