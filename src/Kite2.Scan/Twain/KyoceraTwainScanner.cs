@@ -12,7 +12,8 @@
 //   → ENABLEDS с ShowUI=0 (тихий режим работает, окно драйвера не нужно)
 //   → ждём MSG_XFERREADY (приходит в колбэк диспетчера)
 //   → DAT_IMAGEINFO → DAT_PENDINGXFERS → DAT_IMAGENATIVEXFER
-//   → MSG_ENDXFER → MSG_DISABLEDS. Закрытие источника (MSG_CLOSEDS)
+//   → снова ждём готовность и повторяем передачу, пока податчик не опустеет
+//   → MSG_DISABLEDS. Закрытие источника (MSG_CLOSEDS)
 //     на этом драйвере рвёт процесс, поэтому его не вызываем вовсе.
 //
 // Важные подробности, найденные по следам:
@@ -21,7 +22,10 @@
 //     границы — процесс падал;
 //   * хэндл DIB приходит и при TWRC_XFERDONE, а не только при TWRC_SUCCESS;
 //   * готовность приходит в колбэк, а не в DAT_EVENT: на ветке legacy диспетчер
-//     отвечает DSEVENT с TwMessage=NULL почти на каждое оконное сообщение.
+//     отвечает DSEVENT с TwMessage=NULL почти на каждое оконное сообщение;
+//   * податчик опустошается только в той же сессии: оборвать сессию после
+//     первой страницы значит оставить следующий лист застрявшим — драйвер
+//     держит его и в новой серии молчит.
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -146,6 +150,8 @@ namespace Kite2.Scan.Twain
                 ReadOneCap(app, ds, "ICAP_XFERMECH (после включения)", CapId.ICapXferMech);
 
                 // 9. Ждём готовности: колбэк диспетчера или канал legacy-DSM.
+                DateTime deadline = DateTime.UtcNow.Add(wall);
+
                 if (!WaitReady(app, ds, pump, wall))
                 {
                     Log.Warn("Kyocera: готовность не пришла за {0:N0} с", wall.TotalSeconds);
@@ -153,72 +159,50 @@ namespace Kite2.Scan.Twain
                     return null;
                 }
 
-                // 10. Подготовка и передача. Каждый шаг обёрнут: драйвер
-                //     умеет сорвать процесс, и падать здесь нельзя - попытка
-                //     обязана честно вернуться, а не висеть до стенки.
-                IntPtr handle;
-                try
+                // 10. Передача листов. Первый лист идёт ровно по рецепту
+                //     обследователя, следующие — той же сессией: обрывать
+                //     сессию посреди податчика нельзя, от этого следующий
+                //     лист застревает (ровно так пропадала вторая страница).
+                //     Каждый шаг обёрнут: драйвер умеет сорвать процесс, и
+                //     падать здесь нельзя — попытка обязана честно вернуться,
+                //     а не висеть до стенки.
+                while (true)
                 {
-                    var info = new TWImageInfo { BitsPerSample = new short[8] };
-                    rc = Dsm.Call(true, app, ds, Dg.Image, Dat.ImageInfo, Msg.Get, info);
-                    Log.Info(
-                        "Kyocera: DAT_IMAGEINFO: {0}, {1}×{2}, {3} бит/пиксель",
-                        TwRc.Name(rc), info.ImageWidth, info.ImageLength, info.BitsPerPixel);
+                    if (Pages.Count > 0)
+                    {
+                        bool stillPending = true;
 
-                    // Счётчик ожидающих передач спрашивать не обязательно, а на
-                    // этом драйвере звонок иногда срывает процесс. Сначала
-                    // пробуем его (как в обследователе), при сбое идём сразу
-                    // к картинке.
-                    if (skipPending)
-                    {
-                        Log.Info("Kyocera: DAT_PENDINGXFERS пропускаем (запасной путь)");
-                    }
-                    else
-                    {
-                        try
+                        if (!skipPending && PendingKnown(app, ds, out stillPending) && !stillPending)
+                            break; // в податчике больше нет листов
+
+                        // Листы ждём долго (драйвер нетороплив: готовность
+                        // доходила по 2-12 с), счётчик неизвестен — недолго:
+                        // за стеклом нового листа не будет, а сессию хочется
+                        // закрыть побыстрее.
+                        TimeSpan gap = TimeSpan.FromSeconds(
+                            stillPending && !skipPending ? 120 : 30);
+
+                        if (TimeSpan.Zero < deadline - DateTime.UtcNow)
+                            gap = Min(gap, deadline - DateTime.UtcNow);
+                        else
+                            break;
+
+                        if (!WaitReady(app, ds, pump, gap))
                         {
-                            var pending = new TWPendingXfers();
-                            rc = Dsm.Call(true, app, ds, Dg.Control, Dat.PendingXfers, Msg.Get, pending);
-                            Log.Info("Kyocera: DAT_PENDINGXFERS: {0}, ожидают {1}", TwRc.Name(rc), pending.Count);
-                        }
-                        catch (Exception error)
-                        {
-                            Log.Warn("Kyocera: DAT_PENDINGXFERS сорвал процесс ({0}) - идём сразу к картинке", error.Message);
+                            Log.Info(
+                                "Kyocera: следующей готовности не дождались, страниц {0}",
+                                Pages.Count);
+                            break;
                         }
                     }
 
-                    sw.Restart();
-                    rc = Dsm.ImageNativeXfer(true, app, ds, out handle);
-                    Log.Info("Kyocera: DAT_IMAGENATIVEXFER: {0} за {1:N0} мс", TwRc.Name(rc), sw.ElapsedMilliseconds);
-                }
-                catch (Exception error)
-                {
-                    Log.Error("Kyocera: передача сорвалась: {0}", error.Message);
-                    failure = "Драйвер оборвал передачу изображения.";
-                    return null;
+                    if (!TransferOne(app, ds, directory, skipPending, ref failure))
+                        break;
                 }
 
-                if ((rc == TwRc.Success || rc == TwRc.XferDone) && handle != IntPtr.Zero)
-                {
-                    string path = SavePage(directory, handle);
-                    if (path != null)
-                    {
-                        Pages.Add(path);
-                        Log.Info("Kyocera: страница сохранена: {0}", path);
-                        failure = null;
-                    }
-                    else
-                    {
-                        failure = "Страницу не удалось сохранить на диск.";
-                    }
-                }
-                else
-                {
-                    failure = "Драйвер не отдал изображение страницы.";
-                    Log.Warn("Kyocera: {0}", failure);
-                }
-
-                return failure == null ? Pages[Pages.Count - 1] : null;
+                // Уже полученные страницы ценнее текста о неудаче: отдаём их,
+                // даже если следующий лист сорвался.
+                return Pages.Count > 0 ? Pages[Pages.Count - 1] : null;
             }
             finally
             {
@@ -226,6 +210,83 @@ namespace Kite2.Scan.Twain
                 // MSG_CLOSEDS срывает процесс, а ответ родителю должен быть
                 // записан раньше. Поэтому уборка вынесена в Close() и идёт
                 // после записи ответа.
+            }
+        }
+
+        // Меньшее из двух времён.
+        private static TimeSpan Min(TimeSpan one, TimeSpan other) =>
+            one < other ? one : other;
+
+        // Передача одного листа полным рецептом: DAT_IMAGEINFO,
+        // DAT_PENDINGXFERS (если не пропущен) и DAT_IMAGENATIVEXFER.
+        // true — страница сохранена и числится в Pages.
+        private static bool TransferOne(
+            TWIdentity app, TWIdentity ds, string directory, bool skipPending, ref string failure)
+        {
+            IntPtr handle;
+            ushort rc;
+
+            try
+            {
+                var info = new TWImageInfo { BitsPerSample = new short[8] };
+                rc = Dsm.Call(true, app, ds, Dg.Image, Dat.ImageInfo, Msg.Get, info);
+                Log.Info(
+                    "Kyocera: DAT_IMAGEINFO: {0}, {1}×{2}, {3} бит/пиксель",
+                    TwRc.Name(rc), info.ImageWidth, info.ImageLength, info.BitsPerPixel);
+
+                // Счётчик спрашивать не обязательно, а на этом драйвере звонок
+                // иногда срывает процесс: при пропуске идём сразу к картинке.
+                if (!skipPending)
+                    PendingKnown(app, ds, out _);
+
+                var sw = Stopwatch.StartNew();
+                rc = Dsm.ImageNativeXfer(true, app, ds, out handle);
+                Log.Info("Kyocera: DAT_IMAGENATIVEXFER: {0} за {1:N0} мс", TwRc.Name(rc), sw.ElapsedMilliseconds);
+            }
+            catch (Exception error)
+            {
+                Log.Error("Kyocera: передача сорвалась: {0}", error.Message);
+                failure = "Драйвер оборвал передачу изображения.";
+                return false;
+            }
+
+            if ((rc == TwRc.Success || rc == TwRc.XferDone) && handle != IntPtr.Zero)
+            {
+                string path = SavePage(directory, handle);
+                if (path != null)
+                {
+                    Pages.Add(path);
+                    Log.Info("Kyocera: страница сохранена: {0}", path);
+                    return true;
+                }
+
+                failure = "Страницу не удалось сохранить на диск.";
+                return false;
+            }
+
+            failure = "Драйвер не отдал изображение страницы.";
+            Log.Warn("Kyocera: {0}", failure);
+            return false;
+        }
+
+        // Счётчик ожидающих передач. true — вызов прошёл и известно, есть ли
+        // ещё листы в податчике (в stillPending).
+        private static bool PendingKnown(TWIdentity app, TWIdentity ds, out bool stillPending)
+        {
+            stillPending = true;
+
+            try
+            {
+                var pending = new TWPendingXfers();
+                ushort rc = Dsm.Call(true, app, ds, Dg.Control, Dat.PendingXfers, Msg.Get, pending);
+                stillPending = pending.Count != 0;
+                Log.Info("Kyocera: DAT_PENDINGXFERS: {0}, ожидают {1}", TwRc.Name(rc), pending.Count);
+                return true;
+            }
+            catch (Exception error)
+            {
+                Log.Warn("Kyocera: DAT_PENDINGXFERS сорвал процесс ({0}) - идём по готовности", error.Message);
+                return false;
             }
         }
 

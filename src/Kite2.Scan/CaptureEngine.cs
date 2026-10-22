@@ -491,10 +491,17 @@ namespace Kite2.Scan
                     if (done == consume)
                         break;
 
-                    if (chapter.Pages.Count != lastCount)
+                    // У ребёнка счётчик прогресса смотрит в каталог серии:
+                    // страницы появляются на диске по мере захвата, а ответ
+                    // пишется одним файлом только в конце.
+                    int progress = child != null
+                        ? Directory.GetFiles(directory, "scan*.bmp").Length
+                        : chapter.Pages.Count;
+
+                    if (progress != lastCount)
                     {
                         // Страница прокралась ровно в момент стенки: время пошло заново.
-                        lastCount = chapter.Pages.Count;
+                        lastCount = progress;
                         continue;
                     }
 
