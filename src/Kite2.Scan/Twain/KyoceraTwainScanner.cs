@@ -11,10 +11,8 @@
 //   → SET ICAP_XFERMECH = native (контейнер OneValue)
 //   → ENABLEDS с ShowUI=0 (тихий режим работает, окно драйвера не нужно)
 //   → ждём MSG_XFERREADY (приходит в колбэк диспетчера)
-//   → DAT_IMAGEINFO → DAT_PENDINGXFERS → DAT_IMAGENATIVEXFER (первый лист)
-//   → дальше по готовности: DAT_IMAGENATIVEXFER с повторами раз в 6 с,
-//     пока податчик не опустеет
-//   → MSG_DISABLEDS. Закрытие источника (MSG_CLOSEDS)
+//   → DAT_IMAGEINFO → DAT_PENDINGXFERS → DAT_IMAGENATIVEXFER (один лист)
+//   → MSG_ENDXFER → MSG_DISABLEDS. Закрытие источника (MSG_CLOSEDS)
 //     на этом драйвере рвёт процесс, поэтому его не вызываем вовсе.
 //
 // Важные подробности, найденные по следам:
@@ -25,11 +23,9 @@
 //   * готовность приходит в колбэк, а не в DAT_EVENT: на ветке legacy диспетчер
 //     отвечает DSEVENT с TwMessage=NULL почти на каждое оконное сообщение;
 //   * после передачи первого листа драйвер МГНОВЕННО сигналит следующую
-//     готовность, даже когда лист ещё едет по податчику (12-20 с):
-//     DAT_IMAGEINFO на ветке состояния 7 всегда отвечает пустотой, а вот
-//     повторные звонки самой передачи доезжают — лист 2 и дальше берутся
-//     прямыми DAT_IMAGENATIVEXFER с повторами (ошибку 1.7.29: ждали только
-//     IMAGEINFO и никогда не пробовали передачу — серия падала на 1 странице);
+//     готовность, но это фикция: DAT_IMAGEINFO и повторные DAT_IMAGENATIVEXFER
+//     в той же сессии следующего листа не дают (журналы 5–7, повторы 45 с);
+//     второй лист приходит только новой сессией;
 //   * вопросы о состоянии на ветке 7 не задаём вовсе: DAT_PENDINGXFERS Get
 //     там зависал намертво, а MSG_CLOSEDS рвёт процесс;
 //   * перед выключением источника сбрасываем ветку передач звонком
@@ -170,38 +166,13 @@ namespace Kite2.Scan.Twain
                     return null;
                 }
 
-                // 10. Листы. Первый идёт полным рецептом. Сразу после передачи
-                //     драйвер сигналит следующую готовность — мгновенно, даже
-                //     когда лист ещё едет по податчику. На ветке состояния 7
-                //     вопросы о состоянии не задаём (DAT_PENDINGXFERS Get там
-                //     зависал намертво, DAT_IMAGEINFO всегда отвечает пустотой),
-                //     поэтому следующий лист берём прямой передачей с повторами,
-                //     пока звонок не отдаст картинку.
-                while (true)
-                {
-                    if (Pages.Count == 0)
-                    {
-                        if (!TransferOne(app, ds, directory, skipPending, ref failure))
-                            return null;
-
-                        continue;
-                    }
-
-                    // Готовность следующего листа приходит в первые
-                    // миллисекунды после передачи; стекло нового листа
-                    // не даёт вовсе. За 10 секунд тишины — в податчике
-                    // пусто, сессия кончилась.
-                    if (!WaitReady(app, ds, pump, TimeSpan.FromSeconds(10)))
-                    {
-                        Log.Info(
-                            "Kyocera: следующей готовности нет — податчик пуст, страниц {0}",
-                            Pages.Count);
-                        break;
-                    }
-
-                    if (!TransferNext(app, ds, directory, ref failure))
-                        break;
-                }
+                // 10. Один лист за сессию. Драйвер сигналит фиктивную готовность
+                //     сразу после передачи; повторные звонки передачи в той же
+                //     сессии следующего листа не дали ни разу (журналы 5–7).
+                //     Второй лист приходит только новой серией: приложение
+                //     спрашивает «продолжить?», следующая сессия его и берёт.
+                if (!TransferOne(app, ds, directory, skipPending, ref failure))
+                    return null;
 
                 // Уже полученные страницы ценнее текста о неудаче: отдаём их,
                 // даже если следующий лист сорвался.
@@ -268,64 +239,6 @@ namespace Kite2.Scan.Twain
             failure = "Драйвер не отдал изображение страницы.";
             Log.Warn("Kyocera: {0}", failure);
             return false;
-        }
-
-        // Передача следующего листа после первого. Готовность драйвер сигналит
-        // заранее — лист ещё едет по податчику (12-20 с). Вопросов о состоянии
-        // на ветке 7 не задаём (счётчик там зависал намертво, IMAGEINFO
-        // отвечает пустотой), поэтому прямо передаём: DAT_IMAGENATIVEXFER
-        // с повтором раз в 6 секунд, не дольше 45 секунд. Лист доехал и
-        // просканировался — звонок отвечает TWRC_XFERDONE и отдаёт хэндл.
-        // Диспетчер может отвечать TWRC_BUSY, пока податчик занят, — это
-        // равноценно «подожди».
-        private static bool TransferNext(
-            TWIdentity app, TWIdentity ds, string directory, ref string failure)
-        {
-            DateTime until = DateTime.UtcNow.AddSeconds(45);
-
-            while (true)
-            {
-                IntPtr handle;
-                ushort rc;
-
-                try
-                {
-                    rc = Dsm.ImageNativeXfer(true, app, ds, out handle);
-                    Log.Info("Kyocera: DAT_IMAGENATIVEXFER: {0}", TwRc.Name(rc));
-                }
-                catch (Exception error)
-                {
-                    Log.Warn("Kyocera: передача сорвалась: {0}", error.Message);
-                    failure = "Драйвер оборвал передачу изображения.";
-                    return false;
-                }
-
-                if ((rc == TwRc.Success || rc == TwRc.XferDone) && handle != IntPtr.Zero)
-                {
-                    string path = SavePage(directory, handle);
-
-                    if (path != null)
-                    {
-                        Pages.Add(path);
-                        Log.Info("Kyocera: страница сохранена: {0}", path);
-                        return true;
-                    }
-
-                    failure = "Страницу не удалось сохранить на диск.";
-                    return false;
-                }
-
-                if (DateTime.UtcNow >= until)
-                {
-                    // Лист за 45 с так и не доехал: податчик опустел. Картинки,
-                    // полученные раньше, ценнее текста ошибки.
-                    Log.Info(
-                        "Kyocera: следующих листов не дождались, страниц {0}", Pages.Count);
-                    return false;
-                }
-
-                Thread.Sleep(6000);
-            }
         }
 
         // Счётчик ожидающих передач. true — вызов прошёл и известно, есть ли
