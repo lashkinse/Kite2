@@ -42,11 +42,14 @@ namespace Kite2.Scan.Twain
 
         /// <summary>
         /// Захват страницы. Без окна драйвера (тихий режим) сканер на этом
-        /// драйвере часто не начинает сканирование; с окном (showUi = true)
+        /// драйвере умеет и сам (проверено: готовность приходит через 12 с,
+        /// DAT_IMAGEINFO отдаёт 2480×3507); с окном (showUi = true)
         /// сканирование запускает человек кнопкой «Скан».
+        /// skipPending = true - пропустить DAT_PENDINGXFERS: на этом драйвере
+        /// звонок иногда срывает процесс, а картинка приходит и без него.
         /// Возвращает путь файла страницы (null — страницы не было).
         /// </summary>
-        public static string Capture(string directory, string sourceName, TimeSpan wall, bool showUi)
+        public static string Capture(string directory, string sourceName, TimeSpan wall, bool showUi, bool skipPending)
         {
             _wantedSource = sourceName;
             string failure = null;
@@ -100,13 +103,21 @@ namespace Kite2.Scan.Twain
                     new TWCallback2(Dsm.SharedCallback));
                 Log.Info("Kyocera: регистрация DAT_CALLBACK2: {0}", TwRc.Name(rc));
 
-                // 5. Механизм передачи — целиком (память драйвер не берёт:
+                // 5. Опрос возможностей и группы передачи. Обследователь шёл
+                //    ровно так: без этих звонков мост legacy-диспетчера к
+                //    драйверу Kyocera работает иначе (в приложении на этом
+                //    месте затем падал DAT_PENDINGXFERS).
+                ReadCaps(app, ds);
+                ReadXferGroup(app, ds);
+
+                // 6. Механизм передачи — целиком (память драйвер не берёт:
                 //    DAT_SETUPMEMXFER у него отвечает TWRC_FAILURE).
                 SetXferMech(app, ds);
 
-                // 6. Включение. С родным окном драйвера (ShowUI=1) сканирование
+                // 7. Включение. С родным окном драйвера (ShowUI=1) сканирование
                 //    запускает человек; в тихом режиме (ShowUI=0) драйвер на
-                //    Kyocera часто молчит — тогда попытка уходит по стенке.
+                //    Kyocera тоже умеет сам (проверено: готовность пришла через
+                //    12 с, DAT_IMAGEINFO отдал 2480×3507).
                 var ui = new TWUserInterface
                 {
                     ShowUI = (ushort)(showUi ? 1 : 0),
@@ -121,7 +132,11 @@ namespace Kite2.Scan.Twain
                 if (rc != TwRc.Success)
                     return null;
 
-                // 7. Ждём готовности: колбэк диспетчера или канал legacy-DSM.
+                // 8. Повторное чтение возможностей после включения — так же,
+                //    как в обследователе.
+                ReadOneCap(app, ds, "ICAP_XFERMECH (после включения)", CapId.ICapXferMech);
+
+                // 9. Ждём готовности: колбэк диспетчера или канал legacy-DSM.
                 if (!WaitReady(app, ds, pump, wall))
                 {
                     Log.Warn("Kyocera: готовность не пришла за {0:N0} с", wall.TotalSeconds);
@@ -129,21 +144,50 @@ namespace Kite2.Scan.Twain
                     return null;
                 }
 
-                // 8. Подготовка и передача.
-                var info = new TWImageInfo { BitsPerSample = new short[8] };
-                rc = Dsm.Call(true, app, ds, Dg.Image, Dat.ImageInfo, Msg.Get, info);
-                Log.Info(
-                    "Kyocera: DAT_IMAGEINFO: {0}, {1}×{2}, {3} бит/пиксель",
-                    TwRc.Name(rc), info.ImageWidth, info.ImageLength, info.BitsPerPixel);
-
-                var pending = new TWPendingXfers();
-                rc = Dsm.Call(true, app, ds, Dg.Control, Dat.PendingXfers, Msg.Get, pending);
-                Log.Info("Kyocera: DAT_PENDINGXFERS: {0}, ожидают {1}", TwRc.Name(rc), pending.Count);
-
+                // 10. Подготовка и передача. Каждый шаг обёрнут: драйвер
+                //     умеет сорвать процесс, и падать здесь нельзя - попытка
+                //     обязана честно вернуться, а не висеть до стенки.
                 IntPtr handle;
-                sw.Restart();
-                rc = Dsm.ImageNativeXfer(true, app, ds, out handle);
-                Log.Info("Kyocera: DAT_IMAGENATIVEXFER: {0} за {1:N0} мс", TwRc.Name(rc), sw.ElapsedMilliseconds);
+                try
+                {
+                    var info = new TWImageInfo { BitsPerSample = new short[8] };
+                    rc = Dsm.Call(true, app, ds, Dg.Image, Dat.ImageInfo, Msg.Get, info);
+                    Log.Info(
+                        "Kyocera: DAT_IMAGEINFO: {0}, {1}×{2}, {3} бит/пиксель",
+                        TwRc.Name(rc), info.ImageWidth, info.ImageLength, info.BitsPerPixel);
+
+                    // Счётчик ожидающих передач спрашивать не обязательно, а на
+                    // этом драйвере звонок иногда срывает процесс. Сначала
+                    // пробуем его (как в обследователе), при сбое идём сразу
+                    // к картинке.
+                    if (skipPending)
+                    {
+                        Log.Info("Kyocera: DAT_PENDINGXFERS пропускаем (запасной путь)");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            var pending = new TWPendingXfers();
+                            rc = Dsm.Call(true, app, ds, Dg.Control, Dat.PendingXfers, Msg.Get, pending);
+                            Log.Info("Kyocera: DAT_PENDINGXFERS: {0}, ожидают {1}", TwRc.Name(rc), pending.Count);
+                        }
+                        catch (Exception error)
+                        {
+                            Log.Warn("Kyocera: DAT_PENDINGXFERS сорвал процесс ({0}) - идём сразу к картинке", error.Message);
+                        }
+                    }
+
+                    sw.Restart();
+                    rc = Dsm.ImageNativeXfer(true, app, ds, out handle);
+                    Log.Info("Kyocera: DAT_IMAGENATIVEXFER: {0} за {1:N0} мс", TwRc.Name(rc), sw.ElapsedMilliseconds);
+                }
+                catch (Exception error)
+                {
+                    Log.Error("Kyocera: передача сорвалась: {0}", error.Message);
+                    failure = "Драйвер оборвал передачу изображения.";
+                    return null;
+                }
 
                 if ((rc == TwRc.Success || rc == TwRc.XferDone) && handle != IntPtr.Zero)
                 {
@@ -182,6 +226,50 @@ namespace Kite2.Scan.Twain
                 {
                     Log.Warn("Kyocera: уборка не удалась: {0}", ex.Message);
                 }
+            }
+        }
+
+        // Опрос возможностей источника. Контейнеры — GlobalAlloc-хэндлы
+        // (GMEM_ZEROINIT), как в обследователе: мост legacy-диспетчера пишет
+        // в них через GlobalLock. Значения у этого драйвера не читаются
+        // (диспетчер отдаёт пустые контейнеры), но сам опрос нужен: без него
+        // дальнейшие звонки идут по другой ветке состояния.
+        private static void ReadCaps(TWIdentity app, TWIdentity ds)
+        {
+            ReadOneCap(app, ds, "ICAP_XFERMECH", CapId.ICapXferMech);
+            ReadOneCap(app, ds, "ICAP_XRESOLUTION", CapId.ICapXResolution);
+            ReadOneCap(app, ds, "ICAP_BITDEPTH", CapId.ICapBitDepth);
+            ReadOneCap(app, ds, "CAP_FEEDERENABLED", CapId.CapFeederEnabled);
+        }
+
+        private static void ReadOneCap(TWIdentity app, TWIdentity ds, string name, ushort cap)
+        {
+            IntPtr h = WinMem.Alloc(256);
+            try
+            {
+                var capability = new TWCapability(cap, TwOn.DontCare16, h);
+                ushort rc = Dsm.Call(true, app, ds, Dg.Control, Dat.Capability, Msg.Get, capability);
+                Log.Info("Kyocera: {0}: {1}", name, TwRc.Name(rc));
+            }
+            finally
+            {
+                WinMem.Free(h);
+            }
+        }
+
+        // Группа передачи: в обследователе её опрос шёл до включения.
+        private static void ReadXferGroup(TWIdentity app, TWIdentity ds)
+        {
+            IntPtr m = Marshal.AllocHGlobal(4);
+            Marshal.WriteInt32(m, 0);
+            try
+            {
+                ushort rc = Dsm.CallPtr(true, app, ds, Dg.Control, Dat.XferGroup, Msg.Get, m);
+                Log.Info("Kyocera: DAT_XFERGROUP: {0} (0x{1:X})", TwRc.Name(rc), Marshal.ReadInt32(m));
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(m);
             }
         }
 
@@ -256,6 +344,13 @@ namespace Kite2.Scan.Twain
 
                 pump.Drain(m =>
                 {
+                    // Каждое оконное сообщение отдаём диспетчеру через
+                    // DAT_EVENT/MSG_PROCESSEVENT — так же, как в обследователе:
+                    // на legacy-ветке диспетчер отвечает на это DSEVENT с
+                    // TwMessage=NULL, и без этих звонков его состояние идёт
+                    // иначе, чем в проверенной последовательности.
+                    ProcessEvent(app, ds, m);
+
                     if (channel != 0 && m.Message == channel)
                     {
                         Log.Info("Kyocera: готовность в канале DSMAPPMESSAGE32");
@@ -266,6 +361,37 @@ namespace Kite2.Scan.Twain
             }
 
             return false;
+        }
+
+        // Передать оконное сообщение диспетчеру (DAT_EVENT/MSG_PROCESSEVENT).
+        private static void ProcessEvent(TWIdentity app, TWIdentity ds, Native32.MinimumMsg m)
+        {
+            try
+            {
+                var raw = new WinMsg
+                {
+                    HWnd = m.HWnd,
+                    Message = m.Message,
+                    WParam = m.WParam,
+                    LParam = m.LParam
+                };
+
+                IntPtr buffer = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(WinMsg)));
+                try
+                {
+                    Marshal.StructureToPtr(raw, buffer, false);
+                    Dsm.Call(true, app, ds, Dg.Control, Dat.Event, Msg.ProcessEvent,
+                        new TWEvent { PEvent = buffer });
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
+            }
+            catch (Exception error)
+            {
+                Log.Debug("Kyocera: DAT_EVENT не прошёл: {0}", error.Message);
+            }
         }
 
         // Сохранение полученного DIB в файл страницы серии.

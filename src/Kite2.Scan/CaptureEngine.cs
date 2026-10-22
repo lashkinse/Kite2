@@ -99,7 +99,10 @@ namespace Kite2.Scan
                 // Родное окно показывалось человеку и закрылось без страниц:
                 // сканирование было отменено в нём. Тихие программные попытки
                 // после этого только просканируют стекло ещё раз без результата.
-                if (attempt.NativeUi && !chapter.Abandoned && chapter.Pages.Count == 0)
+                // Если помощник назвал причину сам (например, драйвер сорвал
+                // передачу), его слово и есть ответ — своё не выдумываем.
+                if (attempt.NativeUi && !chapter.Abandoned && chapter.Pages.Count == 0
+                    && chapter.Failure == null)
                 {
                     throw new InvalidOperationException(
                         "Окно драйвера закрылось без страницы: сканирование в нём отменено. " +
@@ -354,11 +357,14 @@ namespace Kite2.Scan
                 if (IsKyocera(source))
                 {
                     attempts.Add(KyoceraTwainAttempt(source.Device, false));
+                    // Запасной путь: без DAT_PENDINGXFERS (на этом драйвере он
+                    // срывает процесс), тоже тихо.
+                    attempts.Add(KyoceraTwainAttempt(source.Device, false, skipPending: true));
                     attempts.Add(KyoceraTwainAttempt(source.Device, true));
                     attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
                     attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
-                    attempts[2].Wall = TimeSpan.FromSeconds(105);
                     attempts[3].Wall = TimeSpan.FromSeconds(105);
+                    attempts[4].Wall = TimeSpan.FromSeconds(105);
                     return attempts;
                 }
 
@@ -421,7 +427,7 @@ namespace Kite2.Scan
         // Kyocera TWAIN: захват ведёт наш собственный клиент TWAIN.
         // Тихий вариант (без окна) идёт первым, вариант с родным окном
         // драйвера — следом: там сканирование запускает человек.
-        private static ScanAttempt KyoceraTwainAttempt(ScanDevice device, bool withWindow)
+        private static ScanAttempt KyoceraTwainAttempt(ScanDevice device, bool withWindow, bool skipPending = false)
         {
             return new ScanAttempt
             {
@@ -429,11 +435,13 @@ namespace Kite2.Scan
                 Device = device,
                 Mode = TwainTransferMode.Native,
                 NativeUi = withWindow,
-                KyoceraClient = withWindow ? 2 : 1,
+                KyoceraClient = withWindow ? 2 : (skipPending ? 3 : 1),
                 Wall = withWindow ? NativeUiWall : TimeSpan.FromSeconds(90),
                 Title = withWindow
                     ? "TWAIN Kyocera (родное окно драйвера)"
-                    : "TWAIN Kyocera (тихий режим)"
+                    : (skipPending
+                        ? "TWAIN Kyocera (тихий режим, без счётчика передач)"
+                        : "TWAIN Kyocera (тихий режим)")
             };
         }
 

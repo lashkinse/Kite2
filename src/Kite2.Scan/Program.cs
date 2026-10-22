@@ -99,20 +99,26 @@ namespace Kite2.Scan
 
                     int client = Number(args[9]);
 
-                    if (client == 1 || client == 2)
+                    if (client == 1 || client == 2 || client == 3)
                     {
                         // Kyocera: захват ведёт наш собственный клиент TWAIN.
-                        // 1 — тихо (без окна), 2 — с родным окном драйвера,
-                        // где сканирование запускает человек.
+                        // 1 — тихо полной последовательностью, 2 — с родным окном
+                        // драйвера, 3 — тихо и без DAT_PENDINGXFERS (этот звонок
+                        // на драйвере срывает процесс, а картинка приходит и так).
+                        bool withWindow = client == 2;
+                        bool skipPending = client == 3;
+
                         Log.Info(
-                            "Команда twain: свой клиент TWAIN, {0}",
-                            client == 2 ? "с родным окном драйвера" : "в тихом режиме");
+                            "Команда twain: свой клиент TWAIN, {0}{1}",
+                            withWindow ? "с родным окном драйвера" : "в тихом режиме",
+                            skipPending ? ", без счётчика передач" : string.Empty);
 
                         string page = KyoceraTwainScanner.Capture(
                             args[6],
                             args[7],
-                            client == 2 ? TimeSpan.FromMinutes(6) : TimeSpan.FromSeconds(90),
-                            client == 2);
+                            withWindow ? TimeSpan.FromMinutes(6) : TimeSpan.FromSeconds(90),
+                            withWindow,
+                            skipPending);
 
                         if (page != null)
                         {
@@ -126,7 +132,7 @@ namespace Kite2.Scan
                             ScanExchange.Write(
                                 responsePath,
                                 false,
-                                client == 2
+                                withWindow
                                     ? "Драйвер Kyocera не отдал страницу: в его окне нужно нажать «Скан»."
                                     : "Драйвер Kyocera не сообщил о готовности сканирования.",
                                 null,
