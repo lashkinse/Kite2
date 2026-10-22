@@ -468,6 +468,9 @@ namespace Kite2.Probe
         }
 
         // DAT_IMAGENATIVEXFER / MSG_GET: драйвер пишет HGLOBAL по pData.
+        // Хэндл приходит и при TWRC_SUCCESS, и при TWRC_XFERDONE («передача
+        // завершена») — раньше мы читали его только при SUCCESS и выбрасывали
+        // готовую страницу.
         public static ushort ImageNativeXfer(bool useNew, TWIdentity app, TWIdentity ds, out IntPtr handle)
         {
             IntPtr m = Marshal.AllocHGlobal(8);
@@ -477,7 +480,7 @@ namespace Kite2.Probe
                 ushort rc = useNew
                     ? Raw2(app, ds, Dg.Image, Dat.ImageNativeXfer, Msg.Get, m)
                     : Raw1(app, ds, Dg.Image, Dat.ImageNativeXfer, Msg.Get, m);
-                handle = rc == TwRc.Success
+                handle = (rc == TwRc.Success || rc == TwRc.XferDone)
                     ? Marshal.ReadIntPtr(m)
                     : IntPtr.Zero;
                 return rc;

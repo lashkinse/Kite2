@@ -3,6 +3,7 @@
 // повода видно, в каком нативном вызове ребёнок висит навсегда.
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -67,8 +68,8 @@ namespace Kite2.Probe
                     return Make(false, true, Case.Kind.Direct,
                         "Old-DSM Memory: прямой MEMXFER");
                 case 10:
-                    return Make(true, false, Case.Kind.Direct,
-                        "Native: ShowUI=1 (диалог драйвера), NATIVEXFER", true);
+                    return Make(true, false, Case.Kind.ImageInfoThenPending,
+                        "Native: ShowUI=1 (диалог драйвера), IMAGEINFO → PENDINGXFERS → NATIVEXFER", true);
                 default:
                     return null;
             }
@@ -87,6 +88,11 @@ namespace Kite2.Probe
 
     internal static class Experiment
     {
+        // Путь журнала и номер сценария — нужны, чтобы сохранить полученную
+        // страницу рядом с журналом.
+        internal static string LogPath = string.Empty;
+        internal static int LogIndex;
+
         // Аргументы exp: idx, wallMs, logPath; необязательный фильтр источника.
         public static int Run(string[] args)
         {
@@ -94,6 +100,8 @@ namespace Kite2.Probe
             int wall = int.Parse(args[2]);
             string logPath = args[3];
             string filter = args.Length > 4 ? args[4] : string.Empty;
+            LogPath = logPath;
+            LogIndex = idx;
 
             var caseInfo = Cases.Get(idx);
             if (caseInfo == null)
@@ -237,7 +245,8 @@ namespace Kite2.Probe
                 WatchCaps(log, caseInfo.NewDsm, app, ds);
                 WatchXferGroup(log, caseInfo.NewDsm, app, ds);
                 SetXferMech(log, caseInfo.NewDsm, app, ds, caseInfo.Memory ? Twsx.Memory : Twsx.Native);
-                SetXferCount(log, caseInfo.NewDsm, app, ds);
+                // CAP_XFERCOUNT драйвер Kyocera не принимает (TWRC_FAILURE) —
+                // оставляем его собственный счётчик, а не ломаем включение.
                 if (caseInfo.Memory)
                 {
                     var setup = new TWSetupMemXfer { MinBufSize = 8192, MaxBufSize = 1048576, DesiredBytes = 1048576 };
@@ -651,18 +660,67 @@ namespace Kite2.Probe
             ushort rc = Dsm.ImageNativeXfer(newDsm, app, ds, out h);
             if ((rc == TwRc.Success || rc == TwRc.XferDone) && h != IntPtr.Zero)
             {
-                int biSize = Marshal.ReadInt32(h, 0);
-                long biWidth = Marshal.ReadInt32(h, 4);
-                long biHeight = Marshal.ReadInt32(h, 8);
-                log.Info("   {0} за {1:N0} мс: DIB {2}×{3} (biSize {4}) — страница есть",
-                    TwRc.Name(rc), sw.ElapsedMilliseconds, biWidth, Math.Abs(biHeight), biSize);
-                Native32.GlobalFree(h);
+                IntPtr p = Native32.GlobalLock(h);
+                if (p == IntPtr.Zero)
+                {
+                    log.Info("   {0} за {1:N0} мс: хэндл {2:X} есть, но GlobalLock не удался",
+                        TwRc.Name(rc), sw.ElapsedMilliseconds, h.ToInt64());
+                    LogStatus(log, newDsm, app, ds);
+                    return;
+                }
+                int biSize = Marshal.ReadInt32(p, 0);
+                int biWidth = Marshal.ReadInt32(p, 4);
+                int biHeight = Marshal.ReadInt32(p, 8);
+                ushort biBitCount = (ushort)Marshal.ReadInt16(p, 14);
+                log.Info("   {0} за {1:N0} мс: DIB {2}×{3} (biSize {4}, бит {5}) — страница есть",
+                    TwRc.Name(rc), sw.ElapsedMilliseconds, biWidth, Math.Abs(biHeight), biSize, biBitCount);
+                SaveBmp(log, h, p, biSize, biWidth, biHeight);
+                Native32.GlobalUnlock(h);
+                try { Native32.GlobalFree(h); } catch { }
                 state.Delivered = true;
                 return;
             }
 
-            log.Info("   {0} за {1:N0} мс — страницы нет", TwRc.Name(rc), sw.ElapsedMilliseconds);
+            log.Info("   {0} за {1:N0} мс — страницы нет (хэндл {2})",
+                TwRc.Name(rc), sw.ElapsedMilliseconds, h.ToInt64());
             LogStatus(log, newDsm, app, ds);
+        }
+
+        // Сохраняем полученный DIB в файл рядом с журналом: это главное
+        // доказательство, что канал передачи работает.
+        private static void SaveBmp(LineLog log, IntPtr handle, IntPtr dib, int biSize, int width, int height)
+        {
+            try
+            {
+                int bpp = 24;
+                try { bpp = Marshal.ReadInt16(dib, 14); } catch { }
+                int stride = ((width * bpp + 31) / 32) * 4;
+                int pixels = Math.Abs(height) * stride;
+                int total = biSize + pixels;
+
+                string dir = Path.GetDirectoryName(LogPath);
+                string path = Path.Combine(dir ?? ".", "page" + (LogIndex.ToString("00")) + ".bmp");
+
+                using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write))
+                using (var w = new BinaryWriter(fs))
+                {
+                    w.Write((byte)'B');
+                    w.Write((byte)'M');
+                    w.Write(14 + total);
+                    w.Write((short)0);
+                    w.Write((short)0);
+                    w.Write(14 + biSize);
+
+                    var buf = new byte[Math.Min(total, 64 * 1024 * 1024)];
+                    Marshal.Copy(dib, buf, 0, total);
+                    w.Write(buf);
+                }
+                log.Info("   страница сохранена: {0} ({1:N0} байт)", path, (long)total);
+            }
+            catch (Exception ex)
+            {
+                log.Info("   страницу сохранить не удалось: {0}", ex.Message);
+            }
         }
 
         private static void DoMemoryTransfer(LineLog log, bool newDsm, TWIdentity app, TWIdentity ds, HandshakeState state)
