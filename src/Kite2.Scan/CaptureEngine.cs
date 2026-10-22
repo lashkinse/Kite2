@@ -310,18 +310,17 @@ namespace Kite2.Scan
                 TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
 
                 // Kyocera TWAIN(2) — особый случай: на нём и NAPS2, и тихий
-                // режим драйвера ведут себя плохо (проверено обследователем:
-                // без окна драйвера движок сканирование не начинает, а с
-                // окном отдаёт страницу сразу). Поэтому сначала идёт наш
-                // собственный клиент TWAIN: тихо, а если готовности нет — с
-                // родным окном драйвера, где сканирование запускает человек.
+                // режим драйвера ведут себя плохо. Сканирование ведёт сам
+                // драйвер в своём окне: человек жмёт «Скан», драйвер берёт
+                // всю пачку листов. Поэтому первым идёт наш клиент с родным
+                // окном драйвера; тихие варианты — запасные.
                 if (IsKyocera(source))
                 {
+                    attempts.Add(KyoceraTwainAttempt(source.Device, true));
                     attempts.Add(KyoceraTwainAttempt(source.Device, false));
                     // Запасной путь: без DAT_PENDINGXFERS (на этом драйвере он
                     // срывает процесс), тоже тихо.
                     attempts.Add(KyoceraTwainAttempt(source.Device, false, skipPending: true));
-                    attempts.Add(KyoceraTwainAttempt(source.Device, true));
                     attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
                     attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
                     attempts[3].Wall = TimeSpan.FromSeconds(105);
