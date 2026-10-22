@@ -18,12 +18,25 @@ namespace Kite2.Scan
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
+        // Падение фонового помощника (например, срыв уборки в драйвере)
+        // не должно выкатывать пользователю системный диалог Windows
+        // «программа завершилась с ошибкой»: результат докладывается
+        // в файле ответа, а окно с ошибкой только пугает и висит поверх
+        // всего, пока человек его не закроет — по два таких окна на захват.
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern uint SetErrorMode(uint newMode);
+
+        private const uint SemFailCriticalErrors = 0x0001;
+        private const uint SemNoGpFaultErrorBox = 0x0002;
+
         // STA обязан остаться: и TWAIN, и WIA общаются с процессом COM-сообщениями,
         // которые без STA не доставляются.
         [STAThread]
         private static async Task<int> Main(string[] args)
         {
             HelperLogging.Initialize();
+
+            SetErrorMode(SemFailCriticalErrors | SemNoGpFaultErrorBox);
 
             Log.Info("Помощник, версия {0}", typeof(Program).Assembly.GetName().Version);
 

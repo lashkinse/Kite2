@@ -9,10 +9,11 @@
 //   OPENDSM (родитель — наше скрытое окно верхнего уровня)
 //   → OPENDS → регистрация DAT_CALLBACK2
 //   → SET ICAP_XFERMECH = native (контейнер OneValue)
-//   → ENABLEDS с ShowUI=1 (родное окно драйвера)
+//   → ENABLEDS с ShowUI=0 (тихий режим работает, окно драйвера не нужно)
 //   → ждём MSG_XFERREADY (приходит в колбэк диспетчера)
 //   → DAT_IMAGEINFO → DAT_PENDINGXFERS → DAT_IMAGENATIVEXFER
-//   → MSG_ENDXFER → MSG_DISABLEDS → MSG_CLOSEDS → MSG_CLOSEDSM.
+//   → MSG_ENDXFER → MSG_DISABLEDS. Закрытие источника (MSG_CLOSEDS)
+//     на этом драйвере рвёт процесс, поэтому его не вызываем вовсе.
 //
 // Важные подробности, найденные по следам:
 //   * контейнеры кап пишутся как OneValue (в DSM 2.x OneValue = 5, Range = 6);
@@ -229,8 +230,11 @@ namespace Kite2.Scan.Twain
         }
 
         // Закрыть источник и диспетчер. Вызывается после того, как ответ
-        // родителю уже записан: драйвер на закрытии может сорвать процесс,
-        // и тогда ответ всё равно должен дойти.
+        // родителю уже записан: MSG_CLOSEDS на этом драйвере рвёт процесс
+        // (сбой доступа к памяти внутри DSM_Entry), поэтому закрытие не
+        // вызываем вовсе. Процесс и так завершается сразу после: Windows
+        // выгружает драйвер вместе с процессом и освобождает его поименованный
+        // мьютекс, а MSG_DISABLEDS заранее останавливает двигатель сканера.
         public static void Close()
         {
             if (_app == null || _ds == null)
@@ -239,13 +243,11 @@ namespace Kite2.Scan.Twain
             try
             {
                 Dsm.Call(true, _app, _ds, Dg.Control, Dat.UserInterface, Msg.DisableDS, new TWUserInterface());
-                Dsm.Call(true, _app, null, Dg.Control, Dat.Identity, Msg.CloseDS, _ds);
-                CallWithHwnd(_app, Msg.CloseDSM, IntPtr.Zero);
-                Log.Info("Kyocera: источник и диспетчер закрыты");
+                Log.Info("Kyocera: источник отключён; закрытие не вызываем — оно рвёт процесс");
             }
             catch (Exception ex)
             {
-                Log.Warn("Kyocera: уборка не удалась: {0}", ex.Message);
+                Log.Warn("Kyocera: отключение источника не удалось: {0}", ex.Message);
             }
             finally
             {
