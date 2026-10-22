@@ -139,6 +139,10 @@ namespace Kite2.Scan
                                 null);
                             code = 1;
                         }
+
+                        // Уборка - после ответа: закрытие источника на этом
+                        // драйвере срывает процесс, а ответ должен дойти.
+                        KyoceraTwainScanner.Close();
                     }
                     else
                     {

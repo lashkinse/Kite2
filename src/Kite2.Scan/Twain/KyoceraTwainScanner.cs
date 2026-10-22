@@ -36,6 +36,10 @@ namespace Kite2.Scan.Twain
         // Имя источника по каталогу: если задан, берём именно его.
         private static string _wantedSource;
 
+        // Открытый источник и диспетчер: нужны для уборки после записи ответа.
+        private static TWIdentity _app;
+        private static TWIdentity _ds;
+
         // Страницы, полученные этим клиентом.
         public static System.Collections.Generic.List<string> Pages { get; } =
             new System.Collections.Generic.List<string>();
@@ -97,6 +101,10 @@ namespace Kite2.Scan.Twain
                 Log.Info("Kyocera: MSG_OPENDS: {0}", TwRc.Name(rc));
                 if (rc != TwRc.Success)
                     return null;
+
+                // Запомним для уборки: она пойдёт после записи ответа.
+                _app = app;
+                _ds = ds;
 
                 // 4. Колбэк: в него диспетчер приносит MSG_XFERREADY.
                 rc = Dsm.Call(true, app, ds, Dg.Control, Dat.Callback2, Msg.RegisterCallback,
@@ -213,19 +221,36 @@ namespace Kite2.Scan.Twain
             }
             finally
             {
-                // Уборка: закрыть источник и диспетчер, чтобы драйвер не остался
-                // включённым (иначе следующая попытка стартует с заблокированного
-                // состояния).
-                try
-                {
-                    Dsm.Call(true, app, ds, Dg.Control, Dat.UserInterface, Msg.DisableDS, new TWUserInterface());
-                    Dsm.Call(true, app, null, Dg.Control, Dat.Identity, Msg.CloseDS, ds);
-                    CallWithHwnd(app, Msg.CloseDSM, IntPtr.Zero);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("Kyocera: уборка не удалась: {0}", ex.Message);
-                }
+                // Уборку источника делаем НЕ здесь: на этом драйвере
+                // MSG_CLOSEDS срывает процесс, а ответ родителю должен быть
+                // записан раньше. Поэтому уборка вынесена в Close() и идёт
+                // после записи ответа.
+            }
+        }
+
+        // Закрыть источник и диспетчер. Вызывается после того, как ответ
+        // родителю уже записан: драйвер на закрытии может сорвать процесс,
+        // и тогда ответ всё равно должен дойти.
+        public static void Close()
+        {
+            if (_app == null || _ds == null)
+                return;
+
+            try
+            {
+                Dsm.Call(true, _app, _ds, Dg.Control, Dat.UserInterface, Msg.DisableDS, new TWUserInterface());
+                Dsm.Call(true, _app, null, Dg.Control, Dat.Identity, Msg.CloseDS, _ds);
+                CallWithHwnd(_app, Msg.CloseDSM, IntPtr.Zero);
+                Log.Info("Kyocera: источник и диспетчер закрыты");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Kyocera: уборка не удалась: {0}", ex.Message);
+            }
+            finally
+            {
+                _app = null;
+                _ds = null;
             }
         }
 
