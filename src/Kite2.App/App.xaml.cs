@@ -25,6 +25,12 @@ namespace Kite2.App
             Logging.Initialize(e.Args);
             Logging.CatchBackgroundFailures();
 
+            // Отрисовка только софтом: у части видеокарт WPF рисует артефактами —
+            // окно время от времени «слепнет», и видно его лишь после сворачивания
+            // и разворачивания. Программная отрисовка это глушит, а интерфейсу
+            // программы скорости видеокарты и не нужно.
+            RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
+
             // Тестовый режим включается ключом запуска: страницы рисует программа.
             bool testMode = FakeScanner.EnableFromArguments(e.Args);
 
