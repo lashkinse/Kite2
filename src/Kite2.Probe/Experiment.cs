@@ -100,6 +100,19 @@ namespace Kite2.Probe
                 return 4;
 
             var log = new LineLog(logPath);
+            // Ловим необработанные сбои управляемого кода: иначе ребёнок
+            // молча умирает, и в отчёте остаётся только «код выхода».
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+            {
+                try
+                {
+                    var ex = e.ExceptionObject as Exception;
+                    log.Info("НЕОБРАБОТАННЫЙ СБОЙ: {0}", ex != null ? ex.ToString() : e.ExceptionObject);
+                    if (ex != null && ex.InnerException != null)
+                        log.Info("внутренний сбой: {0}", ex.InnerException);
+                }
+                catch { }
+            };
             log.Info("Эксперимент {0}: {1}", idx, caseInfo.Title);
             log.Info("DSM: {0}; передача: {1}; поводок {2} с",
                 caseInfo.NewDsm ? "новый (twaindsm.dll)" : "старый (twain_32.dll)",
@@ -263,6 +276,7 @@ namespace Kite2.Probe
                     sw.Restart();
                     int left = wall - (int)sw.ElapsedMilliseconds;
                     bool ok = WaitReady(caseInfo.NewDsm, app, ds, pump, log, Math.Max(15000, left), dsmAppMsg);
+                    log.Info("итог по оконным сообщениям: {0}", pump.NoiseSummary());
                     if (!ok)
                     {
                         log.Info("XferReady не пришёл за {0:N1} с", sw.Elapsed.TotalSeconds);
@@ -364,6 +378,7 @@ namespace Kite2.Probe
                 try
                 {
                     log.Info("{0}: {1}", name, DescribeCap(p, capObj.ConType));
+                    log.Info("{0}: сырой контейнер: {1}", name, DumpBytes(p, 48));
                 }
                 finally
                 {
@@ -374,6 +389,23 @@ namespace Kite2.Probe
             {
                 WinMem.Free(h);
             }
+        }
+
+        // Сырые байты контейнера: показывает, действительно ли диспетчер
+        // положил значения в наш буфер или оставил его пустым.
+        private static string DumpBytes(IntPtr p, int count)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < count; i += 16)
+            {
+                sb.Append("  +").Append(i.ToString("00")).Append(": ");
+                for (int k = 0; k < 16; k++)
+                {
+                    byte b = Marshal.ReadByte(p, i + k);
+                    sb.Append(b.ToString("X2")).Append(' ');
+                }
+            }
+            return sb.ToString();
         }
 
         private static void WatchXferGroup(LineLog log, bool newDsm, TWIdentity app, TWIdentity ds)
@@ -771,15 +803,23 @@ namespace Kite2.Probe
                         Marshal.StructureToPtr(raw, evBuf, false);
                         var ev = new TWEvent { PEvent = evBuf };
                         ushort rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Event, Msg.ProcessEvent, ev);
-                        string verdict = rc == TwRc.DSEvent
-                            ? "DSEVENT, TwMessage=" + MessageName(ev.TwMessage)
-                            : TwRc.Name(rc);
-                        log.Info("EVENT PROC msg 0x{0:X4}: {1}", m.Message, verdict);
-                        if (rc == TwRc.DSEvent)
+                        // DSM на ветке legacy отвечает DSEVENT с TwMessage=NULL
+                        // практически на каждое оконное сообщение. Готовностью
+                        // считаем только XferReady/CloseDSReq — иначе пробник
+                        // уходил в передачу в неправильном состоянии.
+                        bool ready = rc == TwRc.DSEvent
+                            && (ev.TwMessage == Msg.XferReady || ev.TwMessage == Msg.CloseDSReq);
+                        if (pump.AllowLog(m.Message))
+                        {
+                            string verdict = rc == TwRc.DSEvent
+                                ? "DSEVENT, TwMessage=" + MessageName(ev.TwMessage)
+                                : TwRc.Name(rc);
+                            log.Info("EVENT PROC msg 0x{0:X4}: {1}", m.Message, verdict);
+                        }
+                        if (ready)
                         {
                             Dsm.Messages.Push(ev.TwMessage);
-                            if (ev.TwMessage == Msg.XferReady || ev.TwMessage == Msg.CloseDSReq)
-                                stop = true; // ход прерывается, стоп прокачки
+                            stop = true; // ход прерывается, стоп прокачки
                         }
                     }
                     finally

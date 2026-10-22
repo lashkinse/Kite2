@@ -170,6 +170,8 @@ namespace Kite2.Probe
 
                 report.AppendLine("━━━ Эксперимент " + idx + ": " + caseInfo.Title + " ━━━");
                 report.AppendLine("вердикт: " + verdictLabel + "; длительность " + dt.TotalSeconds.ToString("N0") + " с");
+                if (!killed)
+                    report.AppendLine("код выхода ребёнка: " + verdict + " (0x" + unchecked((uint)verdict).ToString("X8") + ")");
                 if (File.Exists(logPath))
                     report.AppendLine();
                 if (File.Exists(logPath))
@@ -234,7 +236,15 @@ namespace Kite2.Probe
                 case 1: return "передача не удалась (вернулся без страницы)";
                 case 2: return "готовности нет или открытие не состоялось";
                 case 4: return "нет такого сценария";
-                default: return "УБИТ ПО ПОВОДКУ — процесс висел; где именно: снимок стеков expNN.stacks.txt";
+                case -1: return "УБИТ ПО ПОВОДКУ — процесс висел; где именно: снимок стеков expNN.stacks.txt";
+                default:
+                    // Остальное — ребёнок умер сам: код выхода Windows.
+                    // 0xC0000005 (3221225477 / -1073741819) — нарушение доступа.
+                    uint code = unchecked((uint)verdict);
+                    if ((code & 0xC0000000u) == 0xC0000000u)
+                        return "РЕБЁНОК УПАЛ САМ — сбой в коде драйвера/диспетчера (код 0x"
+                            + code.ToString("X8") + ")";
+                    return "РЕБЁНОК УПАЛ САМ (код выхода " + verdict + ")";
             }
         }
     }

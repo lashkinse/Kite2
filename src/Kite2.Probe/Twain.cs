@@ -133,7 +133,8 @@ namespace Kite2.Probe
         public const ushort ICapXResolution = 4376;
         public const ushort ICapYResolution = 4377;
         public const ushort ICapSupportedSizes = 4386;
-        public const ushort ICapBitDepth = 4387;
+        public const ushort ICapThreshold = 4387;
+        public const ushort ICapBitDepth = 4395;   // не 4387 — это ICapThreshold
     }
 
     internal static class TwTy
@@ -150,10 +151,14 @@ namespace Kite2.Probe
 
     internal static class TwOn
     {
-        public const ushort Range = 1;
+        // Значения TWON в том виде, в каком их понимает наш DSM (2.x) и
+        // вендоренный NTwain: Array=3, Enum=4, OneValue=5, Range=6.
+        // Раньше здесь стояло OneValue=6 — драйвер принимал наш контейнер
+        // за TW_RANGE и писал в него 22 байта вместо 6 (порча кучи).
         public const ushort Array = 3;
         public const ushort Enum = 4;
-        public const ushort OneValue = 6;
+        public const ushort OneValue = 5;
+        public const ushort Range = 6;
         public const ushort DontCare8 = 255;
         public const ushort DontCare16 = 65535;
     }

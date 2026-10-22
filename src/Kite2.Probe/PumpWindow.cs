@@ -23,6 +23,40 @@ namespace Kite2.Probe
         /// </summary>
         public bool PumpAll { get; set; }
 
+        // Счётчик однотипных сообщений: окно драйвера шлёт сотни WM_PAINT и
+        // WM_MOUSEMOVE, из-за них журнал разрастался на тысячи строк.
+        private readonly System.Collections.Generic.Dictionary<uint, int> _msgCounts =
+            new System.Collections.Generic.Dictionary<uint, int>();
+        private int _msgTotal;
+        private int _msgLogged;
+
+        /// <summary>
+        /// Стоит ли печатать это сообщение в журнал: первые три однотипных —
+        /// да, дальше молчим (итог пишется в конце).
+        /// </summary>
+        public bool AllowLog(uint msg)
+        {
+            _msgTotal++;
+            int n;
+            _msgCounts.TryGetValue(msg, out n);
+            n++;
+            _msgCounts[msg] = n;
+            if (n <= 3)
+            {
+                _msgLogged++;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>Итог по подавленному шуму оконных сообщений.</summary>
+        public string NoiseSummary()
+        {
+            if (_msgTotal == 0)
+                return "оконных сообщений не было";
+            return "оконных сообщений всего " + _msgTotal + ", в журнал попало " + _msgLogged;
+        }
+
         public PumpWindow(LineLog log)
         {
             _log = log;
@@ -75,7 +109,8 @@ namespace Kite2.Probe
             IntPtr filter = PumpAll ? IntPtr.Zero : _hwnd;
             while (Native32.PeekMessageW(out var m, filter, 0, 0, race | 1))
             {
-                _log.Info("окно ← msg 0x{0:X4} wp 0x{1:X} lp 0x{2:X}", m.Message, m.WParam.ToInt64(), m.LParam.ToInt64());
+                if (AllowLog(m.Message))
+                    _log.Info("окно ← msg 0x{0:X4} wp 0x{1:X} lp 0x{2:X}", m.Message, m.WParam.ToInt64(), m.LParam.ToInt64());
                 Native32.TranslateMessage(ref m);
                 Native32.DispatchMessage(ref m);
                 if (visitor(m))
