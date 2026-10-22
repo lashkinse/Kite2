@@ -32,7 +32,7 @@ namespace Kite2.Scan
         private static readonly TimeSpan ListingWait = TimeSpan.FromSeconds(10);
         // Стенка на всю попытку: таймер тишины доходит до итератора только между
         // страницами, а молчаливый драйвер может зависнуть внутри вызова TWAIN —
-        // без стенки попытка висела бы часами (Kyocera TWAIN молчала 15 минут
+        // без стенки попытка висела бы часами (Kyocera TWAIN(2) молчала 15 минут
         // в twain_32 и без результата на новом диспетчере).
         // Стенка родителя длиннее детской тишины (150 с): иначе попытку гасит
         // родитель, не дав детской отмене сработать и донести состояние.
@@ -131,7 +131,7 @@ namespace Kite2.Scan
             throw new InvalidOperationException(lastFailure ?? "Сканер не отдал ни одной страницы.");
         }
 
-        // Одна TWAIN-попытка в дочернем процессе: Kyocera TWAIN виснет на
+        // Одна TWAIN-попытка в дочернем процессе: Kyocera TWAIN(2) виснет на
         // повторном открытии диспетчера в том же процессе, а свежий процесс
         // диспетчер для себя открывает с чистого листа. Страницы пишутся прямо
         // в каталог серии — их жизнь не зависит от жизни процессов.
@@ -216,7 +216,7 @@ namespace Kite2.Scan
             {
                 // Каждая TWAIN-версия счастливо увидит свои устройства; если новый
                 // диспетчер уже что-то нашёл, старая — это чистая трата времени:
-                // молчаливый twain_32 отделялся на 10 с (Kyocera TWAIN).
+                // молчаливый twain_32 отделялся на 10 с (Kyocera TWAIN(2)).
                 if (options.Driver == Driver.Twain && options.TwainOptions.Dsm == TwainDsm.Old
                     && sources.Any(s => s.Device.Driver == Driver.Twain))
                     continue;
@@ -254,19 +254,12 @@ namespace Kite2.Scan
 
                 var devices = await ListDevices(controller, options);
 
-                foreach (ScanDevice device in devices)
+                foreach (ScanDevice device in devices.Where(device => sources.All(known => known.Name != device.Name)))
                 {
-                    // Имя для пользователя — без пометки второй копии в системе
-                    // (драйвер Kyocera так и называется: «Kyocera TWAIN»).
-                    string name = SourceName(device, options);
-
-                    if (sources.Any(known => known.Name == name))
-                        continue;
-
                     sources.Add(new CatalogSource
                     {
                         Index = sources.Count,
-                        Name = name,
+                        Name = device.Name,
                         Device = device,
                         WiaVersion = options.Driver == Driver.Wia ? options.WiaOptions.WiaApiVersion : default,
                         TwainDsm = options.Driver == Driver.Twain ? options.TwainOptions.Dsm : TwainDsm.Old
@@ -281,38 +274,6 @@ namespace Kite2.Scan
                 // ошибка только если не осталось ни одного способа найти сканер.
                 Log.Warn("Список {0} не получен: {1}", label, ex.Message);
             }
-        }
-
-        // Имя источника для человека. Реестр TWAIN (и сам драйвер Kyocera)
-        // помечает повторную установку хвостом «(2)» — это копия в системе,
-        // а не часть названия, поэтому хвост убираем: «Kyocera TWAIN».
-        // Само устройство NAPS2 при этом сохраняет имя как есть — по нему
-        // помощник выбирает нужный источник.
-        private static string SourceName(ScanDevice device, ScanOptions options) =>
-            options.Driver == Driver.Twain ? WithoutCopyMark(device.Name) : device.Name;
-
-        private static string WithoutCopyMark(string name)
-        {
-            if (string.IsNullOrEmpty(name))
-                return name;
-
-            int open = name.LastIndexOf('(');
-
-            if (open <= 0 || !name.EndsWith(")", StringComparison.Ordinal))
-                return name;
-
-            string tail = name.Substring(open + 1, name.Length - open - 2);
-
-            if (tail.Length == 0)
-                return name;
-
-            foreach (char digit in tail)
-            {
-                if (digit < '0' || digit > '9')
-                    return name;
-            }
-
-            return name.Substring(0, open).TrimEnd();
         }
 
         private static string OptionsLabel(ScanOptions options) =>
@@ -348,7 +309,7 @@ namespace Kite2.Scan
                 TwainDsm first = source.TwainDsm == TwainDsm.New ? TwainDsm.New : TwainDsm.Old;
                 TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
 
-                // Kyocera TWAIN — особый случай: на нём и NAPS2, и тихий
+                // Kyocera TWAIN(2) — особый случай: на нём и NAPS2, и тихий
                 // режим драйвера ведут себя плохо (проверено обследователем:
                 // без окна драйвера движок сканирование не начинает, а с
                 // окном отдаёт страницу сразу). Поэтому сначала идёт наш
@@ -424,7 +385,7 @@ namespace Kite2.Scan
             };
         }
 
-        // Kyocera TWAIN: захват ведёт наш собственный клиент TWAIN.
+        // Kyocera TWAIN(2): захват ведёт наш собственный клиент TWAIN.
         // Тихий вариант (без окна) идёт первым, вариант с родным окном
         // драйвера — следом: там сканирование запускает человек.
         private static ScanAttempt KyoceraTwainAttempt(ScanDevice device, bool withWindow, bool skipPending = false)
