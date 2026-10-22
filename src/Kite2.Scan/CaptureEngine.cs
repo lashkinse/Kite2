@@ -667,6 +667,13 @@ namespace Kite2.Scan
         {
             await Task.Run(() => child.Process.WaitForExit());
 
+            // Код выхода отличает падение (например, 0xC0000005) от штатного
+            // завершения: без него «ребёнок умер без ответа» остаётся загадкой.
+            Log.Info(
+                "Дочерний процесс завершился, код 0x{0:X8}, ответ {1}",
+                child.Process.ExitCode,
+                File.Exists(child.ResponsePath) ? "есть" : "отсутствует");
+
             if (chapter.Abandoned)
                 return;
 
