@@ -192,6 +192,10 @@ namespace Kite2.Scan
             public bool NativeUi;
             public string Title;
 
+            // Kyocera: 0 — обычный путь NAPS2, 1 — наш клиент TWAIN тихо,
+            // 2 — наш клиент TWAIN с родным окном драйвера.
+            public int KyoceraClient;
+
             // Стенка попытки; null — общий AttemptWall.
             public TimeSpan? Wall;
         }
@@ -302,6 +306,23 @@ namespace Kite2.Scan
                 TwainDsm first = source.TwainDsm == TwainDsm.New ? TwainDsm.New : TwainDsm.Old;
                 TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
 
+                // Kyocera TWAIN(2) — особый случай: на нём и NAPS2, и тихий
+                // режим драйвера ведут себя плохо (проверено обследователем:
+                // без окна драйвера движок сканирование не начинает, а с
+                // окном отдаёт страницу сразу). Поэтому сначала идёт наш
+                // собственный клиент TWAIN: тихо, а если готовности нет — с
+                // родным окном драйвера, где сканирование запускает человек.
+                if (IsKyocera(source))
+                {
+                    attempts.Add(KyoceraTwainAttempt(source.Device, false));
+                    attempts.Add(KyoceraTwainAttempt(source.Device, true));
+                    attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
+                    attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
+                    attempts[2].Wall = TimeSpan.FromSeconds(105);
+                    attempts[3].Wall = TimeSpan.FromSeconds(105);
+                    return attempts;
+                }
+
                 // Нативная передача первой: NAPS2 ради этой же болезни Kyocera
                 // (молчание после XferReady, issue #577) с 8.1.3 переключает
                 // Ecosys с памяти на нативный режим и подтверждает результат
@@ -357,6 +378,30 @@ namespace Kite2.Scan
                 Title = "TWAIN (родное окно драйвера, " + dispatcher + ")"
             };
         }
+
+        // Kyocera TWAIN(2): захват ведёт наш собственный клиент TWAIN.
+        // Тихий вариант (без окна) идёт первым, вариант с родным окном
+        // драйвера — следом: там сканирование запускает человек.
+        private static ScanAttempt KyoceraTwainAttempt(ScanDevice device, bool withWindow)
+        {
+            return new ScanAttempt
+            {
+                Driver = Driver.Twain,
+                Device = device,
+                Mode = TwainTransferMode.Native,
+                NativeUi = withWindow,
+                KyoceraClient = withWindow ? 2 : 1,
+                Wall = withWindow ? NativeUiWall : TimeSpan.FromSeconds(90),
+                Title = withWindow
+                    ? "TWAIN Kyocera (родное окно драйвера)"
+                    : "TWAIN Kyocera (тихий режим)"
+            };
+        }
+
+        // Kyocera ли это устройство: у них свой порядок работы с драйвером.
+        private static bool IsKyocera(CatalogSource source) =>
+            (source.Device.Name ?? string.Empty).IndexOf("KYOCERA", StringComparison.OrdinalIgnoreCase) >= 0
+            || (source.Name ?? string.Empty).IndexOf("KYOCERA", StringComparison.OrdinalIgnoreCase) >= 0;
 
         private static ScanAttempt TwainAttempt(ScanDevice device, TwainDsm dsm, TwainTransferMode mode)
         {
@@ -558,7 +603,7 @@ namespace Kite2.Scan
 
                 string arguments = string.Format(
                     CultureInfo.InvariantCulture,
-                    "twain {0} {1} {2} {3} {4} \"{5}\" \"{6}\" {7} {8} \"{9}\"",
+                    "twain {0} {1} {2} {3} {4} \"{5}\" \"{6}\" {7} {8} {9} \"{10}\"",
                     (int)attempt.Dsm,
                     (int)attempt.Mode,
                     dpi,
@@ -567,6 +612,7 @@ namespace Kite2.Scan
                     directory,
                     attempt.Device.Name,
                     attempt.NativeUi ? 1 : 0,
+                    attempt.KyoceraClient,
                     self.Id,
                     responsePath);
 
@@ -581,8 +627,8 @@ namespace Kite2.Scan
                 };
 
                 Log.Info(
-                    "Попытка TWAIN идёт в отдельном процессе: диспетчер={0}, режим={1}",
-                    attempt.Dsm, attempt.Mode);
+                    "Попытка TWAIN идёт в отдельном процессе: диспетчер={0}, режим={1}, клиент={2}",
+                    attempt.Dsm, attempt.Mode, attempt.KyoceraClient);
 
                 return child;
             }

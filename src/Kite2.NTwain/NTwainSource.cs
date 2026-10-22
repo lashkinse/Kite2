@@ -9712,6 +9712,11 @@ namespace NTwain.Triplets
 	/// </summary>
 	internal sealed class PendingXfers : TripletBase
 	{
+		// Kyocera: спек-легальный DAT_IMAGEINFO перед первым DAT_PENDINGXFERS.
+		// Флаг живёт здесь: объект PendingXfers создаётся на сессию, поэтому
+		// проба получается один раз за сессию.
+		private bool _kyoceraImageInfoProbed;
+
 		internal PendingXfers(ITwainSessionInternal session)
 			: base(session)
 		{
@@ -9742,7 +9747,53 @@ namespace NTwain.Triplets
 		public ReturnCode Get(TWPendingXfers pendingXfers)
 		{
 			Session.VerifyState(4, 7, DataGroups.Control, DataArgumentType.PendingXfers, NTwain.Data.Message.Get);
+
+			// Kyocera TWAIN(2) на первом DAT_PENDINGXFERS/MSG_GET виснет навсегда
+			// (проверено обследователем на машине пользователя: окно приложения
+			// получает MSG_XFERREADY, а PendingXfers не возвращается). Перед ним
+			// нужен спек-легальный DAT_IMAGEINFO/MSG_GET — с ним тот же драйвер
+			// отдаёт страницу сразу. Проба касается только Kyocera и только
+			// состояния 6 (готовность принята, можно брать изображение).
+			TryKyoceraImageInfo();
+
 			return Dsm.DsmEntry(Session.AppId, Session.CurrentSource.Identity, NTwain.Data.Message.Get, pendingXfers);
+		}
+
+		// Проба для Kyocera: один раз за сессию читаем DAT_IMAGEINFO, чтобы
+		// драйвер «проснулся» перед PendingXfers. Ошибка пробы не важна —
+		// настоящий звонок идёт следом и отвечает как обычно.
+		private void TryKyoceraImageInfo()
+		{
+			if (_kyoceraImageInfoProbed || Session.State != 6)
+			{
+				return;
+			}
+
+			string maker = Session.CurrentSource?.Identity?.Manufacturer ?? string.Empty;
+			string name = Session.CurrentSource?.Identity?.ProductName ?? string.Empty;
+
+			if (maker.IndexOf("KYOCERA", StringComparison.OrdinalIgnoreCase) < 0
+				&& name.IndexOf("KYOCERA", StringComparison.OrdinalIgnoreCase) < 0)
+			{
+				return;
+			}
+
+			_kyoceraImageInfoProbed = true;
+
+			try
+			{
+				PlatformInfo.Current.Log.Debug("NAPS2.TW - Kyocera probe: DAT_IMAGEINFO before PendingXfers");
+				if (Session.DGImage.ImageInfo.Get(out TWImageInfo info) == ReturnCode.Success)
+				{
+					PlatformInfo.Current.Log.Debug(
+						"NAPS2.TW - Kyocera probe: DAT_IMAGEINFO ok: {0}x{1}, bpp {2}",
+						info.ImageWidth, info.ImageLength, info.BitsPerPixel);
+				}
+			}
+			catch (Exception error)
+			{
+				PlatformInfo.Current.Log.Debug("NAPS2.TW - Kyocera probe failed: {0}", error.Message);
+			}
 		}
 
 		/// <summary>

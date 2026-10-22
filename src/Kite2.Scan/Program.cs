@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Kite2.ScanProtocol;
+using Kite2.Scan.Twain;
 using NLog;
 
 namespace Kite2.Scan
@@ -88,43 +89,83 @@ namespace Kite2.Scan
                     Log.Info("Захват завершён, страниц {0}", pages.Count);
                     code = Answer(responsePath, pages);
                 }
-                else if (args[0] == "twain" && args.Length == 11)
+                else if (args[0] == "twain" && args.Length == 12)
                 {
                     Log.Info(
-                        "Команда twain (дочерний процесс): диспетчер={0}, режим={1}, dpi={2}, окно={3}, имя={4}",
-                        args[1], args[2], args[3], args[8], args[7]);
+                        "Команда twain (дочерний процесс): диспетчер={0}, режим={1}, dpi={2}, окно={3}, имя={4}, клиент={5}",
+                        args[1], args[2], args[3], args[8], args[7], args[9]);
 
-                    WatchParent(Number(args[9]));
+                    WatchParent(Number(args[10]));
 
-                    var chapter = await CaptureEngine.TryTwainChild(
-                        Number(args[1]),
-                        Number(args[2]),
-                        Number(args[3]),
-                        Number(args[4]),
-                        args[6],
-                        args[7],
-                        Number(args[5]),
-                        args[8] == "1");
+                    int client = Number(args[9]);
 
-                    if (chapter.Pages.Count > 0)
+                    if (client == 1 || client == 2)
                     {
-                        Log.Info("Дочерний захват готов, страниц {0}", chapter.Pages.Count);
-                        code = Answer(responsePath, chapter.Pages);
+                        // Kyocera: захват ведёт наш собственный клиент TWAIN.
+                        // 1 — тихо (без окна), 2 — с родным окном драйвера,
+                        // где сканирование запускает человек.
+                        Log.Info(
+                            "Команда twain: свой клиент TWAIN, {0}",
+                            client == 2 ? "с родным окном драйвера" : "в тихом режиме");
+
+                        string page = KyoceraTwainScanner.Capture(
+                            args[6],
+                            args[7],
+                            client == 2 ? TimeSpan.FromMinutes(6) : TimeSpan.FromSeconds(90),
+                            client == 2);
+
+                        if (page != null)
+                        {
+                            Log.Info("Захват готов, страниц {0}", KyoceraTwainScanner.Pages.Count);
+                            code = Answer(responsePath, KyoceraTwainScanner.Pages);
+                        }
+                        else
+                        {
+                            Log.Warn("Захват пуст");
+
+                            ScanExchange.Write(
+                                responsePath,
+                                false,
+                                client == 2
+                                    ? "Драйвер Kyocera не отдал страницу: в его окне нужно нажать «Скан»."
+                                    : "Драйвер Kyocera не сообщил о готовности сканирования.",
+                                null,
+                                null);
+                            code = 1;
+                        }
                     }
                     else
                     {
-                        Log.Warn("Дочерний захват пуст: {0}", chapter.Failure);
+                        var chapter = await CaptureEngine.TryTwainChild(
+                            Number(args[1]),
+                            Number(args[2]),
+                            Number(args[3]),
+                            Number(args[4]),
+                            args[6],
+                            args[7],
+                            Number(args[5]),
+                            args[8] == "1");
 
-                        // Ответ и на неудачу: иначе родитель решит, что файла нет.
-                        // Сигнал «данные были готовы» говорит родителю, что стекло
-                        // прошло физически: повторять для него TWAIN-попытки нельзя.
-                        ScanExchange.Write(
-                            responsePath,
-                            false,
-                            chapter.Failure ?? "Сканер не отдал ни одной страницы.",
-                            null,
-                            NTwainLogging.SawTransferReady ? new[] { "xfer" } : null);
-                        code = 1;
+                        if (chapter.Pages.Count > 0)
+                        {
+                            Log.Info("Дочерний захват готов, страниц {0}", chapter.Pages.Count);
+                            code = Answer(responsePath, chapter.Pages);
+                        }
+                        else
+                        {
+                            Log.Warn("Дочерний захват пуст: {0}", chapter.Failure);
+
+                            // Ответ и на неудачу: иначе родитель решит, что файла нет.
+                            // Сигнал «данные были готовы» говорит родителю, что стекло
+                            // прошло физически: повторять для него TWAIN-попытки нельзя.
+                            ScanExchange.Write(
+                                responsePath,
+                                false,
+                                chapter.Failure ?? "Сканер не отдал ни одной страницы.",
+                                null,
+                                NTwainLogging.SawTransferReady ? new[] { "xfer" } : null);
+                            code = 1;
+                        }
                     }
                 }
                 else
