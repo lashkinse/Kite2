@@ -23,7 +23,8 @@ namespace Kite2.App.Services
         // десять секунд, а дальше обновление откладывается до следующего запуска.
         private static readonly TimeSpan NetworkWait = TimeSpan.FromSeconds(10);
 
-        // Запасной вход не ходит через API GitHub: на него лимитов почти нет.
+        // Страница обязательного выпуска: адрес редиректит на последний,
+        // и версия видна прямо в адресе приземления.
         private const string ReleasesLatestUrl =
             "https://github.com/lashkinse/Kite2/releases/latest";
 
@@ -37,71 +38,14 @@ namespace Kite2.App.Services
                 "Kite2",
                 "Update");
 
-        // Ответ проверки: само обновление и признак того, что каталог вообще
-        // ответил. «Обновлений нет» повторов не просит, сеть без ответа — просит.
+        // Ответ проверки: само обновление и признак того, что страница вообще
+        // ответила. «Обновлений нет» повторов не просит, сеть без ответа — просит.
+        // Каталогом через API программа больше не ходит: у того лимит запросов
+        // в час на компьютер, а версию можно увидеть в адресе обычной страницы
+        // выпуска — на неё лимиты не давят.
         public static async Task<(ReleaseCatalog.Entry Update, bool Answered)> Latest()
         {
-            (ReleaseCatalog.Entry Update, bool Answered) byCatalog = await LatestByCatalog();
-
-            // Каталог API GitHub ограничен числом запросов в час на компьютер;
-            // исчерпанный лимит раньше оставлял проверку молча пустой до конца
-            // сеанса. Прямая страница выпуска ходит через обычный сайт, на неё
-            // лимиты API не давят, — на таком запасном входе проверка и живёт.
-            if (!byCatalog.Answered)
-                return await LatestByPage();
-
-            return byCatalog;
-        }
-
-        private static async Task<(ReleaseCatalog.Entry Update, bool Answered)> LatestByCatalog()
-        {
-            try
-            {
-                // Граница общая для всех быстрых повторов: вход в программу
-                // в худшем случае задерживается несильно.
-                using (var wait = new CancellationTokenSource(NetworkWait))
-                {
-                    for (int attempt = 1; ; attempt++)
-                    {
-                        try
-                        {
-                            using (HttpResponseMessage response =
-                                await Http.GetAsync(ReleaseCatalog.ReleasesUrl, wait.Token))
-                            {
-                                response.EnsureSuccessStatusCode();
-
-                                ReleaseCatalog.Entry update = ReleaseCatalog.Latest(await response.Content.ReadAsStringAsync());
-
-                                // Обновлением считается только то, что младше не запущено:
-                                // выпуск совпал с установленной версией — вопроса не будет.
-                                Version current = Assembly.GetEntryAssembly().GetName().Version;
-
-                                if (update != null && current < update.Version)
-                                    return (update, true);
-
-                                return (null, true);
-                            }
-                        }
-                        catch (HttpRequestException) when (attempt < 5)
-                        {
-                            // Быстрый повтор: пауза всегда умещается в общий срок.
-                            await Task.Delay(TimeSpan.FromMilliseconds(500), wait.Token);
-                        }
-                    }
-                }
-            }
-            catch (OperationCanceledException ex)
-            {
-                Log.Debug(ex, "Проверка обновлений прервана по времени");
-
-                return (null, false);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn(ex, "Проверка обновлений не удалась");
-
-                return (null, false);
-            }
+            return await LatestByPage();
         }
 
         // Отмена здесь не нужна: человек сам попросил обновиться и видит плашку,
@@ -201,16 +145,19 @@ namespace Kite2.App.Services
 
         private static string Quote(string value) => "\"" + value + "\"";
 
-        // Запасной вход: обычный сайт вместо API. Адрес обязательного выпуска
-        // (releases/latest) уходит редиректом на страницу самого выпуска, а
-        // версия видна прямо в адресе приземления. Архив складывается из версии:
-        // имя актива всегда ходит в ногу с ней.
+        // Проверка по странице выпуска: обычный сайт вместо API. Адрес
+        // обязательного выпуска (releases/latest) уходит редиректом на страницу
+        // самого выпуска, а версия видна прямо в адресе приземления. Архив
+        // складывается из версии: имя актива всегда ходит в ногу с ней.
         private static async Task<(ReleaseCatalog.Entry Update, bool Answered)> LatestByPage()
         {
             try
             {
+                // Вход в программу ждать нельзя: у страницы десять секунд,
+                // не успела — обновление откладывается до следующего запуска.
+                using (var wait = new CancellationTokenSource(NetworkWait))
                 using (HttpResponseMessage response = await Http.GetAsync(
-                    ReleasesLatestUrl, HttpCompletionOption.ResponseHeadersRead))
+                    ReleasesLatestUrl, HttpCompletionOption.ResponseHeadersRead, wait.Token))
                 {
                     Version version = ReleaseCatalog.ReadVersion(
                         response.RequestMessage.RequestUri?.ToString());
@@ -222,12 +169,25 @@ namespace Kite2.App.Services
                         return (null, false);
                     }
 
-                    Log.Info("Прямая страница выпуска: {0} (каталог API был недоступен)", version);
+                    // Обновлением считается только то, что младше не запущено:
+                    // выпуск совпал с установленной версией — вопроса не будет.
+                    Version current = Assembly.GetEntryAssembly().GetName().Version;
+
+                    if (current >= version)
+                        return (null, true);
+
+                    Log.Info("Актуальный выпуск по странице: {0}", version);
 
                     var update = new ReleaseCatalog.Entry(version, DownloadUrl(version));
 
                     return (update, true);
                 }
+            }
+            catch (OperationCanceledException ex)
+            {
+                Log.Debug(ex, "Проверка обновлений прервана по времени");
+
+                return (null, false);
             }
             catch (Exception ex)
             {
