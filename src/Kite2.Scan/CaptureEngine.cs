@@ -316,6 +316,14 @@ namespace Kite2.Scan
                 // окном драйвера; тихие варианты — запасные.
                 if (IsKyocera(source))
                 {
+                    // Первая попытка — рецепт старого добытчика: старый диспетчер
+                    // (twain_32.dll), передача памятью и родное окно драйвера.
+                    // Именно в этой тройке первая версия программы (Saraff.Twain)
+                    // брала с податчика всю пачку листов: Saraff после каждого
+                    // листа звал ENDXFER, и драйвер сам начал следующее задание.
+                    // Новый диспетчер + нативная передача на этом драйвере
+                    // роняли его (дампы exp16/18/20, прогоны 1.7.38–1.7.41).
+                    attempts.Add(TwainNativeUiAttempt(source.Device, TwainDsm.Old, TwainTransferMode.Memory));
                     attempts.Add(KyoceraTwainAttempt(source.Device, true));
                     attempts.Add(KyoceraTwainAttempt(source.Device, false));
                     // Запасной путь: без DAT_PENDINGXFERS (на этом драйвере он
@@ -366,21 +374,23 @@ namespace Kite2.Scan
             return attempts;
         }
 
-        private static ScanAttempt TwainNativeUiAttempt(ScanDevice device, TwainDsm dsm)
+        private static ScanAttempt TwainNativeUiAttempt(ScanDevice device, TwainDsm dsm,
+            TwainTransferMode mode = TwainTransferMode.Native)
         {
             string dispatcher = dsm == TwainDsm.New ? "новый диспетчер" : "старый диспетчер";
+            string transfer = mode == TwainTransferMode.Memory ? ", передача памятью" : string.Empty;
 
             return new ScanAttempt
             {
                 Driver = Driver.Twain,
                 Device = device,
                 Dsm = dsm,
-                Mode = TwainTransferMode.Native,
+                Mode = mode,
                 // Родное окно вместо программной передачи: молчаливый драйвер
                 // Kyocera программную не отдаёт, а собственным окном ведёт сам.
                 NativeUi = true,
                 Wall = NativeUiWall,
-                Title = "TWAIN (родное окно драйвера, " + dispatcher + ")"
+                Title = "TWAIN (родное окно драйвера, " + dispatcher + transfer + ")"
             };
         }
 
