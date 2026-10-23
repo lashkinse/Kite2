@@ -69,7 +69,7 @@ namespace Kite2.Probe
             report.AppendLine("версия пробника: " + Assembly.GetEntryAssembly().GetName().Version);
             report.AppendLine("время: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             report.AppendLine("источник: по умолчанию (или по фильтру «" + filter + "»); окно скрытое; разрешение драйвера");
-            report.AppendLine("поводок на эксперимент: 30 с (тихим сценариям), 150 с (сценарию 20)");
+            report.AppendLine("поводок на эксперимент: 30 с (тихим сценариям), 240 с (сценарию 21)");
             report.AppendLine();
 
             Console.WriteLine("Обследование TWAIN-драйвера.");
@@ -120,10 +120,9 @@ namespace Kite2.Probe
             foreach (int idx in Cases.Battery)
             {
                 var caseInfo = Cases.Get(idx);
-                // 30 с хватает тихим сценариям; сценарию 20 нужен запас:
-                // человек жмёт «Скан» на листе 1, далее на каждый лист —
-                // ENDXFER + переоткрытие + ожидание готовности (до 30 с).
-                int childWall = caseInfo.ShowUi ? 150 : 30;
+                // 30 с хватает тихим сценариям; сценарию 21 — подругому:
+                // клик на листе 1 + до 8 листов по 10–20 с ожиданий.
+                int childWall = caseInfo.ShowUi ? 240 : 30;
                 Console.WriteLine("=== Эксперимент {0} (поводок {1} с): {2}", idx, childWall, caseInfo.Title);
                 var logPath = Path.Combine(dir, "exp" + idx.ToString("00") + ".txt");
                 var stackFile = Path.Combine(dir, "exp" + idx.ToString("00") + ".stacks.txt");

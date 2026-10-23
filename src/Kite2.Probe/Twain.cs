@@ -510,6 +510,17 @@ namespace Kite2.Probe
             }
         }
 
+        // Сброс сигнала после чтения: без него ManualResetEventSlim
+        // оставался взведённым после первой страницы, и все «мгновенные»
+        // и «спонтанные» готовности были фантомом (эксп. 16–20).
+        public void Reset()
+        {
+            lock (_l)
+            {
+                _go.Reset();
+            }
+        }
+
         public ushort Last
         {
             get

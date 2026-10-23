@@ -47,16 +47,15 @@ namespace Kite2.Probe
 
     internal static class Cases
     {
-        private const int Total = 20;
+        private const int Total = 21;
 
-        // Прогон (run): сценарий 20 — «своя сессия на каждый лист».
-        // Минидампы и REPORT 10/12 доказали: в ACCEPT-режиме второй
-        // ENDXFER в ОДНОЙ сессии всегда роняет драйвер (0xC000041D в
-        // диалоге прогресса), пауза 8 с и Count=0/1 не спасают. Новый
-        // план: первый ENDXFER (безопасен), полное закрытие сессии и
-        // переоткрытие; если после переоткрытия драйвер сам выйдет на
-        // готовность — пачка решена одним нажатием «Скан».
-        internal static readonly int[] Battery = { 20 };
+        // Прогон (run): сценарий 21 — пассивная пачка. НИ ОДНОГО ENDXFER
+        // между листами: после передачи листа-application ждёт XFERREADY
+        // от драйвера (фантомы Ready устранены Reset-ом), затем
+        // NATIVEXFER следующего листа. ENDXFER — один, в уборке Play.
+        // Готовность приходит сама → клиент 1.7.38 реализуем по этой
+        // схеме; тишина → на TWAIN пачки нет и поднимаем вопрос WIA.
+        internal static readonly int[] Battery = { 21 };
 
         internal static Case Get(int idx)
         {
@@ -109,10 +108,10 @@ namespace Kite2.Probe
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
                         "Native: ShowUI=1 (нажмите «Скан» в диалоге), KmUsbScnAccept после листа 1, ENDXFER между листами, мини-дамп",
                         Case.Strategy.AcceptMid, 6, true);
-                case 20:
+                case 21:
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
-                        "Native: ShowUI=1 («Скан»), ACCEPT после листа 1, далее: ENDXFER → закрытие сессии → переоткрытие → готовность без клика",
-                        Case.Strategy.AcceptMid, 4, true, endXferCount: 0, reSession: true);
+                        "Native: ShowUI=1 («Скан»), ACCEPT после листа 1, далее пассивная пачка: XFERREADY сам → NATIVEXFER, без ENDXFER",
+                        Case.Strategy.AcceptMid, 8, true);
                 default:
                     return null;
             }
@@ -962,83 +961,57 @@ namespace Kite2.Probe
                 ret, Marshal.ReadInt32(dll, prof.Mode));
         }
 
-        // Серийный цикл сценария 20 (ReSession): сессия DS закрывается и
-        // переоткрывается на каждом листе — падение 0xC000041D давал
-        // второй ENDXFER в одной сессии (REPORT 10/12, три повтора),
-        // поэтому внутри сессии после первой страницы ничего не спрашиваем.
+        // Серийный цикл сценария 21 (пассивная пачка): БЕЗ ENDXFER между
+        // листами. После передачи листа ждём настоящий XFERREADY от
+        // драйвера (_READY теперь Reset после чтения — фантомов нет),
+        // статус каждые 5 с. Готовность → NATIVEXFER следующего листа.
+        // Тишина до конца повода = драйвер не тянет пачку сам.
         private static void RunBatch(LineLog log, Case caseInfo, bool newDsm, TWIdentity app, TWIdentity ds,
             HandshakeState state, PumpWindow pump, Stopwatch started, int wall, uint dsmAppMsg)
         {
+            // Режим ACCEPT после листа 1: механика подачи следующего листа
+            // (NextPageReq) живёт в нём.
+            if (caseInfo.Strat == Case.Strategy.AcceptMid)
+            {
+                IntPtr dll0 = KmScn.GetModule(log, 0);
+                if (dll0 != IntPtr.Zero)
+                    EnsureMode2(log, caseInfo.Strat == Case.Strategy.PokeMode, dll0);
+            }
+
             for (int n = 2; n <= caseInfo.Sheets; n++)
             {
                 if (!state.Delivered)
                     break;
 
-                log.Info("── лист {0}: закрытие сессии и переоткрытие ──", n);
-                KmScn.LogState(log, "перед закрытием сессии (лист " + n + ")");
-
-                // Первый ENDXFER после передачи: в REPORT 10/12 он всегда
-                // завершался успешно (в отличие от второго).
+                log.Info("── лист {0}: пассивное ожидание готовности (без ENDXFER) ──", n);
                 var callSw = Stopwatch.StartNew();
-                ushort rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.PendingXfers, Msg.EndXfer,
-                    new TWPendingXfers { Count = (ushort)caseInfo.EndXferCount });
-                log.Info("   MSG_ENDXFER (закрытие сессии): {0} за {1:N0} мс",
-                    TwRc.Name(rc), callSw.ElapsedMilliseconds);
-                if (rc != TwRc.Success)
-                {
-                    log.Info("   ENDXFER не закрылся — стоп");
-                    break;
-                }
-
-                rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.UserInterface, Msg.DisableDS, new TWUserInterface());
-                log.Info("   MSG_DISABLEDS: {0}", TwRc.Name(rc));
-                rc = Dsm.Call(newDsm, app, null, Dg.Control, Dat.Identity, Msg.CloseDS, ds);
-                log.Info("   MSG_CLOSEDS: {0}", TwRc.Name(rc));
-                rc = Dsm.CallPtr(newDsm, app, null, Dg.Control, Dat.Parent, Msg.CloseDSM, IntPtr.Zero);
-                log.Info("   MSG_CLOSEDSM: {0}", TwRc.Name(rc));
-
-                // Полное переоткрытие: минимум вызовов для входа в готовность.
-                rc = CallWithHwnd(newDsm, app, Msg.OpenDSM, pump.Handle);
-                log.Info("   MSG_OPENDSM (пере): {0}", TwRc.Name(rc));
-                if (rc != TwRc.Success)
-                    break;
-
-                rc = Dsm.Call(newDsm, app, null, Dg.Control, Dat.Identity, Msg.OpenDS, ds);
-                log.Info("   MSG_OPENDS (пере): {0}", TwRc.Name(rc));
-                if (rc != TwRc.Success)
-                    break;
-
-                rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Callback2, Msg.RegisterCallback,
-                    new TWCallback2(Dsm.SharedCallback));
-                log.Info("   DAT_CALLBACK2 (пере): {0}", TwRc.Name(rc));
-                if (rc != TwRc.Success)
-                {
-                    rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Callback, Msg.RegisterCallback,
-                        new TWCallback(Dsm.SharedCallback));
-                    log.Info("   DAT_CALLBACK (пере): {0}", TwRc.Name(rc));
-                }
-
-                // XFERMECH native: переоткрытый драйвер может сбросить режим передачи.
-                SetXferMech(log, newDsm, app, ds, Twsx.Native);
-
-                var ui = new TWUserInterface { ShowUI = (ushort)(caseInfo.ShowUi ? 1 : 0), ModalUI = 0, HParent = pump.Handle };
-                rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.UserInterface, Msg.EnableDS, ui);
-                log.Info("   MSG_ENABLEDS (пере): {0}", TwRc.Name(rc));
-                if (rc != TwRc.Success)
-                    break;
-
-                callSw.Restart();
-                // Гонимся за поводком: бюджет на ожидание — остаток стены.
                 int waitLimit = Math.Max(5000, wall - (int)started.ElapsedMilliseconds);
-                bool ok = WaitReady(newDsm, app, ds, pump, log, waitLimit, dsmAppMsg);
-                log.Info("лист {0}: готовность {1} через {2:N1} с после переоткрытия (всего от старта {3:N1} с)",
-                    n, ok ? "есть" : "НЕТ", callSw.Elapsed.TotalSeconds, started.Elapsed.TotalSeconds);
+                bool ok = false;
+                int waited = 0;
+                int slice = 500;
+                int lastStat = 0;
+                while (waited < waitLimit)
+                {
+                    int step = Math.Min(slice, waitLimit - waited);
+                    if (WaitReady(newDsm, app, ds, pump, log, step, dsmAppMsg))
+                    {
+                        ok = true;
+                        break;
+                    }
+                    waited += step;
+                    if (waited - lastStat >= 5000)
+                    {
+                        KmScn.LogState(log, "пассивное ожидание " + (waited / 1000) + " с");
+                        lastStat = waited;
+                    }
+                }
+                log.Info("лист {0}: готовность {1} через {2:N1} с ожидания (всего от старта {3:N1} с)",
+                    n, ok ? "ЕСТЬ (драйвер тянет пачку сам!)" : "не пришла — стоп",
+                    callSw.Elapsed.TotalSeconds, started.Elapsed.TotalSeconds);
                 if (!ok)
                     break;
 
-                // Передача листа БЕЗ предварительных GET: DAT_PENDINGXFERS
-                // MSG_GET между листами развешивал DS навсегда (REPORT 16),
-                // поэтому сразу в передачу.
+                // Передача листа сразу, без предварительных GET.
                 if (caseInfo.Memory)
                     DoMemoryTransfer(log, newDsm, app, ds, state);
                 else
@@ -1060,7 +1033,10 @@ namespace Kite2.Probe
             while (left > 0)
             {
                 if (Dsm.Messages.Wait(slice))
+                {
+                    Dsm.Messages.Reset(); // сигнал потреблён — фантома не оставить
                     return true; // готовность через колбэк
+                }
 
                 int step = Math.Min(slice, left);
                 bool stop = false;
@@ -1143,7 +1119,10 @@ namespace Kite2.Probe
                 });
 
                 if (stop)
+                {
+                    Dsm.Messages.Reset(); // сигнал потреблён
                     return true;
+                }
 
                 left -= step;
             }
