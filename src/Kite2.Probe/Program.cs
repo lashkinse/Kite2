@@ -105,6 +105,18 @@ namespace Kite2.Probe
 
             string self = Assembly.GetEntryAssembly().Location;
 
+            // Подсказка человеку: первый сценарий в батарее — родной диалог
+            // драйвера, без нажатия «Скан» он просто отключится по поводку.
+            foreach (int windowIdx in Cases.Battery)
+            {
+                var windowCase = Cases.Get(windowIdx);
+                if (windowCase != null && windowCase.ShowUi)
+                {
+                    Console.WriteLine("Внимание: в эксперименте " + windowIdx
+                        + " появится окно драйвера — нажмите в нём «Скан».");
+                }
+            }
+
             foreach (int idx in Cases.Battery)
             {
                 var caseInfo = Cases.Get(idx);

@@ -45,15 +45,14 @@ namespace Kite2.Probe
 
     internal static class Cases
     {
-        private const int Total = 14;
+        private const int Total = 16;
 
-        // Прогон (run) — тихая батарея ACCEPT-экспериментов на новом
-        // драйвере (REPORT 10-23): ранний Accept поглощается 11 (режим
-        // переносится Start-ом первой страницы), MSG_RESET закрывает
-        // сессию вместо подачи листа, оконный сценарий свою пользу
-        // исчерпал (страница 1 доказана, требует человека). Поводок
-        // на каждый — 30 с.
-        internal static readonly int[] Battery = { 11, 13, 14 };
+        // Прогон (run) начинается с UI-сценария: родное окно драйвера —
+        // единственный путь, на котором новый драйвер гарантированно
+        // доходил до первой страницы (REPORT 10-23); оно же теперь с
+        // доведением режима ACCEPT между листами. За ним тихая батарея
+        // 11/13/14. Поводок на каждый — 30 с.
+        internal static readonly int[] Battery = { 16, 11, 13, 14 };
 
         internal static Case Get(int idx)
         {
@@ -102,6 +101,10 @@ namespace Kite2.Probe
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
                         "Native: baseline — ENDXFER между листами без ACCEPT (пачка до 6)",
                         Case.Strategy.Plain, 6);
+                case 16:
+                    return Make(true, false, Case.Kind.ImageInfoThenPending,
+                        "Native: ShowUI=1 (нажмите «Скан» в диалоге), KmUsbScnAccept после листа 1, ENDXFER между листами, мини-дамп",
+                        Case.Strategy.AcceptMid, 6, true);
                 default:
                     return null;
             }
