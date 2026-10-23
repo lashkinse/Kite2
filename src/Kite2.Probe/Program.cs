@@ -69,10 +69,14 @@ namespace Kite2.Probe
             report.AppendLine("версия пробника: " + Assembly.GetEntryAssembly().GetName().Version);
             report.AppendLine("время: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             report.AppendLine("источник: по умолчанию (или по фильтру «" + filter + "»); окно скрытое; разрешение драйвера");
-            report.AppendLine("поводок на эксперимент: 30 с (тихим сценариям), 240 с (сценарию 21)");
+            report.AppendLine("поводок на эксперимент: 30 с (тихим сценариям), 240 с (пачкам 21 и 22)");
             report.AppendLine();
 
-            Console.WriteLine("Обследование TWAIN-драйвера.");
+            Console.WriteLine("Обследование TWAIN-драйвера: тихая пачка, сценарий 22.");
+            Console.WriteLine("ЗАДАНИЕ: положите в податчик 3–4 листа и НЕ нажимайте ничего.");
+            Console.WriteLine("Окно драйвера не откроется и кнопки не нужны: драйвер обязан начать сам.");
+            Console.WriteLine("Готово — файл отчёта: " + dir + "\\REPORT.txt");
+            Console.WriteLine();
             Console.WriteLine("Папка прогона: " + dir);
             Console.WriteLine("Каждый эксперимент — свой процесс с коротким поводком:");
             Console.WriteLine("если триплет зависает, ребёнок убивается (с снимком стеков), остальные идут дальше.");
@@ -120,9 +124,9 @@ namespace Kite2.Probe
             foreach (int idx in Cases.Battery)
             {
                 var caseInfo = Cases.Get(idx);
-                // 30 с хватает тихим сценариям; сценарию 21 — подругому:
-                // клик на листе 1 + до 8 листов по 10–20 с ожиданий.
-                int childWall = caseInfo.ShowUi ? 240 : 30;
+                // 30 с хватает тихим сценариям; пачкам — подругой:
+                // 21 и 22 ждут кормёжку податчика по 10–20 с на лист.
+                int childWall = caseInfo.ShowUi || idx == 22 ? 240 : 30;
                 Console.WriteLine("=== Эксперимент {0} (поводок {1} с): {2}", idx, childWall, caseInfo.Title);
                 var logPath = Path.Combine(dir, "exp" + idx.ToString("00") + ".txt");
                 var stackFile = Path.Combine(dir, "exp" + idx.ToString("00") + ".stacks.txt");

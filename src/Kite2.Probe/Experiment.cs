@@ -55,7 +55,7 @@ namespace Kite2.Probe
         // NATIVEXFER следующего листа. ENDXFER — один, в уборке Play.
         // Готовность приходит сама → клиент 1.7.38 реализуем по этой
         // схеме; тишина → на TWAIN пачки нет и поднимаем вопрос WIA.
-        internal static readonly int[] Battery = { 21 };
+        internal static readonly int[] Battery = { 22 };
 
         internal static Case Get(int idx)
         {
