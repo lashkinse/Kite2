@@ -45,9 +45,12 @@ namespace Kite2.App.ViewModels
         {
             NewDocumentCommand = new RelayCommand(NewDocument, () => !IsBusy);
             SaveCommand = new RelayCommand(Save, () => !IsBusy && _pages.Count > 0);
-            ScanMonoCommand = new RelayCommand(() => ScanAsync(CaptureColour.BlackAndWhite), () => !IsBusy);
-            ScanColourCommand = new RelayCommand(() => ScanAsync(CaptureColour.Colour), () => !IsBusy);
-            ScanAgainCommand = new RelayCommand(ScanAgain, () => !IsBusy);
+            // Цветность и разрешение больше не задаёт программа: у драйвера
+            // своё окно, где человек сам выбирает цвет, Ч/Б и всё прочее.
+            // Одна кнопка — открыть окно и принять то, что оно отсканирует.
+            ScanCommand = new RelayCommand(ScanAsync, () => !IsBusy);
+            // «+» просто повторяет сканирование: режим выбирает драйвер.
+            ScanAgainCommand = new RelayCommand(ScanAsync, () => !IsBusy);
             SettingsCommand = new RelayCommand(ChooseSource, () => !IsBusy);
             DeletePageCommand = new RelayCommand(DeletePage, () => !IsBusy && SelectedPage != null);
             MovePageUpCommand = new RelayCommand(() => MovePage(-1), () => !IsBusy && SelectedPage != null);
@@ -58,7 +61,7 @@ namespace Kite2.App.ViewModels
 
             _commands = new[]
             {
-                NewDocumentCommand, SaveCommand, ScanMonoCommand, ScanColourCommand, ScanAgainCommand, SettingsCommand, DeletePageCommand,
+                NewDocumentCommand, SaveCommand, ScanCommand, ScanAgainCommand, SettingsCommand, DeletePageCommand,
                 MovePageUpCommand, MovePageDownCommand, RotatePageCommand
             };
 
@@ -112,9 +115,7 @@ namespace Kite2.App.ViewModels
 
         public RelayCommand SaveCommand { get; }
 
-        public RelayCommand ScanMonoCommand { get; }
-
-        public RelayCommand ScanColourCommand { get; }
+        public RelayCommand ScanCommand { get; }
 
         public RelayCommand ScanAgainCommand { get; }
 
@@ -249,15 +250,13 @@ namespace Kite2.App.ViewModels
 
         // Порядок страниц задаётся временем создания файлов, поэтому композиция
         // идёт сразу после захвата.
-        private async void ScanAsync(CaptureColour colour)
+        private async void ScanAsync()
         {
             if (!FakeScanner.Enabled && AppSettings.ScanSourceIndex == AppSettings.NotSelected)
             {
                 UserDialogs.Error(Messages.ChooseSource);
                 return;
             }
-
-            RememberScanColour(colour);
 
             var cancellation = new CancellationTokenSource();
             _scanCancellation = cancellation;
@@ -273,7 +272,7 @@ namespace Kite2.App.ViewModels
                     SetBusy(true);
                     ShowNotice(Messages.Scanning, result: false, cancel: true);
 
-                    scanned = await ScanOnce(colour, cancellation.Token);
+                    scanned = await ScanOnce(cancellation.Token);
                 }
                 while (scanned > 0 && AskToContinue());
             }
@@ -297,37 +296,15 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        private CaptureColour CurrentColour { get; set; } = CaptureColour.BlackAndWhite;
-
-        // Без отметки не видно, какой режим повторит «+».
-        public bool LastScanIsMono { get; private set; } = true;
-
-        public bool LastScanIsColour { get; private set; }
-
-        private void RememberScanColour(CaptureColour colour)
-        {
-            CurrentColour = colour;
-
-            LastScanIsMono = colour == CaptureColour.BlackAndWhite;
-            LastScanIsColour = colour == CaptureColour.Colour;
-
-            OnPropertyChanged(nameof(LastScanIsMono));
-            OnPropertyChanged(nameof(LastScanIsColour));
-        }
-
-        // «+» повторяет предыдущий режим, а не всегда чёрно-белый.
-        private void ScanAgain()
-        {
-            ScanAsync(CurrentColour);
-        }
-
-        private async Task<int> ScanOnce(CaptureColour colour, CancellationToken cancellationToken)
+        // Цветное кодирование по умолчанию: что бы ни отсканировал драйвер,
+        // программа сохраняет как есть, ничего не обесцвечивает и не усиливает.
+        private async Task<int> ScanOnce(CancellationToken cancellationToken)
         {
             var request = new ScanRequest
             {
                 SourceIndex = FakeScanner.Enabled ? 0 : AppSettings.ScanSourceIndex,
                 Dpi = ScanDpi,
-                Colour = colour
+                Colour = CaptureColour.Colour
             };
 
             CurrentScanMode = request.Mode;

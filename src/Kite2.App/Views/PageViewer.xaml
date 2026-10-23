@@ -121,7 +121,7 @@
 
         <!-- Подсказка, когда страниц нет: пустой стол сам по себе ничего не объясняет. -->
         <TextBlock x:Name="Placeholder"
-                   Text="Отсканируйте страницу кнопкой «Ч/Б» или «Цветное»"
+                   Text="Отсканируйте страницу кнопкой «Сканировать»"
                    FontFamily="{StaticResource UiFont}"
                    FontSize="{StaticResource FontSizeUi}"
                    Foreground="{StaticResource TextSecondary}"

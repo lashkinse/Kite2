@@ -58,15 +58,12 @@
 
                 <Rectangle Style="{StaticResource ToolBarSeparatorStyle}" />
 
-                <!-- Рамка на кнопке последнего режима: по ней видно, в каком режиме
-                     повторит сканирование «+». -->
-                <Button Style="{StaticResource CommandButtonStyle}" Content="Ч/Б" controls:CommandBar.Hint="+" Tag="{StaticResource IconScanMono}"
-                        controls:CommandBar.IsNext="{Binding LastScanIsMono}"
-                        ToolTip="Сканировать в чёрно-белом режиме (+)" Command="{Binding ScanMonoCommand}" />
-
-                <Button Style="{StaticResource CommandButtonStyle}" Content="Цветное" controls:CommandBar.Hint="+" Tag="{StaticResource IconScanColour}"
-                        controls:CommandBar.IsNext="{Binding LastScanIsColour}"
-                        ToolTip="Сканировать в цветном режиме (+)" Command="{Binding ScanColourCommand}" />
+                <!-- Одна кнопка сканирования: цветность, разрешение и податчик
+                     задаёт родное окно драйвера, программа только принимает
+                     страницы. «+» повторяет сканирование. -->
+                <Button Style="{StaticResource AccentCommandButtonStyle}" Content="Сканировать" controls:CommandBar.Hint="+"
+                        ToolTip="Сканировать (в окне драйвера выбираются цвет, Ч/Б и разрешение); «+» повторяет"
+                        Command="{Binding ScanCommand}" />
                 <Rectangle Style="{StaticResource ToolBarSeparatorStyle}" />
 
                 <!-- Настройки отделены чертой от сканирования: это уже не про
