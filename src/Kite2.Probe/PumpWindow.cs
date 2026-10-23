@@ -62,6 +62,9 @@ namespace Kite2.Probe
             _log = log;
         }
 
+        // Хэндл созданного окна (Zero, если Create не звался/не удался).
+        public IntPtr Handle { get { return _hwnd; } }
+
         public IntPtr Create()
         {
             IntPtr inst = Marshal.GetHINSTANCE(typeof(PumpWindow).Module);

@@ -41,20 +41,22 @@ namespace Kite2.Probe
         public bool ShowUi;   // ENABLEDS с ShowUI=1 (родной диалог драйвера)
         public int Sheets;    // сколько листов тянуть в одной серии (1 — как раньше)
         public Strategy Strat;
-        public int SettleMs;    // пауза после передачи листа перед ENDXFER (0 — моментально)
+        public bool ReSession;  // сценарий 20: своя сессия DS на каждый лист
         public int EndXferCount; // что писать в Count у TWPendingXfers между листами
     }
 
     internal static class Cases
     {
-        private const int Total = 19;
+        private const int Total = 20;
 
-        // Прогон (run) — только оконные сценарии: тихий режим мёртв
-        // (REPORT 10-23/24 подтверждает трижды). 18/19 проверяют гипотезу
-        // из минидампа: второй ENDXFER падает в диалоге прогресса драйвера
-        // (0xC000041D в user-callback), возможно — только когда посылается
-        // сразу после XFERDONE. Пауза 8 с + два варианта Count.
-        internal static readonly int[] Battery = { 18, 19 };
+        // Прогон (run): сценарий 20 — «своя сессия на каждый лист».
+        // Минидампы и REPORT 10/12 доказали: в ACCEPT-режиме второй
+        // ENDXFER в ОДНОЙ сессии всегда роняет драйвер (0xC000041D в
+        // диалоге прогресса), пауза 8 с и Count=0/1 не спасают. Новый
+        // план: первый ENDXFER (безопасен), полное закрытие сессии и
+        // переоткрытие; если после переоткрытия драйвер сам выйдет на
+        // готовность — пачка решена одним нажатием «Скан».
+        internal static readonly int[] Battery = { 20 };
 
         internal static Case Get(int idx)
         {
@@ -107,14 +109,10 @@ namespace Kite2.Probe
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
                         "Native: ShowUI=1 (нажмите «Скан» в диалоге), KmUsbScnAccept после листа 1, ENDXFER между листами, мини-дамп",
                         Case.Strategy.AcceptMid, 6, true);
-                case 18:
+                case 20:
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
-                        "Native: ShowUI=1 («Скан»), ACCEPT, пауза 8 с после передачи, ENDXFER Count=0, мини-дамп",
-                        Case.Strategy.AcceptMid, 4, true, settleMs: 8000, endXferCount: 0);
-                case 19:
-                    return Make(true, false, Case.Kind.ImageInfoThenPending,
-                        "Native: ShowUI=1 («Скан»), ACCEPT, пауза 8 с после передачи, ENDXFER Count=1, мини-дамп",
-                        Case.Strategy.AcceptMid, 4, true, settleMs: 8000, endXferCount: 1);
+                        "Native: ShowUI=1 («Скан»), ACCEPT после листа 1, далее: ENDXFER → закрытие сессии → переоткрытие → готовность без клика",
+                        Case.Strategy.AcceptMid, 4, true, endXferCount: 0, reSession: true);
                 default:
                     return null;
             }
@@ -122,7 +120,7 @@ namespace Kite2.Probe
 
         private static Case Make(bool newDsm, bool memory, Case.Kind handshake, string title,
             Case.Strategy strat = Case.Strategy.Plain, int sheets = 1, bool showUi = false,
-            int settleMs = 0, int endXferCount = 1)
+            int endXferCount = 1, bool reSession = false)
         {
             return new Case
             {
@@ -133,8 +131,8 @@ namespace Kite2.Probe
                 ShowUi = showUi,
                 Strat = strat,
                 Sheets = sheets,
-                SettleMs = settleMs,
-                EndXferCount = endXferCount
+                EndXferCount = endXferCount,
+                ReSession = reSession
             };
         }
 
@@ -964,9 +962,10 @@ namespace Kite2.Probe
                 ret, Marshal.ReadInt32(dll, prof.Mode));
         }
 
-        // Серийный цикл оконных сценариев (18/19): пауза-успокоение,
-        // запрос следующего листа (ENDXFER с Count из сценария), режим
-        // до ACCEPT, ожидание готовности и передача листов подряд.
+        // Серийный цикл сценария 20 (ReSession): сессия DS закрывается и
+        // переоткрывается на каждом листе — падение 0xC000041D давал
+        // второй ENDXFER в одной сессии (REPORT 10/12, три повтора),
+        // поэтому внутри сессии после первой страницы ничего не спрашиваем.
         private static void RunBatch(LineLog log, Case caseInfo, bool newDsm, TWIdentity app, TWIdentity ds,
             HandshakeState state, PumpWindow pump, Stopwatch started, int wall, uint dsmAppMsg)
         {
@@ -975,48 +974,64 @@ namespace Kite2.Probe
                 if (!state.Delivered)
                     break;
 
-                // Пауза «успокоения» после передачи (сценарии 18/19): без
-                // TWAIN-звонков и опроса готовности, только статус каждые
-                // 2 с. Минидамп exp16: второй ENDXFER падает в диалоге
-                // прогресса драйвера — возможно, только посланный сразу
-                // после XFERDONE.
-                if (caseInfo.SettleMs > 0)
-                    PureSettle(log, caseInfo.SettleMs);
+                log.Info("── лист {0}: закрытие сессии и переоткрытие ──", n);
+                KmScn.LogState(log, "перед закрытием сессии (лист " + n + ")");
 
-                log.Info("── лист {0}: запрос следующего ──", n);
-                KmScn.LogState(log, "перед запросом листа " + n);
-
-                // Режим до ACCEPT не добиваем только там, где проверяем
-                // сырое поведение драйвера (baseline).
-                if (caseInfo.Strat == Case.Strategy.AcceptMid
-                    || caseInfo.Strat == Case.Strategy.AcceptEarly
-                    || caseInfo.Strat == Case.Strategy.PokeMode)
-                {
-                    IntPtr dll = KmScn.GetModule(log, 0);
-                    if (dll != IntPtr.Zero)
-                        EnsureMode2(log, caseInfo.Strat == Case.Strategy.PokeMode, dll);
-                }
-
+                // Первый ENDXFER после передачи: в REPORT 10/12 он всегда
+                // завершался успешно (в отличие от второго).
                 var callSw = Stopwatch.StartNew();
-                ushort rc;
-                if (caseInfo.Strat == Case.Strategy.ResetMsg)
+                ushort rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.PendingXfers, Msg.EndXfer,
+                    new TWPendingXfers { Count = (ushort)caseInfo.EndXferCount });
+                log.Info("   MSG_ENDXFER (закрытие сессии): {0} за {1:N0} мс",
+                    TwRc.Name(rc), callSw.ElapsedMilliseconds);
+                if (rc != TwRc.Success)
                 {
-                    log.Info("→ DAT_PENDINGXFERS MSG_RESET (7)…");
-                    rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.PendingXfers, Msg.Reset, new TWPendingXfers { Count = 1 });
-                    log.Info("   MSG_RESET: {0} за {1:N0} мс", TwRc.Name(rc), callSw.ElapsedMilliseconds);
+                    log.Info("   ENDXFER не закрылся — стоп");
+                    break;
                 }
-                else
+
+                rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.UserInterface, Msg.DisableDS, new TWUserInterface());
+                log.Info("   MSG_DISABLEDS: {0}", TwRc.Name(rc));
+                rc = Dsm.Call(newDsm, app, null, Dg.Control, Dat.Identity, Msg.CloseDS, ds);
+                log.Info("   MSG_CLOSEDS: {0}", TwRc.Name(rc));
+                rc = Dsm.CallPtr(newDsm, app, null, Dg.Control, Dat.Parent, Msg.CloseDSM, IntPtr.Zero);
+                log.Info("   MSG_CLOSEDSM: {0}", TwRc.Name(rc));
+
+                // Полное переоткрытие: минимум вызовов для входа в готовность.
+                rc = CallWithHwnd(newDsm, app, Msg.OpenDSM, pump.Handle);
+                log.Info("   MSG_OPENDSM (пере): {0}", TwRc.Name(rc));
+                if (rc != TwRc.Success)
+                    break;
+
+                rc = Dsm.Call(newDsm, app, null, Dg.Control, Dat.Identity, Msg.OpenDS, ds);
+                log.Info("   MSG_OPENDS (пере): {0}", TwRc.Name(rc));
+                if (rc != TwRc.Success)
+                    break;
+
+                rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Callback2, Msg.RegisterCallback,
+                    new TWCallback2(Dsm.SharedCallback));
+                log.Info("   DAT_CALLBACK2 (пере): {0}", TwRc.Name(rc));
+                if (rc != TwRc.Success)
                 {
-                    log.Info("→ DAT_PENDINGXFERS MSG_ENDXFER (между листами, Count={0})…", caseInfo.EndXferCount);
-                    rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.PendingXfers, Msg.EndXfer, new TWPendingXfers { Count = (ushort)caseInfo.EndXferCount });                    log.Info("   MSG_ENDXFER: {0} за {1:N0} мс", TwRc.Name(rc), callSw.ElapsedMilliseconds);
+                    rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Callback, Msg.RegisterCallback,
+                        new TWCallback(Dsm.SharedCallback));
+                    log.Info("   DAT_CALLBACK (пере): {0}", TwRc.Name(rc));
                 }
-                KmScn.LogState(log, "после запроса листа " + n);
+
+                // XFERMECH native: переоткрытый драйвер может сбросить режим передачи.
+                SetXferMech(log, newDsm, app, ds, Twsx.Native);
+
+                var ui = new TWUserInterface { ShowUI = (ushort)(caseInfo.ShowUi ? 1 : 0), ModalUI = 0, HParent = pump.Handle };
+                rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.UserInterface, Msg.EnableDS, ui);
+                log.Info("   MSG_ENABLEDS (пере): {0}", TwRc.Name(rc));
+                if (rc != TwRc.Success)
+                    break;
 
                 callSw.Restart();
                 // Гонимся за поводком: бюджет на ожидание — остаток стены.
                 int waitLimit = Math.Max(5000, wall - (int)started.ElapsedMilliseconds);
                 bool ok = WaitReady(newDsm, app, ds, pump, log, waitLimit, dsmAppMsg);
-                log.Info("лист {0}: готовность {1} через {2:N1} с после запроса (всего от ENABLEDS {3:N1} с)",
+                log.Info("лист {0}: готовность {1} через {2:N1} с после переоткрытия (всего от старта {3:N1} с)",
                     n, ok ? "есть" : "НЕТ", callSw.Elapsed.TotalSeconds, started.Elapsed.TotalSeconds);
                 if (!ok)
                     break;
@@ -1036,24 +1051,6 @@ namespace Kite2.Probe
             }
 
             log.Info("итог серии: сохранено страниц {0}", PageSold);
-        }
-
-        // Пауза «успокоения» драйвера после передачи листа: никаких
-        // TWAIN-звонков и опроса готовности, только Sleep и статус
-        // нативных переменных каждые 2 с. В сценарии 17 попытка слушать
-        // готовность ломала все листы фантомными сигналами из очереди
-        // (Dsm.Messages.Wait возвращал остатки прошлой готовности) —
-        // так не делаем.
-        private static void PureSettle(LineLog log, int limitMs)
-        {
-            int slept = 0;
-            while (slept < limitMs)
-            {
-                Thread.Sleep(500);
-                slept += 500;
-                if (slept % 2000 == 0)
-                    KmScn.LogState(log, "пауза " + (slept / 1000) + " с после передачи");
-            }
         }
 
         private static bool WaitReady(bool newDsm, TWIdentity app, TWIdentity ds, PumpWindow pump, LineLog log, int limitMs, uint dsmAppMsg)
