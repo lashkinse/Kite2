@@ -1,41 +1,28 @@
 // Свой клиент TWAIN для драйвера Kyocera.
 //
-// Зачем он нужен рядом с NAPS2: этот драйвер (Kyocera TWAIN(2), протокол 1.8)
-// в тихом режиме сканирование не начинает — движок ждёт, пока человек нажмёт
-// «Скан» в собственном окне драйвера. NAPS2 такого окна для TWAIN не
-// показывает, поэтому для Kyocera захват ведёт этот клиент.
+// Для НОВОГО драйвера (1.4.2611 GDI: «Kyocera FS-1120MFP TWAIN», 2.3, установлен
+// в 2026) пачку ведёт РОДНОЕ ОКНО драйвера: пользователь нажимает «Скан»
+// (один раз на лист, или один раз на пачку, если в диалоге включено
+// непрерывное сканирование), приложение ПАССИВНО принимает листы:
 //
-// Рецепт проверен обследователем на втором компьютере пользователя:
 //   OPENDSM (родитель — наше скрытое окно верхнего уровня)
 //   → OPENDS → регистрация DAT_CALLBACK2
 //   → SET ICAP_XFERMECH = native (контейнер OneValue)
-//   → ENABLEDS с ShowUI=0 (тихий режим работает, окно драйвера не нужно)
-//   → ждём MSG_XFERREADY (приходит в колбэк диспетчера)
-//   → DAT_IMAGEINFO → DAT_PENDINGXFERS → DAT_IMAGENATIVEXFER (первый лист)
-//   → в тихом режиме на этом один лист; с окном драйвера (ShowUI=1) пачку
-//     ведёт сам драйвер: каждый следующий лист — по настоящей готовности
-//   → MSG_ENDXFER → MSG_DISABLEDS. Закрытие источника (MSG_CLOSEDS)
-//     на этом драйвере рвёт процесс, поэтому его не вызываем вовсе.
+//   → ENABLEDS с ShowUI=1 — появляется окно драйвера
+//   → ждём ЧЕСТНЫЙ MSG_XFERREADY (колбэк с Reset-ом после чтения:
+//     без Reset флаг назывался навсегда и все «готовности» были фантомом)
+//   → DAT_IMAGEINFO → DAT_IMAGENATIVEXFER (лист 1)
+//   → далее цикл: готовность (90 с тишины = пачка окончена) →
+//     DAT_IMAGENATIVEXFER без промежуточных GET
+//   → уборка Close(): единственный MSG_ENDXFER (безопасен только он) →
+//     MSG_DISABLEDS; MSG_CLOSEDS не вызываем вовсе (рвёт процесс).
 //
-// Важные подробности, найденные по следам:
-//   * контейнеры кап пишутся как OneValue (в DSM 2.x OneValue = 5, Range = 6);
-//     при значении 6 драйвер принимал буфер за TW_RANGE и писал в него мимо
-//     границы — процесс падал;
-//   * хэндл DIB приходит и при TWRC_XFERDONE, а не только при TWRC_SUCCESS;
-//   * готовность приходит в колбэк, а не в DAT_EVENT: на ветке legacy диспетчер
-//     отвечает DSEVENT с TwMessage=NULL почти на каждое оконное сообщение;
-//   * после передачи первого листа драйвер МГНОВЕННО сигналит следующую
-//     готовность, но это фикция: DAT_IMAGEINFO и повторные DAT_IMAGENATIVEXFER
-//     в той же сессии следующего листа не дают (журналы 5–7, повторы 45 с);
-//     второй лист приходит только новой сессией;
-//   * вопросы о состоянии на ветке 7 не задаём вовсе: DAT_PENDINGXFERS Get
-//     там зависал намертво, а MSG_CLOSEDS рвёт процесс;
-//   * перед выключением источника сбрасываем ветку передач звонком
-//     DAT_PENDINGXFERS/MSG_ENDXFER: без него драйвер остаётся на ветке 7,
-//     двигатель ждёт передачу (панель принтера моргает «Сканирование»),
-//     а следующая серия отваливается с TWRC_FAILURE за 0 мс и оживает
-//     только спустя минуту. Звонок ограждён часовым: если зависнет,
-//     процесс завершается принудительно — ответ родителю уже записан.
+// ЗАПРЕЩЁНО на этом драйвере (доказано минидампами, 0xC000041D трижды):
+//   * DAT_PENDINGXFERS/MSG_ENDXFER в середине сессии (второй и далее);
+//   * пересоздание сессии DS внутри процесса (ENABLEDS после
+//     ENDXFER/закрытия падает в инициализации);
+// Разбор обоих в Ghidra: путь ENDXFER гоняет собственный диалог прогресса
+// драйвера (Ns1815TW3 + comctl32) на потоке приложения, и там он падает.
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -132,19 +119,12 @@ namespace Kite2.Scan.Twain
                 _ds = ds;
 
                 // 4. Колбэк: в него диспетчер приносит MSG_XFERREADY.
-                //     С родным окном драйвера колбэк не регистрируем: там
-                //     готовность приходит через окно, а лишний канал с
-                //     диспетчером рвал процесс на 12-й секунде (журнал 8).
-                if (!showUi)
-                {
-                    rc = Dsm.Call(true, app, ds, Dg.Control, Dat.Callback2, Msg.RegisterCallback,
-                        new TWCallback2(Dsm.SharedCallback));
-                    Log.Info("Kyocera: регистрация DAT_CALLBACK2: {0}", TwRc.Name(rc));
-                }
-                else
-                {
-                    Log.Info("Kyocera: с окном драйвера колбэк не регистрируем");
-                }
+                //     На новом драйвере (1.4.2611 GDI) проверено обследователем
+                //     в оконном режиме многократно: колбэк + окно драйвера
+                //     сосуществуют мирно (эксп. 16–21, ни одной смерти).
+                rc = Dsm.Call(true, app, ds, Dg.Control, Dat.Callback2, Msg.RegisterCallback,
+                    new TWCallback2(Dsm.SharedCallback));
+                Log.Info("Kyocera: регистрация DAT_CALLBACK2: {0}", TwRc.Name(rc));
 
                 // 5. Опрос возможностей и группы передачи. Обследователь шёл
                 //    ровно так: без этих звонков мост legacy-диспетчера к
@@ -180,53 +160,45 @@ namespace Kite2.Scan.Twain
                 ReadOneCap(app, ds, "ICAP_XFERMECH (после включения)", CapId.ICapXferMech);
 
                 // 9. Ждём готовности: колбэк диспетчера или канал legacy-DSM.
-                //     С родным окном драйвера ждём иначе: сообщения окна
-                //     драйвера перехватывать нельзя (журнал 8: ребёнок умирал
-                //     на 12-й секунде), поэтому готовность смотрим опросом
-                //     DAT_IMAGEINFO, а не событием.
-                if (showUi)
-                {
-                    if (!WaitImage(app, ds, pump, wall))
-                    {
-                        Log.Warn("Kyocera: картинка не появилась за {0:N0} с", wall.TotalSeconds);
-                        failure = "Драйвер не отдал изображение страницы.";
-                        return null;
-                    }
-                }
-                else if (!WaitReady(app, ds, pump, wall))
+                //     С окном драйвера и в тихом режиме ждём одинаково:
+                //     честный сигнал от драйвера (флаг готовности сбрасывается
+                //     после чтения — фантом готовности сломал пачку).
+                if (!WaitReady(app, ds, pump, wall))
                 {
                     Log.Warn("Kyocera: готовность не пришла за {0:N0} с", wall.TotalSeconds);
-                    failure = "Драйвер не сообщил о готовности сканирования.";
+                    failure = showUi
+                        ? "В окне драйвера сканирование не запущено или драйвер не сообщил о готовности."
+                        : "Драйвер не сообщил о готовности сканирования.";
                     return null;
                 }
 
-                // 10. Листы. Первый идёт полным рецептом. В тихом режиме сессия
-                //     отдаёт один лист: фиктивная готовность после передачи
-                //     и повторные звонки в той же сессии следующего листа не
-                //     дают (журналы 5–7).
+                // 10. Листы. Первый идёт полным рецептом.
                 if (!TransferOne(app, ds, directory, skipPending, ref failure))
                     return null;
 
                 if (showUi)
                 {
-                    // С окном драйвера пачку ведёт сам драйвер: следующий
-                    // лист он поднимает по запросу DAT_PENDINGXFERS/MSG_ENDXFER
-                    // (разбор драйвера: именно этот звонок отправляет
-                    // интерфейсу команду на следующий лист, и только он).
-                    // Ответ счётчика говорит, есть ли ещё листы.
-                    while (RequestNextSheet(app, ds))
+                    // Пачку ВЕДЁТ ДИАЛОГ ДРАЙВЕРА: листы подаются его кнопкой
+                    // «Скан» (по одному) или непрерывным режимом диалога, если
+                    // он включён. Наша роль — ПАССИВНЫЙ приём: следующая
+                    // честная готовность → передача, и так до тишины.
+                    //
+                    // НИКАКИХ звонков между листами: минидампы и журналы
+                    // обследователя доказали трижды, что от имениatio приложения
+                    // середина сессии роняет драйвер (второй DAT_PENDINGXFERS/
+                    // MSG_ENDXFER — 0xC000041D в диалоге прогресса драйвера;
+                    // пересессия DS — падение на переоткрытии). Один ENDXFER
+                    // в конце пачки (в Close) — безопасен.
+                    while (WaitReady(app, ds, pump, TimeSpan.FromSeconds(90)))
                     {
-                        if (!WaitImage(app, ds, pump, TimeSpan.FromSeconds(60)))
+                        if (!TransferOne(app, ds, directory, skipPending, ref failure))
                         {
-                            Log.Info("Kyocera: следующая картинка не появилась, страниц {0}", Pages.Count);
+                            Log.Info("Kyocera: передача сорвалась — пачку прекращаем, страниц {0}", Pages.Count);
                             break;
                         }
-
-                        if (!TransferOne(app, ds, directory, skipPending, ref failure))
-                            break;
                     }
 
-                    Log.Info("Kyocera: пачка окончена, страниц {0}", Pages.Count);
+                    Log.Info("Kyocera: пачка окончена (тишина между листами), страниц {0}", Pages.Count);
                 }
 
                 // Уже полученные страницы ценнее текста о неудаче: отдаём их,
@@ -242,9 +214,11 @@ namespace Kite2.Scan.Twain
             }
         }
 
-        // Передача одного листа полным рецептом: DAT_IMAGEINFO,
-        // DAT_PENDINGXFERS (если не пропущен) и DAT_IMAGENATIVEXFER.
-        // true — страница сохранена и числится в Pages.
+        // Передача одного листа. Первый — полным рецептом (DAT_IMAGEINFO,
+        // DAT_PENDINGXFERS — если не пропущен — и DAT_IMAGENATIVEXFER);
+        // последующие — сразу NATIVEXFER, без промежуточных GET: между
+        // листами driver новая серия GET не проверяли, а сдачу и так
+        // отдаёт. true — страница сохранена и числится в Pages.
         private static bool TransferOne(
             TWIdentity app, TWIdentity ds, string directory, bool skipPending, ref string failure)
         {
@@ -253,18 +227,21 @@ namespace Kite2.Scan.Twain
 
             try
             {
-                var info = new TWImageInfo { BitsPerSample = new short[8] };
-                rc = Dsm.Call(true, app, ds, Dg.Image, Dat.ImageInfo, Msg.Get, info);
-                Log.Info(
-                    "Kyocera: DAT_IMAGEINFO: {0}, {1}×{2}, {3} бит/пиксель",
-                    TwRc.Name(rc), info.ImageWidth, info.ImageLength, info.BitsPerPixel);
+                if (Pages.Count == 0)
+                {
+                    var info = new TWImageInfo { BitsPerSample = new short[8] };
+                    rc = Dsm.Call(true, app, ds, Dg.Image, Dat.ImageInfo, Msg.Get, info);
+                    Log.Info(
+                        "Kyocera: DAT_IMAGEINFO: {0}, {1}×{2}, {3} бит/пиксель",
+                        TwRc.Name(rc), info.ImageWidth, info.ImageLength, info.BitsPerPixel);
 
-                // Счётчик спрашивать не обязательно, а на этом драйвере звонок
-                // иногда срывает процесс. Звонок до передачи — в состоянии 6 —
-                // безвреден (проверено журналом: отвечал «ожидают 1»); при
-                // пропуске идём сразу к картинке.
-                if (!skipPending && Pages.Count == 0)
-                    PendingKnown(app, ds, out _);
+                    // Счётчик спрашивать не обязательно, а на этом драйвере звонок
+                    // иногда срывает процесс. Звонок до передачи — в состоянии 6 —
+                    // безвреден (проверено журналом: отвечал «ожидают 1»); при
+                    // пропуске идём сразу к картинке.
+                    if (!skipPending)
+                        PendingKnown(app, ds, out _);
+                }
 
                 var sw = Stopwatch.StartNew();
                 rc = Dsm.ImageNativeXfer(true, app, ds, out handle);
@@ -296,10 +273,10 @@ namespace Kite2.Scan.Twain
             return false;
         }
 
-        // Ожидание картинки опросом DAT_IMAGEINFO. Нужно там, где событие
-        // готовности недоступно: с родным окном драйвера перехватывать
-        // оконные сообщения нельзя, а без готовности ждать нечего.
-        // true — картинка появилась (размер больше нуля).
+        // Ожидание картинки опросом DAT_IMAGEINFO — метод оставлен для
+        // ручной диагностики (вызова больше нет: готовность смотрим по
+        // колбэку; опрос между листами не проверялся и доходить до него
+        // не стали — пассивный приём надёжнее).
         private static bool WaitImage(TWIdentity app, TWIdentity ds, PumpWindow pump, TimeSpan wall)
         {
             DateTime deadline = DateTime.UtcNow.Add(wall);
@@ -340,33 +317,11 @@ namespace Kite2.Scan.Twain
             return false;
         }
 
-        // Запрос следующего листа у драйвера. Разбор бинарника драйвера
-        // показал: следующий лист податчика поднимает только звонок
-        // DAT_PENDINGXFERS/MSG_ENDXFER — именно он отправляет интерфейсу
-        // драйвера команду на следующий лист (сообщение 0x4c8), а тот
-        // вызывает KmUsbScnNextPageReq. Ответ счётчика: 0 — листов больше
-        // нет, иначе — лист будет.
-        private static bool RequestNextSheet(TWIdentity app, TWIdentity ds)
-        {
-            try
-            {
-                var pending = new TWPendingXfers { Count = 0 };
-
-                ushort rc = Dsm.Call(
-                    true, app, ds, Dg.Control, Dat.PendingXfers, Msg.EndXfer, pending);
-
-                Log.Info(
-                    "Kyocera: запрос следующего листа (ENDXFER): {0}, осталось {1}",
-                    TwRc.Name(rc), pending.Count);
-
-                return rc == TwRc.Success && pending.Count > 0;
-            }
-            catch (Exception error)
-            {
-                Log.Warn("Kyocera: запрос следующего листа сорвался ({0})", error.Message);
-                return false;
-            }
-        }
+        // Запрос следующего листа удалён: разбор минидампов и три прогона
+        // обследователя доказали, что DAT_PENDINGXFERS/MSG_ENDXFER в середине
+        // сессии (второй и далее) роняет драйвер (0xC000041D в диалоге
+        // прогресса). Пачку ведёт окно драйвера, приложение только
+        // пассивно принимает листы; единственный ENDXFER — в Close().
 
         // Счётчик ожидающих передач. true — вызов прошёл и известно, есть ли
         // ещё листы в податчике (в stillPending).
@@ -569,10 +524,12 @@ namespace Kite2.Scan.Twain
             {
                 if (Dsm.Messages.Wait(50))
                 {
+                    Dsm.Messages.Reset(); // сигнал потреблён — фантома не оставить
                     Log.Info("Kyocera: готовность (XferReady) в колбэке диспетчера");
                     return true;
                 }
 
+                bool viaChannel = false;
                 pump.Drain(m =>
                 {
                     // Каждое оконное сообщение отдаём диспетчеру через
@@ -585,10 +542,14 @@ namespace Kite2.Scan.Twain
                     if (channel != 0 && m.Message == channel)
                     {
                         Log.Info("Kyocera: готовность в канале DSMAPPMESSAGE32");
+                        viaChannel = true;
                         return true;
                     }
                     return false;
                 });
+
+                if (viaChannel)
+                    return true;
             }
 
             return false;

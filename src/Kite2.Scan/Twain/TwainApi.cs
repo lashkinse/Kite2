@@ -521,6 +521,18 @@ namespace Kite2.Scan.Twain
         {
             return _go.Wait(ms);
         }
+
+        // Сброс сигнала после чтения. Без него ManualResetEventSlim
+        // оставался взведённым навсегда после первой страницы: все
+        // последующие «готовности» были фантомом, а пачка — битой
+        // (разобрано по минидампам и журналам обследователя).
+        public void Reset()
+        {
+            lock (_l)
+            {
+                _go.Reset();
+            }
+        }
     }
 
     internal static class Native32
