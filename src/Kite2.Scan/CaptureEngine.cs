@@ -214,13 +214,11 @@ namespace Kite2.Scan
 
             foreach (var options in CatalogOptions())
             {
-                // Каждая TWAIN-версия счастливо увидит свои устройства; если новый
-                // диспетчер уже что-то нашёл, старая — это чистая трата времени:
-                // молчаливый twain_32 отделялся на 10 с (Kyocera TWAIN(2)).
-                if (options.Driver == Driver.Twain && options.TwainOptions.Dsm == TwainDsm.Old
-                    && sources.Any(s => s.Device.Driver == Driver.Twain))
-                    continue;
-
+                // Каждая TWAIN-версия счастливо увидит свои устройства. Обе
+                // опрашиваются всегда: под новым диспетчером живёт драйвер
+                // GDI-пакета, а под старым (twain_32) — классический дубль
+                // «Kyocera TWAIN», на котором спека-цикл берёт всю пачку
+                // (так работала первая версия с Saraff.Twain).
                 await CollectDevices(sources, controller, options, index);
                 index = sources.Count;
 
@@ -309,26 +307,25 @@ namespace Kite2.Scan
                 TwainDsm first = source.TwainDsm == TwainDsm.New ? TwainDsm.New : TwainDsm.Old;
                 TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
 
-                // Kyocera TWAIN(2) — особый случай: на нём и NAPS2, и тихий
-                // режим драйвера ведут себя плохо. Сканирование ведёт сам
-                // драйвер в своём окне: человек жмёт «Скан», драйвер берёт
-                // всю пачку листов. Поэтому первым идёт наш клиент с родным
-                // окном драйвера; тихие варианты — запасные.
-                if (IsKyocera(source))
+                // Kyocera — особый случай. GDI-драйвер (найден новым
+                // диспетчером): пачку на нём ведёт наш клиент с родным окном
+                // драйвера. Классический дубль «Kyocera TWAIN» (найден старым
+                // диспетчером twain_32) — обычный спека-порядок: NAPS2 с
+                // ENDXFER после каждого листа берёт всю пачку, как Saraff
+                // в первой версии.
+                if (IsKyocera(source) && source.TwainDsm == TwainDsm.New)
                 {
-                    // Первая попытка — рецепт старого добытчика: старый диспетчер
-                    // (twain_32.dll), передача памятью и родное окно драйвера.
-                    // Именно в этой тройке первая версия программы (Saraff.Twain)
-                    // брала с податчика всю пачку листов: Saraff после каждого
-                    // листа звал ENDXFER, и драйвер сам начал следующее задание.
-                    // Новый диспетчер + нативная передача на этом драйвере
-                    // роняли его (дампы exp16/18/20, прогоны 1.7.38–1.7.41).
-                    attempts.Add(TwainNativeUiAttempt(source.Device, TwainDsm.Old, TwainTransferMode.Memory));
                     attempts.Add(KyoceraTwainAttempt(source.Device, true));
                     attempts.Add(KyoceraTwainAttempt(source.Device, false));
                     // Запасной путь: без DAT_PENDINGXFERS (на этом драйвере он
                     // срывает процесс), тоже тихо.
                     attempts.Add(KyoceraTwainAttempt(source.Device, false, skipPending: true));
+                    attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
+                    attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
+                    attempts[3].Wall = TimeSpan.FromSeconds(105);
+                    attempts[4].Wall = TimeSpan.FromSeconds(105);
+                    return attempts;
+                }
                     attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
                     attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
                     attempts[3].Wall = TimeSpan.FromSeconds(105);
