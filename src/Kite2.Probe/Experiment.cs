@@ -309,6 +309,9 @@ namespace Kite2.Probe
                 // 7. Капы, XFERGROUP, XFERMECH, SETUPMEM.
                 WatchCaps(log, caseInfo.NewDsm, app, ds);
                 WatchXferGroup(log, caseInfo.NewDsm, app, ds);
+                // Податчик первым: новый драйвер в тихом режиме молчит
+                // без него (REPORT 10-23 — четыре сессии без готовности).
+                SetFeeder(log, caseInfo.NewDsm, app, ds);
                 SetXferMech(log, caseInfo.NewDsm, app, ds, caseInfo.Memory ? Twsx.Memory : Twsx.Native);
                 // CAP_XFERCOUNT драйвер Kyocera не принимает (TWRC_FAILURE) —
                 // оставляем его собственный счётчик, а не ломаем включение.
@@ -561,6 +564,37 @@ namespace Kite2.Probe
                 log.Info("CAP_XFERCOUNT = 1: SET {0}", TwRc.Name(rc));
                 if (rc == TwRc.Success)
                     ReadCurrent(log, newDsm, app, ds, "CAP_XFERCOUNT (после SET)", CapId.CapXferCount);
+            }
+            finally
+            {
+                WinMem.Free(h);
+            }
+        }
+
+        private static void SetFeeder(LineLog log, bool newDsm, TWIdentity app, TWIdentity ds)
+        {
+            // CAP_FEEDERENABLED = 1 (TWTY_INT16/bool) перед ENABLEDS: на
+            // новом драйвере тихая сессия не выходит на готовность, пока
+            // податчик выключен (REPORT 10-23: CAP_FEEDERENABLED = 0,
+            // XferReady не пришёл ни за 300 с в четырёх тихих сценариях).
+            IntPtr h = WinMem.Alloc(6);
+            try
+            {
+                IntPtr p = Native32.GlobalLock(h);
+                if (p == IntPtr.Zero)
+                {
+                    log.Info("CAP_FEEDERENABLED = 1: GlobalLock не удался");
+                    return;
+                }
+                Marshal.WriteInt16(p, 0, (short)TwTy.Int16);
+                Marshal.WriteInt32(p, 2, 1);
+                Native32.GlobalUnlock(h);
+
+                var rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.Capability, Msg.Set,
+                    new TWCapability(CapId.CapFeederEnabled, TwOn.OneValue, h));
+                log.Info("CAP_FEEDERENABLED = 1: SET {0}", TwRc.Name(rc));
+                if (rc == TwRc.Success)
+                    ReadCurrent(log, newDsm, app, ds, "CAP_FEEDERENABLED (после SET)", CapId.CapFeederEnabled);
             }
             finally
             {
@@ -974,7 +1008,13 @@ namespace Kite2.Probe
                 if (!ok)
                     break;
 
-                RunHandshake(log, newDsm, app, ds, state, caseInfo);
+                // Передача листа БЕЗ предварительных GET: DAT_PENDINGXFERS
+                // MSG_GET между листами развешивал DS навсегда (REPORT 16),
+                // поэтому сразу в передачу.
+                if (caseInfo.Memory)
+                    DoMemoryTransfer(log, newDsm, app, ds, state);
+                else
+                    DoNativeTransfer(log, newDsm, app, ds, state);
                 if (!state.Delivered)
                 {
                     log.Info("лист {0}: передача не удалась — стоп", n);
