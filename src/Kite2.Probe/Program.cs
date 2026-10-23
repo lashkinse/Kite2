@@ -69,7 +69,7 @@ namespace Kite2.Probe
             report.AppendLine("версия пробника: " + Assembly.GetEntryAssembly().GetName().Version);
             report.AppendLine("время: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             report.AppendLine("источник: по умолчанию (или по фильтру «" + filter + "»); окно скрытое; разрешение драйвера");
-            report.AppendLine("поводок на эксперимент: " + wall + " с (серийным сценариям — больше, см. ниже)");
+            report.AppendLine("поводок на эксперимент: 30 с");
             report.AppendLine();
 
             Console.WriteLine("Обследование TWAIN-драйвера.");
@@ -105,28 +105,11 @@ namespace Kite2.Probe
 
             string self = Assembly.GetEntryAssembly().Location;
 
-            // Подсказка человеку заранее: в сценарии 16 появится родной
-            // диалог драйвера, без нажатия «Скан» он просто отключится
-            // по поводку.
-            foreach (int windowIdx in Cases.Battery)
-            {
-                var windowCase = Cases.Get(windowIdx);
-                if (windowCase != null && windowCase.ShowUi)
-                {
-                    Console.WriteLine("Внимание: в эксперименте " + windowIdx
-                        + " появится окно драйвера — нажмите в нём «Скан».");
-                }
-            }
-
             foreach (int idx in Cases.Battery)
             {
                 var caseInfo = Cases.Get(idx);
-                // Серийным сценариям нужен запас на скан каждого листа;
-                // окно драйвера (сценарий 16) ждёт только 30 с: человек
-                // рядом и жмёт «Скан» быстро.
-                int childWall = caseInfo.ShowUi ? 30
-                    : caseInfo.Sheets > 1 ? Math.Max(wall, 50 * caseInfo.Sheets)
-                    : wall;
+                // Единый короткий поводок на каждый эксперимент.
+                int childWall = 30;
                 Console.WriteLine("=== Эксперимент {0} (поводок {1} с): {2}", idx, childWall, caseInfo.Title);
                 var logPath = Path.Combine(dir, "exp" + idx.ToString("00") + ".txt");
                 var stackFile = Path.Combine(dir, "exp" + idx.ToString("00") + ".stacks.txt");

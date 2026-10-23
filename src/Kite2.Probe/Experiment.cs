@@ -45,14 +45,15 @@ namespace Kite2.Probe
 
     internal static class Cases
     {
-        private const int Total = 16;
+        private const int Total = 14;
 
-        // Прогон (run) берёт серию ACCEPT-экспериментов: 11–13 — вызов
-        // KmUsbScnAccept/пок режима из приложения (тихая сессия), 14 —
-        // baseline точно без нашего вмешательства, 15 — MSG_RESET, 16 —
-        // родное окно драйвера с мини-дампом при падении. Сценарий 16
-        // требует человека: когда диалог появится, нажать в нём «Скан».
-        internal static readonly int[] Battery = { 11, 12, 13, 14, 15, 16 };
+        // Прогон (run) — тихая батарея ACCEPT-экспериментов на новом
+        // драйвере (REPORT 10-23): ранний Accept поглощается 11 (режим
+        // переносится Start-ом первой страницы), MSG_RESET закрывает
+        // сессию вместо подачи листа, оконный сценарий свою пользу
+        // исчерпал (страница 1 доказана, требует человека). Поводок
+        // на каждый — 30 с.
+        internal static readonly int[] Battery = { 11, 13, 14 };
 
         internal static Case Get(int idx)
         {
@@ -93,10 +94,6 @@ namespace Kite2.Probe
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
                         "Native: KmUsbScnAccept после листа 1, между листами ENDXFER (пачка до 6)",
                         Case.Strategy.AcceptMid, 6);
-                case 12:
-                    return Make(true, false, Case.Kind.ImageInfoThenPending,
-                        "Native: KmUsbScnAccept сразу после ENABLEDS, между листами ENDXFER (пачка до 6)",
-                        Case.Strategy.AcceptEarly, 6);
                 case 13:
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
                         "Native: пок g_nCurrentMode=2 после листа 1, между листами ENDXFER (пачка до 6)",
@@ -105,14 +102,6 @@ namespace Kite2.Probe
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
                         "Native: baseline — ENDXFER между листами без ACCEPT (пачка до 6)",
                         Case.Strategy.Plain, 6);
-                case 15:
-                    return Make(true, false, Case.Kind.ImageInfoThenPending,
-                        "Native: DAT_PENDINGXFERS MSG_RESET (7) в состоянии 7 (пачка до 6)",
-                        Case.Strategy.ResetMsg, 6);
-                case 16:
-                    return Make(true, false, Case.Kind.ImageInfoThenPending,
-                        "Native: ShowUI=1 (нажмите «Скан» в диалоге), между листами ENDXFER, мини-дамп при падении",
-                        Case.Strategy.Plain, 6, true);
                 default:
                     return null;
             }
@@ -1001,7 +990,8 @@ namespace Kite2.Probe
                 KmScn.LogState(log, "после запроса листа " + n);
 
                 callSw.Restart();
-                int waitLimit = Math.Max(30000, wall - (int)started.ElapsedMilliseconds);
+                // Гонимся за поводком: бюджет на ожидание — остаток стены.
+                int waitLimit = Math.Max(5000, wall - (int)started.ElapsedMilliseconds);
                 bool ok = WaitReady(newDsm, app, ds, pump, log, waitLimit, dsmAppMsg);
                 log.Info("лист {0}: готовность {1} через {2:N1} с после запроса (всего от ENABLEDS {3:N1} с)",
                     n, ok ? "есть" : "НЕТ", callSw.Elapsed.TotalSeconds, started.Elapsed.TotalSeconds);
