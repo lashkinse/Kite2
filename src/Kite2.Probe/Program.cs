@@ -122,8 +122,9 @@ namespace Kite2.Probe
             {
                 var caseInfo = Cases.Get(idx);
                 // Серийным сценариям нужен запас на скан каждого листа;
-                // окно драйвера ждёт человека — ему минимум 5 минут.
-                int childWall = caseInfo.ShowUi ? Math.Max(wall, 300)
+                // окно драйвера (сценарий 16) ждёт только 30 с: человек
+                // рядом и жмёт «Скан» быстро.
+                int childWall = caseInfo.ShowUi ? 30
                     : caseInfo.Sheets > 1 ? Math.Max(wall, 50 * caseInfo.Sheets)
                     : wall;
                 Console.WriteLine("=== Эксперимент {0} (поводок {1} с): {2}", idx, childWall, caseInfo.Title);
