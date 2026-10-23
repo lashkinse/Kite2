@@ -47,7 +47,7 @@ namespace Kite2.Probe
 
     internal static class Cases
     {
-        private const int Total = 21;
+        private const int Total = 22;
 
         // Прогон (run): сценарий 21 — пассивная пачка. НИ ОДНОГО ENDXFER
         // между листами: после передачи листа-application ждёт XFERREADY
@@ -112,6 +112,15 @@ namespace Kite2.Probe
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
                         "Native: ShowUI=1 («Скан»), ACCEPT после листа 1, далее пассивная пачка: XFERREADY сам → NATIVEXFER, без ENDXFER",
                         Case.Strategy.AcceptMid, 8, true);
+                case 22:
+                    // Проверка тихой пачки: окно не открываем, драйвер стартует
+                    // сам (в прогоне 1.7.40 XferReady пришёл без кнопки через
+                    // 14 с). Если после Accept в тихом сеансе приходят честные
+                    // готовности следующих листов — пачка собирается без окна.
+                    // Податчик загрузить 3–4 листами, НЕ нажимать ничего.
+                    return Make(true, false, Case.Kind.ImageInfoThenPending,
+                        "Native: ShowUI=0 (без окна, драйвер стартует сам), ACCEPT после листа 1, далее пассивная пачка",
+                        Case.Strategy.AcceptMid, 8, false);
                 default:
                     return null;
             }
