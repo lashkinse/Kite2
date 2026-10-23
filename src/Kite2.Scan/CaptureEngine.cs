@@ -326,12 +326,6 @@ namespace Kite2.Scan
                     attempts[4].Wall = TimeSpan.FromSeconds(105);
                     return attempts;
                 }
-                    attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
-                    attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
-                    attempts[3].Wall = TimeSpan.FromSeconds(105);
-                    attempts[4].Wall = TimeSpan.FromSeconds(105);
-                    return attempts;
-                }
 
                 // Нативная передача первой: NAPS2 ради этой же болезни Kyocera
                 // (молчание после XferReady, issue #577) с 8.1.3 переключает
