@@ -184,11 +184,18 @@ namespace Kite2.Scan.Twain
                     // честная готовность → передача, и так до тишины.
                     //
                     // НИКАКИХ звонков между листами: минидампы и журналы
-                    // обследователя доказали трижды, что от имениatio приложения
+                    // обследователя доказали трижды, что от имени приложения
                     // середина сессии роняет драйвер (второй DAT_PENDINGXFERS/
                     // MSG_ENDXFER — 0xC000041D в диалоге прогресса драйвера;
                     // пересессия DS — падение на переоткрытии). Один ENDXFER
                     // в конце пачки (в Close) — безопасен.
+                    //
+                    // Единственный допустимый звонок — KmUsbScnAccept (перевод
+                    // движка в режим ACCEPT). Без него драйвер в паузе после
+                    // передачи страницы ронял сам себя (прогон 1.7.38:
+                    // 0xC000041D через 1,3 с после страницы, звонков не было);
+                    // с ним обследователь жил с драйвером 4 минуты чисто
+                    // (эксп. 21).
                     while (WaitReady(app, ds, pump, TimeSpan.FromSeconds(90)))
                     {
                         if (!TransferOne(app, ds, directory, skipPending, ref failure))
@@ -196,6 +203,8 @@ namespace Kite2.Scan.Twain
                             Log.Info("Kyocera: передача сорвалась — пачку прекращаем, страниц {0}", Pages.Count);
                             break;
                         }
+
+                        EnsureAcceptMode();
                     }
 
                     Log.Info("Kyocera: пачка окончена (тишина между листами), страниц {0}", Pages.Count);
@@ -412,6 +421,45 @@ namespace Kite2.Scan.Twain
             finally
             {
                 try { LogManager.Flush(); } catch { }
+            }
+        }
+
+        // KmUsbScnAccept (Kite2.Scan.Twain.KmScn): перевод движка драйвера
+        // в режим ACCEPT (g_nCurrentMode = 2) с картой 20 int со стека —
+        // тот же звонок, который делает собственный UI драйвера при «Скан».
+        // Выполняется после каждой успешно переданной страницы. Движок
+        // ловит только собственные фантомы: любые ошибки журналируются
+        // и не влияют на пачку.
+        private static void EnsureAcceptMode()
+        {
+            try
+            {
+                IntPtr dll = KmScn.GetModule(0);
+                if (dll == IntPtr.Zero)
+                {
+                    Log.Info("Kyocera: движок KMUSBSCN3.dll выгружен — драйвер завершил задание сам");
+                    return;
+                }
+
+                var prof = KmScn.Detect(dll);
+                if (prof == null)
+                    return; // неопознанная сборка — не лезем
+
+                int mode = KmScn.ReadMode(dll, prof);
+                if (mode == 2)
+                {
+                    Log.Info("Kyocera: режим движка уже ACCEPT ({0}) — не вмешаемся", mode);
+                    return;
+                }
+
+                int ret = KmScn.CallAccept(dll, prof, KmScn.ReadParams(dll, prof));
+                Log.Info(
+                    "Kyocera: KmUsbScnAccept → {0}; режим движка теперь {1}",
+                    ret, KmScn.ReadMode(dll, prof));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Kyocera: звонок KmUsbScnAccept сорвался ({0}) — работаем дальше", ex.Message);
             }
         }
 
