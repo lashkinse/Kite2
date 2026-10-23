@@ -18,23 +18,41 @@ namespace Kite2.Probe
             Direct = 2
         }
 
+        // Что происходит между листами серии (сценарии 11–16):
+        // Plain — ничего, сырой ENDXFER (baseline) или MSG_RESET по Strat;
+        // AcceptMid — вызов экспорта KmUsbScnAccept ПОСЛЕ листа 1;
+        // AcceptEarly — вызов KmUsbScnAccept СРАЗУ после ENABLEDS;
+        // PokeMode — прямая запись 2 в g_nCurrentMode (DAT_100210f4);
+        // ResetMsg — DAT_PENDINGXFERS MSG_RESET вместо ENDXFER.
+        public enum Strategy
+        {
+            Plain = 0,
+            AcceptMid = 1,
+            AcceptEarly = 2,
+            PokeMode = 3,
+            ResetMsg = 4
+        }
+
         public int Index;
         public string Title;
         public bool NewDsm;
         public bool Memory;
         public Kind Handshake;
         public bool ShowUi;   // ENABLEDS с ShowUI=1 (родной диалог драйвера)
+        public int Sheets;    // сколько листов тянуть в одной серии (1 — как раньше)
+        public Strategy Strat;
     }
 
     internal static class Cases
     {
-        private const int Total = 10;
+        private const int Total = 16;
 
-        // Прогон (run) берёт только сценарий 10: родное окно драйвера
-        // (ShowUI=1) — единственный вариант, в котором движ Kyocera
-        // гарантированно доходит до готовности. Остальные сценарии
-        // остаются доступны вручную: exp <idx> для любого номера 1..10.
-        internal static readonly int[] Battery = { 10 };
+        // Прогон (run) берёт серию ACCEPT-экспериментов: 11–13 — вызов
+        // KmUsbScnAccept/пок режима из приложения (тихая сессия), 14 —
+        // baseline точно без нашего вмешательства, 15 — MSG_RESET, 16 —
+        // родное окно драйвера с мини-дампом при падении. Сценарий 16
+        // требует человека: когда диалог появится, нажать в нём «Скан».
+        internal static readonly int[] Battery = { 11, 12, 13, 14, 15, 16 };
 
         internal static Case Get(int idx)
         {
@@ -69,15 +87,50 @@ namespace Kite2.Probe
                         "Old-DSM Memory: прямой MEMXFER");
                 case 10:
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
-                        "Native: ShowUI=1 (диалог драйвера), IMAGEINFO → PENDINGXFERS → NATIVEXFER", true);
+                        "Native: ShowUI=1 (диалог драйвера), IMAGEINFO → PENDINGXFERS → NATIVEXFER",
+                        showUi: true);
+                case 11:
+                    return Make(true, false, Case.Kind.ImageInfoThenPending,
+                        "Native: KmUsbScnAccept после листа 1, между листами ENDXFER (пачка до 6)",
+                        Case.Strategy.AcceptMid, 6);
+                case 12:
+                    return Make(true, false, Case.Kind.ImageInfoThenPending,
+                        "Native: KmUsbScnAccept сразу после ENABLEDS, между листами ENDXFER (пачка до 6)",
+                        Case.Strategy.AcceptEarly, 6);
+                case 13:
+                    return Make(true, false, Case.Kind.ImageInfoThenPending,
+                        "Native: пок g_nCurrentMode=2 после листа 1, между листами ENDXFER (пачка до 6)",
+                        Case.Strategy.PokeMode, 6);
+                case 14:
+                    return Make(true, false, Case.Kind.ImageInfoThenPending,
+                        "Native: baseline — ENDXFER между листами без ACCEPT (пачка до 6)",
+                        Case.Strategy.Plain, 6);
+                case 15:
+                    return Make(true, false, Case.Kind.ImageInfoThenPending,
+                        "Native: DAT_PENDINGXFERS MSG_RESET (7) в состоянии 7 (пачка до 6)",
+                        Case.Strategy.ResetMsg, 6);
+                case 16:
+                    return Make(true, false, Case.Kind.ImageInfoThenPending,
+                        "Native: ShowUI=1 (нажмите «Скан» в диалоге), между листами ENDXFER, мини-дамп при падении",
+                        Case.Strategy.Plain, 6, true);
                 default:
                     return null;
             }
         }
 
-        private static Case Make(bool newDsm, bool memory, Case.Kind handshake, string title, bool showUi = false)
+        private static Case Make(bool newDsm, bool memory, Case.Kind handshake, string title,
+            Case.Strategy strat = Case.Strategy.Plain, int sheets = 1, bool showUi = false)
         {
-            return new Case { NewDsm = newDsm, Memory = memory, Handshake = handshake, Title = title, ShowUi = showUi };
+            return new Case
+            {
+                NewDsm = newDsm,
+                Memory = memory,
+                Handshake = handshake,
+                Title = title,
+                ShowUi = showUi,
+                Strat = strat,
+                Sheets = sheets
+            };
         }
 
         internal static int Count
@@ -89,9 +142,11 @@ namespace Kite2.Probe
     internal static class Experiment
     {
         // Путь журнала и номер сценария — нужны, чтобы сохранить полученную
-        // страницу рядом с журналом.
+        // страницу рядом с журналом. PageSold — сколько страниц получено
+        // за всю серию (для имени файлов pageXX_NN.bmp и вердикта).
         internal static string LogPath = string.Empty;
         internal static int LogIndex;
+        internal static int PageSold;
 
         // Аргументы exp: idx, wallMs, logPath; необязательный фильтр источника.
         public static int Run(string[] args)
@@ -102,6 +157,16 @@ namespace Kite2.Probe
             string filter = args.Length > 4 ? args[4] : string.Empty;
             LogPath = logPath;
             LogIndex = idx;
+            PageSold = 0;
+
+            // Мини-дамп при нативном падении: без него о смерти в коде
+            // драйвера остаётся только код выхода (0xC000041D и подобие).
+            try
+            {
+                string dir = Path.GetDirectoryName(Path.GetFullPath(logPath));
+                MiniDump.Install(dir, "exp" + idx.ToString("00"));
+            }
+            catch { }
 
             var caseInfo = Cases.Get(idx);
             if (caseInfo == null)
@@ -281,6 +346,12 @@ namespace Kite2.Probe
                     //     сравнить с дожавшимися нулями из состояния 4.
                     ReadCap(log, caseInfo.NewDsm, app, ds, "после ENABLEDS ICAP_XFERMECH", CapId.ICapXferMech);
 
+                    // 7в. Сценарий 12: вызов экспорта KmUsbScnAccept сразу
+                    //     после ENABLEDS — включение ACCEPT для самой первой
+                    //     страницы, ровно как делает диалог драйвера на «Скан».
+                    if (caseInfo.Strat == Case.Strategy.AcceptEarly)
+                        EarlyAccept(log);
+
                     // 8. Готовность.
                     sw.Restart();
                     int left = wall - (int)sw.ElapsedMilliseconds;
@@ -295,6 +366,11 @@ namespace Kite2.Probe
 
                     // 9. Стержень: последовательность триплетов после XferReady.
                     RunHandshake(log, caseInfo.NewDsm, app, ds, state, caseInfo);
+
+                    // 9б. Серийные сценарии 11–16: попытка вытянуть следующие
+                    //     листы из той же сессии по схеме, выбранной в Strat.
+                    if (state.Delivered && caseInfo.Sheets > 1)
+                        RunBatch(log, caseInfo, caseInfo.NewDsm, app, ds, state, pump, sw, wall, dsmAppMsg);
                 }
                 finally
                 {
@@ -311,7 +387,7 @@ namespace Kite2.Probe
                     log.Info("MSG_CLOSEDS: {0}", TwRc.Name(rc));
                 }
 
-                return state.Delivered ? 0 : 1;
+                return PageSold > 0 ? 0 : 1;
             }
             finally
             {
@@ -699,7 +775,9 @@ namespace Kite2.Probe
                 int total = biSize + pixels;
 
                 string dir = Path.GetDirectoryName(LogPath);
-                string path = Path.Combine(dir ?? ".", "page" + (LogIndex.ToString("00")) + ".bmp");
+                int page = ++PageSold;
+                string path = Path.Combine(dir ?? ".", "page" + LogIndex.ToString("00")
+                    + "_" + page.ToString("00") + ".bmp");
 
                 using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write))
                 using (var w = new BinaryWriter(fs))
@@ -796,6 +874,109 @@ namespace Kite2.Probe
                 case Msg.CloseDSCancel: return "CLOSEDSCANCEL(260)";
                 default: return "неведомый " + msg;
             }
+        }
+
+        // Сценарий 12: включение ACCEPT из приложения, как только
+        // KMUSBSCN3.dll появился в процессе (сразу после ENABLEDS).
+        private static void EarlyAccept(LineLog log)
+        {
+            IntPtr dll = KmScn.GetModule(log, 2000);
+            if (dll == IntPtr.Zero)
+            {
+                log.Info("KMUSBSCN3.dll после ENABLEDS не загрузился — ранний Accept пропущен");
+                return;
+            }
+            KmScn.LogState(log, "ранний Accept: до вызова");
+            EnsureMode2(log, viaPoke: false, dll);
+            KmScn.LogState(log, "ранний Accept: после вызова");
+        }
+
+        // Доводим g_nCurrentMode до 2 (SCAN_MODE_ACCEPT): экспортом
+        // KmUsbScnAccept с картой параметров DAT_10021050 (верный путь UI)
+        // или прямой записью в глобал (пок, сценарий 13).
+        private static void EnsureMode2(LineLog log, bool viaPoke, IntPtr dll)
+        {
+            int mode = Marshal.ReadInt32(dll, KmScn.RvaMode);
+            log.Info("g_nCurrentMode (DAT_100210f4) = {0}", mode);
+            if (mode == 2)
+            {
+                log.Info("режим уже ACCEPT — intervene не нужно");
+                return;
+            }
+
+            if (viaPoke)
+            {
+                Marshal.WriteInt32(dll, KmScn.RvaMode, 2);
+                log.Info("пок: g_nCurrentMode ← 2; читаем назад = {0}", Marshal.ReadInt32(dll, KmScn.RvaMode));
+                return;
+            }
+
+            int[] p = KmScn.ReadParams(dll);
+            log.Info("карта параметров DAT_10021050: {0}",
+                string.Join(",", Array.ConvertAll(p, v => "0x" + v.ToString("X"))));
+            int ret = KmScn.CallAccept(dll, p, log);
+            log.Info("KmUsbScnAccept → {0}; g_nCurrentMode теперь = {1}",
+                ret, Marshal.ReadInt32(dll, KmScn.RvaMode));
+        }
+
+        // Серийный цикл сценариев 11–16: после листа 1 просим следующий
+        // (ENDXFER или MSG_RESET), по схеме сценария доводим режим до
+        // ACCEPT, ждём готовность и передаём лист за листом.
+        private static void RunBatch(LineLog log, Case caseInfo, bool newDsm, TWIdentity app, TWIdentity ds,
+            HandshakeState state, PumpWindow pump, Stopwatch started, int wall, uint dsmAppMsg)
+        {
+            for (int n = 2; n <= caseInfo.Sheets; n++)
+            {
+                if (!state.Delivered)
+                    break;
+
+                log.Info("── лист {0}: запрос следующего ──", n);
+                KmScn.LogState(log, "перед запросом листа " + n);
+
+                // Режим до ACCEPT не добиваем только там, где проверяем
+                // сырое поведение драйвера (baseline 14, MSG_RESET 15).
+                if (caseInfo.Strat == Case.Strategy.AcceptMid
+                    || caseInfo.Strat == Case.Strategy.AcceptEarly
+                    || caseInfo.Strat == Case.Strategy.PokeMode)
+                {
+                    IntPtr dll = KmScn.GetModule(log, 0);
+                    if (dll != IntPtr.Zero)
+                        EnsureMode2(log, caseInfo.Strat == Case.Strategy.PokeMode, dll);
+                }
+
+                var callSw = Stopwatch.StartNew();
+                ushort rc;
+                if (caseInfo.Strat == Case.Strategy.ResetMsg)
+                {
+                    log.Info("→ DAT_PENDINGXFERS MSG_RESET (7)…");
+                    rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.PendingXfers, Msg.Reset, new TWPendingXfers { Count = 1 });
+                    log.Info("   MSG_RESET: {0} за {1:N0} мс", TwRc.Name(rc), callSw.ElapsedMilliseconds);
+                }
+                else
+                {
+                    log.Info("→ DAT_PENDINGXFERS MSG_ENDXFER (между листами)…");
+                    rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.PendingXfers, Msg.EndXfer, new TWPendingXfers { Count = 1 });
+                    log.Info("   MSG_ENDXFER: {0} за {1:N0} мс", TwRc.Name(rc), callSw.ElapsedMilliseconds);
+                }
+                KmScn.LogState(log, "после запроса листа " + n);
+
+                callSw.Restart();
+                int waitLimit = Math.Max(30000, wall - (int)started.ElapsedMilliseconds);
+                bool ok = WaitReady(newDsm, app, ds, pump, log, waitLimit, dsmAppMsg);
+                log.Info("лист {0}: готовность {1} через {2:N1} с после запроса (всего от ENABLEDS {3:N1} с)",
+                    n, ok ? "есть" : "НЕТ", callSw.Elapsed.TotalSeconds, started.Elapsed.TotalSeconds);
+                if (!ok)
+                    break;
+
+                RunHandshake(log, newDsm, app, ds, state, caseInfo);
+                if (!state.Delivered)
+                {
+                    log.Info("лист {0}: передача не удалась — стоп", n);
+                    break;
+                }
+            }
+
+            log.Info("итог серии: сохранено страниц {0}", PageSold);
         }
 
         private static bool WaitReady(bool newDsm, TWIdentity app, TWIdentity ds, PumpWindow pump, LineLog log, int limitMs, uint dsmAppMsg)

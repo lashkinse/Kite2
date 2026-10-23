@@ -41,6 +41,7 @@ namespace Kite2.Probe
         public const ushort GetFirst = 4;
         public const ushort GetNext = 5;
         public const ushort Set = 6;
+        public const ushort Reset = 7;
         public const ushort QuerySupport = 8;
         public const ushort XferReady = 257;
         public const ushort CloseDSReq = 258;

@@ -66,9 +66,10 @@ namespace Kite2.Probe
 
             var report = new StringBuilder();
             report.AppendLine("Kite2.Probe — обследование TWAIN-драйвера");
+            report.AppendLine("версия пробника: " + Assembly.GetEntryAssembly().GetName().Version);
             report.AppendLine("время: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             report.AppendLine("источник: по умолчанию (или по фильтру «" + filter + "»); окно скрытое; разрешение драйвера");
-            report.AppendLine("поводок на эксперимент: " + wall + " с");
+            report.AppendLine("поводок на эксперимент: " + wall + " с (серийным сценариям — больше, см. ниже)");
             report.AppendLine();
 
             Console.WriteLine("Обследование TWAIN-драйвера.");
@@ -103,10 +104,29 @@ namespace Kite2.Probe
             report.AppendLine();
 
             string self = Assembly.GetEntryAssembly().Location;
+
+            // Подсказка человеку заранее: в сценарии 16 появится родной
+            // диалог драйвера, без нажатия «Скан» он просто отключится
+            // по поводку.
+            foreach (int windowIdx in Cases.Battery)
+            {
+                var windowCase = Cases.Get(windowIdx);
+                if (windowCase != null && windowCase.ShowUi)
+                {
+                    Console.WriteLine("Внимание: в эксперименте " + windowIdx
+                        + " появится окно драйвера — нажмите в нём «Скан».");
+                }
+            }
+
             foreach (int idx in Cases.Battery)
             {
                 var caseInfo = Cases.Get(idx);
-                Console.WriteLine("=== Эксперимент {0} (поводок {1} с): {2}", idx, wall, caseInfo.Title);
+                // Серийным сценариям нужен запас на скан каждого листа;
+                // окно драйвера ждёт человека — ему минимум 5 минут.
+                int childWall = caseInfo.ShowUi ? Math.Max(wall, 300)
+                    : caseInfo.Sheets > 1 ? Math.Max(wall, 50 * caseInfo.Sheets)
+                    : wall;
+                Console.WriteLine("=== Эксперимент {0} (поводок {1} с): {2}", idx, childWall, caseInfo.Title);
                 var logPath = Path.Combine(dir, "exp" + idx.ToString("00") + ".txt");
                 var stackFile = Path.Combine(dir, "exp" + idx.ToString("00") + ".stacks.txt");
 
@@ -117,7 +137,7 @@ namespace Kite2.Probe
                 {
                     var quoted = string.Join(" ", new[]
                     {
-                        "exp", idx.ToString(), (wall * 1000).ToString(),
+                        "exp", idx.ToString(), (childWall * 1000).ToString(),
                         "\"" + logPath + "\"",
                         string.IsNullOrEmpty(filter) ? null : "\"" + filter + "\""
                     }.Where(part => part != null));
@@ -133,7 +153,9 @@ namespace Kite2.Probe
                     child.StartInfo.EnvironmentVariables["TWAINDSM_LOG"] =
                         Path.Combine(dir, "exp" + idx.ToString("00") + ".dsmlog.txt");
                     child.Start();
-                    bool finished = child.WaitForExit(wall * 1000);
+                    // Плюс 30 с сверх поводка ребёнка: висящий нативный вызов
+                    // дожимает внутренние таймауты позже внутреннего плана.
+                    bool finished = child.WaitForExit(childWall * 1000 + 30000);
                     if (!finished)
                     {
                         killed = true;
@@ -172,6 +194,18 @@ namespace Kite2.Probe
                 report.AppendLine("вердикт: " + verdictLabel + "; длительность " + dt.TotalSeconds.ToString("N0") + " с");
                 if (!killed)
                     report.AppendLine("код выхода ребёнка: " + verdict + " (0x" + unchecked((uint)verdict).ToString("X8") + ")");
+                // Мини-дампы нативного падения ребёнка (если успели записаться).
+                var dumps = Directory.GetFiles(dir, "exp" + idx.ToString("00") + ".crash*.dmp");
+                if (dumps.Length > 0)
+                {
+                    report.AppendLine();
+                    report.AppendLine("── мини-дампы падения (WinDbg: !analyze -v / Ghidra: демпон ок) ──");
+                    foreach (var d in dumps)
+                    {
+                        var fi = new FileInfo(d);
+                        report.AppendLine(fi.Name + " (" + fi.Length.ToString("N0") + " байт)");
+                    }
+                }
                 if (File.Exists(logPath))
                     report.AppendLine();
                 if (File.Exists(logPath))
