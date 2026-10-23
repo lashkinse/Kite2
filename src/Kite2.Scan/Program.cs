@@ -240,6 +240,27 @@ namespace Kite2.Scan
                 // внутри него циклится и роняет процесс.
                 try
                 {
+                    // Режим окна драйвера: пишем все исключения подряд, до
+                    // предела. Падение 0xC000041D (журнал 1.7.36) — исключение
+                    // в обратном вызове; без его типа и стека причину не найти.
+                    if (KyoceraTwainScanner.DiagnoseAll && !(e.Exception is OperationCanceledException))
+                    {
+                        if (Interlocked.Increment(ref KyoceraTwainScanner.DiagnosedCount) <= 80)
+                        {
+                            string trace = e.Exception.StackTrace ?? string.Empty;
+                            if (trace.Length > 1500)
+                                trace = trace.Substring(0, 1500);
+
+                            Log.Warn(
+                                "Исключение первого шанса: {0}: {1}{2}{3}",
+                                e.Exception.GetType().FullName,
+                                e.Exception.Message,
+                                Environment.NewLine,
+                                trace);
+                        }
+                        return;
+                    }
+
                     // Ловим только момент передачи: до XferReady драйвер при
                     // опросе возможностей невинно роняет исключения в любом
                     // запросе, и они съедали лимит до точки смерти.

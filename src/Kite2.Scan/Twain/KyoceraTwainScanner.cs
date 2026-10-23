@@ -52,6 +52,13 @@ namespace Kite2.Scan.Twain
         // Имя источника по каталогу: если задан, берём именно его.
         private static string _wantedSource;
 
+        // Диагностика окна драйвера: в этом режиме обработчик исключений первого
+        // шанса пишет все исключения (см. Program.RegisterFirstChanceDiagnostics).
+        public static bool DiagnoseAll;
+
+        // Сколько исключений уже записано в режиме диагностики.
+        public static int DiagnosedCount;
+
         // Открытый источник и диспетчер: нужны для уборки после записи ответа.
         private static TWIdentity _app;
         private static TWIdentity _ds;
@@ -73,6 +80,8 @@ namespace Kite2.Scan.Twain
         {
             _wantedSource = sourceName;
             string failure = null;
+            DiagnoseAll = showUi;
+            DiagnosedCount = 0;
 
             string dllNote = Dsm.LoadLibraries();
             if (dllNote != null)
