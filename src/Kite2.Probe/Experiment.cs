@@ -892,31 +892,37 @@ namespace Kite2.Probe
         }
 
         // Доводим g_nCurrentMode до 2 (SCAN_MODE_ACCEPT): экспортом
-        // KmUsbScnAccept с картой параметров DAT_10021050 (верный путь UI)
-        // или прямой записью в глобал (пок, сценарий 13).
+        // KmUsbScnAccept с картой параметров (верный путь UI) или прямой
+        // записью в глобал (пок, сценарий 13). Профиль RVAs — по штампу PE.
         private static void EnsureMode2(LineLog log, bool viaPoke, IntPtr dll)
         {
-            int mode = Marshal.ReadInt32(dll, KmScn.RvaMode);
-            log.Info("g_nCurrentMode (DAT_100210f4) = {0}", mode);
+            var prof = KmScn.Detect(dll, log);
+            if (prof == null)
+            {
+                log.Info("профиль RVAs не определён — вмешательство в режим пропущено");
+                return;
+            }
+            int mode = Marshal.ReadInt32(dll, prof.Mode);
+            log.Info("g_nCurrentMode = {0}", mode);
             if (mode == 2)
             {
-                log.Info("режим уже ACCEPT — intervene не нужно");
+                log.Info("режим уже ACCEPT — вмешательство не нужно");
                 return;
             }
 
             if (viaPoke)
             {
-                Marshal.WriteInt32(dll, KmScn.RvaMode, 2);
-                log.Info("пок: g_nCurrentMode ← 2; читаем назад = {0}", Marshal.ReadInt32(dll, KmScn.RvaMode));
+                Marshal.WriteInt32(dll, prof.Mode, 2);
+                log.Info("пок: g_nCurrentMode ← 2; читаем назад = {0}", Marshal.ReadInt32(dll, prof.Mode));
                 return;
             }
 
-            int[] p = KmScn.ReadParams(dll);
-            log.Info("карта параметров DAT_10021050: {0}",
+            int[] p = KmScn.ReadParams(dll, prof);
+            log.Info("карта параметров: {0}",
                 string.Join(",", Array.ConvertAll(p, v => "0x" + v.ToString("X"))));
-            int ret = KmScn.CallAccept(dll, p, log);
+            int ret = KmScn.CallAccept(dll, prof, p, log);
             log.Info("KmUsbScnAccept → {0}; g_nCurrentMode теперь = {1}",
-                ret, Marshal.ReadInt32(dll, KmScn.RvaMode));
+                ret, Marshal.ReadInt32(dll, prof.Mode));
         }
 
         // Серийный цикл сценариев 11–16: после листа 1 просим следующий
