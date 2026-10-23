@@ -41,21 +41,20 @@ namespace Kite2.Probe
         public bool ShowUi;   // ENABLEDS с ShowUI=1 (родной диалог драйвера)
         public int Sheets;    // сколько листов тянуть в одной серии (1 — как раньше)
         public Strategy Strat;
-        public int IdleWaitMs; // сколько мс слушать спонтанную готовность после передачи листа (0 — сразу запрос)
+        public int SettleMs;    // пауза после передачи листа перед ENDXFER (0 — моментально)
+        public int EndXferCount; // что писать в Count у TWPendingXfers между листами
     }
 
     internal static class Cases
     {
-        private const int Total = 17;
+        private const int Total = 19;
 
-        // Прогон (run) начинается с UI-сценариев: родное окно драйвера —
-        // единственный путь, на котором новый драйвер гарантированно
-        // доходил до листов (REPORT 10-23). 17 отличается от 16 тем,
-        // что после каждой передачи лист слушает спонтанную готовность
-        // (12 с) и только при тишине шлёт ENDXFER — проверка гипотезы,
-        // что падение 0xC000041D даёт второй ENDXFER по свежему следу
-        // ACCEPT-цикла. За ними тихая батарея 11/13/14.
-        internal static readonly int[] Battery = { 17, 16, 11, 13, 14 };
+        // Прогон (run) — только оконные сценарии: тихий режим мёртв
+        // (REPORT 10-23/24 подтверждает трижды). 18/19 проверяют гипотезу
+        // из минидампа: второй ENDXFER падает в диалоге прогресса драйвера
+        // (0xC000041D в user-callback), возможно — только когда посылается
+        // сразу после XFERDONE. Пауза 8 с + два варианта Count.
+        internal static readonly int[] Battery = { 18, 19 };
 
         internal static Case Get(int idx)
         {
@@ -108,10 +107,14 @@ namespace Kite2.Probe
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
                         "Native: ShowUI=1 (нажмите «Скан» в диалоге), KmUsbScnAccept после листа 1, ENDXFER между листами, мини-дамп",
                         Case.Strategy.AcceptMid, 6, true);
-                case 17:
+                case 18:
                     return Make(true, false, Case.Kind.ImageInfoThenPending,
-                        "Native: ShowUI=1 («Скан»), ACCEPT, после листа слушаем спонтанную готовность 12 с, ENDXFER при тишине, мини-дамп",
-                        Case.Strategy.AcceptMid, 6, true, idleWaitMs: 12000);
+                        "Native: ShowUI=1 («Скан»), ACCEPT, пауза 8 с после передачи, ENDXFER Count=0, мини-дамп",
+                        Case.Strategy.AcceptMid, 4, true, settleMs: 8000, endXferCount: 0);
+                case 19:
+                    return Make(true, false, Case.Kind.ImageInfoThenPending,
+                        "Native: ShowUI=1 («Скан»), ACCEPT, пауза 8 с после передачи, ENDXFER Count=1, мини-дамп",
+                        Case.Strategy.AcceptMid, 4, true, settleMs: 8000, endXferCount: 1);
                 default:
                     return null;
             }
@@ -119,7 +122,7 @@ namespace Kite2.Probe
 
         private static Case Make(bool newDsm, bool memory, Case.Kind handshake, string title,
             Case.Strategy strat = Case.Strategy.Plain, int sheets = 1, bool showUi = false,
-            int idleWaitMs = 0)
+            int settleMs = 0, int endXferCount = 1)
         {
             return new Case
             {
@@ -130,7 +133,8 @@ namespace Kite2.Probe
                 ShowUi = showUi,
                 Strat = strat,
                 Sheets = sheets,
-                IdleWaitMs = idleWaitMs
+                SettleMs = settleMs,
+                EndXferCount = endXferCount
             };
         }
 
@@ -960,9 +964,9 @@ namespace Kite2.Probe
                 ret, Marshal.ReadInt32(dll, prof.Mode));
         }
 
-        // Серийный цикл сценариев 11–16: после листа 1 просим следующий
-        // (ENDXFER или MSG_RESET), по схеме сценария доводим режим до
-        // ACCEPT, ждём готовность и передаём лист за листом.
+        // Серийный цикл оконных сценариев (18/19): пауза-успокоение,
+        // запрос следующего листа (ENDXFER с Count из сценария), режим
+        // до ACCEPT, ожидание готовности и передача листов подряд.
         private static void RunBatch(LineLog log, Case caseInfo, bool newDsm, TWIdentity app, TWIdentity ds,
             HandshakeState state, PumpWindow pump, Stopwatch started, int wall, uint dsmAppMsg)
         {
@@ -971,59 +975,51 @@ namespace Kite2.Probe
                 if (!state.Delivered)
                     break;
 
-                // Сценарий 17: после передачи листа слушаем спонтанную
-                // готовность со статусом нативных переменных каждые 2 с;
-                // ENDXFER — только если за отведённое время тишина.
-                bool readyNow = false;
-                if (caseInfo.IdleWaitMs > 0)
+                // Пауза «успокоения» после передачи (сценарии 18/19): без
+                // TWAIN-звонков и опроса готовности, только статус каждые
+                // 2 с. Минидамп exp16: второй ENDXFER падает в диалоге
+                // прогресса драйвера — возможно, только посланный сразу
+                // после XFERDONE.
+                if (caseInfo.SettleMs > 0)
+                    PureSettle(log, caseInfo.SettleMs);
+
+                log.Info("── лист {0}: запрос следующего ──", n);
+                KmScn.LogState(log, "перед запросом листа " + n);
+
+                // Режим до ACCEPT не добиваем только там, где проверяем
+                // сырое поведение драйвера (baseline).
+                if (caseInfo.Strat == Case.Strategy.AcceptMid
+                    || caseInfo.Strat == Case.Strategy.AcceptEarly
+                    || caseInfo.Strat == Case.Strategy.PokeMode)
                 {
-                    readyNow = IdleSettle(log, newDsm, app, ds, pump, caseInfo.IdleWaitMs, dsmAppMsg);
-                    log.Info("лист {0}: спонтанная готовность {1}", n,
-                        readyNow ? "пришла — ENDXFER не нужен"
-                                 : "не пришла за " + (caseInfo.IdleWaitMs / 1000) + " с");
+                    IntPtr dll = KmScn.GetModule(log, 0);
+                    if (dll != IntPtr.Zero)
+                        EnsureMode2(log, caseInfo.Strat == Case.Strategy.PokeMode, dll);
                 }
 
-                if (!readyNow)
+                var callSw = Stopwatch.StartNew();
+                ushort rc;
+                if (caseInfo.Strat == Case.Strategy.ResetMsg)
                 {
-                    log.Info("── лист {0}: запрос следующего ──", n);
-                    KmScn.LogState(log, "перед запросом листа " + n);
-
-                    // Режим до ACCEPT не добиваем только там, где проверяем
-                    // сырое поведение драйвера (baseline 14, MSG_RESET 15).
-                    if (caseInfo.Strat == Case.Strategy.AcceptMid
-                        || caseInfo.Strat == Case.Strategy.AcceptEarly
-                        || caseInfo.Strat == Case.Strategy.PokeMode)
-                    {
-                        IntPtr dll = KmScn.GetModule(log, 0);
-                        if (dll != IntPtr.Zero)
-                            EnsureMode2(log, caseInfo.Strat == Case.Strategy.PokeMode, dll);
-                    }
-
-                    var callSw = Stopwatch.StartNew();
-                    ushort rc;
-                    if (caseInfo.Strat == Case.Strategy.ResetMsg)
-                    {
-                        log.Info("→ DAT_PENDINGXFERS MSG_RESET (7)…");
-                        rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.PendingXfers, Msg.Reset, new TWPendingXfers { Count = 1 });
-                        log.Info("   MSG_RESET: {0} за {1:N0} мс", TwRc.Name(rc), callSw.ElapsedMilliseconds);
-                    }
-                    else
-                    {
-                        log.Info("→ DAT_PENDINGXFERS MSG_ENDXFER (между листами)…");
-                        rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.PendingXfers, Msg.EndXfer, new TWPendingXfers { Count = 1 });
-                        log.Info("   MSG_ENDXFER: {0} за {1:N0} мс", TwRc.Name(rc), callSw.ElapsedMilliseconds);
-                    }
-                    KmScn.LogState(log, "после запроса листа " + n);
-
-                    callSw.Restart();
-                    // Гонимся за поводком: бюджет на ожидание — остаток стены.
-                    int waitLimit = Math.Max(5000, wall - (int)started.ElapsedMilliseconds);
-                    bool ok = WaitReady(newDsm, app, ds, pump, log, waitLimit, dsmAppMsg);
-                    log.Info("лист {0}: готовность {1} через {2:N1} с после запроса (всего от ENABLEDS {3:N1} с)",
-                        n, ok ? "есть" : "НЕТ", callSw.Elapsed.TotalSeconds, started.Elapsed.TotalSeconds);
-                    if (!ok)
-                        break;
+                    log.Info("→ DAT_PENDINGXFERS MSG_RESET (7)…");
+                    rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.PendingXfers, Msg.Reset, new TWPendingXfers { Count = 1 });
+                    log.Info("   MSG_RESET: {0} за {1:N0} мс", TwRc.Name(rc), callSw.ElapsedMilliseconds);
                 }
+                else
+                {
+                    log.Info("→ DAT_PENDINGXFERS MSG_ENDXFER (между листами, Count={0})…", caseInfo.EndXferCount);
+                    rc = Dsm.Call(newDsm, app, ds, Dg.Control, Dat.PendingXfers, Msg.EndXfer, new TWPendingXfers { Count = (ushort)caseInfo.EndXferCount });                    log.Info("   MSG_ENDXFER: {0} за {1:N0} мс", TwRc.Name(rc), callSw.ElapsedMilliseconds);
+                }
+                KmScn.LogState(log, "после запроса листа " + n);
+
+                callSw.Restart();
+                // Гонимся за поводком: бюджет на ожидание — остаток стены.
+                int waitLimit = Math.Max(5000, wall - (int)started.ElapsedMilliseconds);
+                bool ok = WaitReady(newDsm, app, ds, pump, log, waitLimit, dsmAppMsg);
+                log.Info("лист {0}: готовность {1} через {2:N1} с после запроса (всего от ENABLEDS {3:N1} с)",
+                    n, ok ? "есть" : "НЕТ", callSw.Elapsed.TotalSeconds, started.Elapsed.TotalSeconds);
+                if (!ok)
+                    break;
 
                 // Передача листа БЕЗ предварительных GET: DAT_PENDINGXFERS
                 // MSG_GET между листами развешивал DS навсегда (REPORT 16),
@@ -1042,25 +1038,22 @@ namespace Kite2.Probe
             log.Info("итог серии: сохранено страниц {0}", PageSold);
         }
 
-        // Слушатель спонтанной готовности (сценарий 17): после передачи
-        // листа прокачиваем PROC и колбэки, каждые 2 с печатая состояние
-        // нативных переменных. true — готовность пришла сама, ENDXFER не
-        // нужен; false — тишина, дальнейший путь как в сценарии 16.
-        private static bool IdleSettle(LineLog log, bool newDsm, TWIdentity app, TWIdentity ds,
-            PumpWindow pump, int limitMs, uint dsmAppMsg)
+        // Пауза «успокоения» драйвера после передачи листа: никаких
+        // TWAIN-звонков и опроса готовности, только Sleep и статус
+        // нативных переменных каждые 2 с. В сценарии 17 попытка слушать
+        // готовность ломала все листы фантомными сигналами из очереди
+        // (Dsm.Messages.Wait возвращал остатки прошлой готовности) —
+        // так не делаем.
+        private static void PureSettle(LineLog log, int limitMs)
         {
-            int left = limitMs;
-            int slice = 500;
-            while (left > 0)
+            int slept = 0;
+            while (slept < limitMs)
             {
-                int step = Math.Min(slice, left);
-                if (WaitReady(newDsm, app, ds, pump, log, step, dsmAppMsg))
-                    return true;
-                left -= step;
-                if (left % 2000 == 0)
-                    KmScn.LogState(log, "тишина " + (limitMs - left) / 1000 + " с после передачи");
+                Thread.Sleep(500);
+                slept += 500;
+                if (slept % 2000 == 0)
+                    KmScn.LogState(log, "пауза " + (slept / 1000) + " с после передачи");
             }
-            return false;
         }
 
         private static bool WaitReady(bool newDsm, TWIdentity app, TWIdentity ds, PumpWindow pump, LineLog log, int limitMs, uint dsmAppMsg)

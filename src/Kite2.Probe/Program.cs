@@ -69,7 +69,7 @@ namespace Kite2.Probe
             report.AppendLine("версия пробника: " + Assembly.GetEntryAssembly().GetName().Version);
             report.AppendLine("время: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             report.AppendLine("источник: по умолчанию (или по фильтру «" + filter + "»); окно скрытое; разрешение драйвера");
-            report.AppendLine("поводок на эксперимент: 30 с (тихим сценариям), 75 с (оконным 16/17)");
+            report.AppendLine("поводок на эксперимент: 30 с (тихим сценариям), 75 с (оконным 18/19)");
             report.AppendLine();
 
             Console.WriteLine("Обследование TWAIN-драйвера.");
