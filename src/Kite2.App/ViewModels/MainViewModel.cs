@@ -26,8 +26,6 @@ namespace Kite2.App.ViewModels
 
         private const int PageQuality = 25;
 
-        private const int ScanDpi = 300;
-
         private const int ResultNoticeSeconds = 4;
 
         private readonly ObservableCollection<PageViewModel> _pages = new ObservableCollection<PageViewModel>();
@@ -132,8 +130,6 @@ namespace Kite2.App.ViewModels
         public RelayCommand CancelNoticeCommand { get; }
 
         public RelayCommand LogFolderCommand { get; }
-
-        private ScanMode CurrentScanMode { get; set; } = ScanMode.Greyscale;
 
         // Подготовка после показа окна: чистка каталога и запуск ImageMagick
         // не должны задерживать раскрытие.
@@ -296,18 +292,12 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        // Цветное кодирование по умолчанию: что бы ни отсканировал драйвер,
-        // программа сохраняет как есть, ничего не обесцвечивает и не усиливает.
         private async Task<int> ScanOnce(CancellationToken cancellationToken)
         {
             var request = new ScanRequest
             {
-                SourceIndex = FakeScanner.Enabled ? 0 : AppSettings.ScanSourceIndex,
-                Dpi = ScanDpi,
-                Colour = CaptureColour.Colour
+                SourceIndex = FakeScanner.Enabled ? 0 : AppSettings.ScanSourceIndex
             };
-
-            CurrentScanMode = request.Mode;
 
             await Task.Run(() =>
             {
@@ -386,7 +376,10 @@ namespace Kite2.App.ViewModels
                 return;
 
             string[] files = _pages.Select(page => page.FilePath).ToArray();
-            ScanMode mode = CurrentScanMode;
+
+            // Режим кодировки — всегда «как отсканировано»: цветность и прочее
+            // задаёт драйвер в своём окне, и программа ничего не решает за него.
+            ScanMode mode = ScanMode.Colour;
 
             SetBusy(true);
             ShowNotice(Messages.Saving, result: false, cancel: false);

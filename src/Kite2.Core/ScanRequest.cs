@@ -2,16 +2,13 @@ namespace Kite2.Core
 {
     public sealed class ScanRequest
     {
+        // Запрос не описывает ни dpi, ни цвет, ни режим: всё это человек задаст
+        // сам в родном окне драйвера. Программа только называет источник и
+        // каталог, куда забирать готовые страницы.
+        //
         // Каталог очищается при создании запроса: иначе в новый документ попали бы
         // сканы прошлого запуска.
         public int SourceIndex { get; set; } = AppSettings.NotSelected;
-
-        public int Dpi { get; set; } = 300;
-
-        public CaptureColour Colour { get; set; } = CaptureColour.BlackAndWhite;
-
-        public ScanMode Mode =>
-            Colour == CaptureColour.BlackAndWhite ? ScanMode.Greyscale : ScanMode.Colour;
 
         public string Directory { get; }
 

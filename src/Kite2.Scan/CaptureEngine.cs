@@ -46,7 +46,7 @@ namespace Kite2.Scan
             return (await BuildCatalog(-1)).Select(source => source.Name).ToList();
         }
 
-        public static async Task<List<string>> Capture(int sourceIndex, int dpi, int colour, string directory)
+        public static async Task<List<string>> Capture(int sourceIndex, string directory)
         {
             List<CatalogSource> sources = await BuildCatalog(-1);
 
@@ -69,7 +69,7 @@ namespace Kite2.Scan
             {
                 Log.Info("Попытка: {0}", attempt.Title);
 
-                var chapter = await TryCapture(attempt, dpi, colour, directory, pages.Count);
+                var chapter = await TryCapture(attempt, directory, pages.Count);
 
                 if (chapter.Failure != null)
                     Log.Warn("Попытка не сработала: {0}", chapter.Failure);
@@ -136,7 +136,7 @@ namespace Kite2.Scan
         // диспетчер для себя открывает с чистого листа. Страницы пишутся прямо
         // в каталог серии — их жизнь не зависит от жизни процессов.
         internal static async Task<AttemptChapter> TryTwainChild(
-            int dsm, int mode, int dpi, int colour, string directory, string name, int pagesBefore,
+            int dsm, int mode, string directory, string name, int pagesBefore,
             bool nativeUi)
         {
             TwainDsm dispatcher = ParseDsm(dsm);
@@ -161,7 +161,7 @@ namespace Kite2.Scan
 
             var chapter = new AttemptChapter();
             var controller = NewController();
-            var consume = ConsumePages(attempt, dpi, colour, directory, pagesBefore, chapter, controller);
+            var consume = ConsumePages(attempt, directory, pagesBefore, chapter, controller);
 
             // Стенка у дочернего не своя: следит родитель, а сюда доходит только
             // таймер тишины из ConsumePages. Ждём до конца, не отрезая.
@@ -453,17 +453,17 @@ namespace Kite2.Scan
         }
 
         private static async Task<AttemptChapter> TryCapture(
-            ScanAttempt attempt, int dpi, int colour, string directory, int pagesBefore)
+            ScanAttempt attempt, string directory, int pagesBefore)
         {
             var chapter = new AttemptChapter();
             TimeSpan wall = attempt.Wall ?? AttemptWall;
 
-            using (var child = attempt.Driver == Driver.Twain ? TwainChild.Start(attempt, dpi, colour, directory, pagesBefore) : null)
+            using (var child = attempt.Driver == Driver.Twain ? TwainChild.Start(attempt, directory, pagesBefore) : null)
             {
                 var consume = child != null
                     ? ConsumeTwainChild(child, attempt, directory, pagesBefore, chapter)
                     : ConsumePages(
-                        attempt, dpi, colour, directory, pagesBefore, chapter, NewController());
+                        attempt, directory, pagesBefore, chapter, NewController());
 
                 // Внешние снимки стеков: ребёнок со вмороженным нативным вызовом
                 // умирает от собственного ClrMD-снимка, поэтому его стеки снимает
@@ -607,7 +607,7 @@ namespace Kite2.Scan
             public string ResponsePath;
 
             public static TwainChild Start(
-                ScanAttempt attempt, int dpi, int colour, string directory, int pagesBefore)
+                ScanAttempt attempt, string directory, int pagesBefore)
             {
                 Process self = Process.GetCurrentProcess();
 
@@ -617,11 +617,9 @@ namespace Kite2.Scan
 
                 string arguments = string.Format(
                     CultureInfo.InvariantCulture,
-                    "twain {0} {1} {2} {3} {4} \"{5}\" \"{6}\" {7} {8} {9} \"{10}\"",
+                    "twain {0} {1} {2} \"{3}\" \"{4}\" {5} {6} {7} \"{8}\"",
                     (int)attempt.Dsm,
                     (int)attempt.Mode,
-                    dpi,
-                    colour,
                     pagesBefore,
                     directory,
                     attempt.Device.Name,
@@ -711,7 +709,7 @@ namespace Kite2.Scan
         }
 
         private static async Task ConsumePages(
-            ScanAttempt attempt, int dpi, int colour,
+            ScanAttempt attempt,
             string directory, int pagesBefore, AttemptChapter chapter, ScanController controller)
         {
             using (var quiet = new CancellationTokenSource())
@@ -766,8 +764,7 @@ namespace Kite2.Scan
                         Device = attempt.Device,
                         // Наличие податчика отдаём решать драйверу.
                         PaperSource = attempt.PaperSource,
-                        Dpi = dpi,
-                        BitDepth = colour == ScanExchange.BlackAndWhite ? BitDepth.BlackAndWhite : BitDepth.Color,
+                        // Ни dpi, ни цветности: их человек задаст в окне драйвера.
                         // Размер задаётся всегда: без него NAPS2 вписывает Letter
                         // и обрезает низ А4.
                         PageSize = PageSize.A4,

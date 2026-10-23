@@ -32,6 +32,10 @@ namespace Kite2.Core
 
         public static bool AlwaysAsk { get; private set; }
 
+        // Цвет тестового листа: настоящая цветность осталась в ведении драйвера,
+        // поэтому проверка явно назначает его перед захватом.
+        public static CaptureColour Colour { get; set; } = CaptureColour.BlackAndWhite;
+
         public static bool EnableFromArguments(string[] arguments)
         {
             if (arguments == null)
@@ -75,7 +79,7 @@ namespace Kite2.Core
                     request.Directory,
                     "scan" + (first + i).ToString("D3", CultureInfo.InvariantCulture) + ScannerService.RawExtension);
 
-                DrawSheet(first + i, request.Colour, path);
+                DrawSheet(first + i, Colour, path);
 
                 written[i] = path;
             }

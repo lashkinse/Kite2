@@ -37,12 +37,12 @@ namespace Kite2.Core
 
         public static string[] Capture(ScanRequest request, CancellationToken cancellationToken)
         {
+            // Ни dpi, ни цвета: их задаёт человек в окне драйвера, помощнику
+            // нужен только источник и каталог готовых страниц.
             string arguments = string.Format(
                 CultureInfo.InvariantCulture,
-                "acquire {0} {1} {2} \"{3}\"",
+                "acquire {0} \"{1}\"",
                 request.SourceIndex,
-                request.Dpi,
-                request.Colour == CaptureColour.BlackAndWhite ? ScanExchange.BlackAndWhite : ScanExchange.Colour,
                 request.Directory);
 
             ScanResult result = Run(arguments, cancellationToken);

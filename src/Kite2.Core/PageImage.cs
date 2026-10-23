@@ -32,7 +32,8 @@ namespace Kite2.Core
                 string source = sources[i];
                 string page = Path.ChangeExtension(source, ".jpg");
 
-                ComposePage(source, page, request.Mode, quality);
+                // Режим не задаётся: что отдал драйвер, то и сохраняем.
+                ComposePage(source, page, quality);
 
                 File.Delete(source);
                 pages[i] = page;
@@ -67,15 +68,14 @@ namespace Kite2.Core
             return target;
         }
 
-        private static void ComposePage(string source, string target, ScanMode mode, int quality)
+        // Прежний режим «оттенками серого» убран вместе с выбором «Ч/Б» у
+        // приложения: драйвер сам отдаёт то, что выбрал человек, и принудительная
+        // перекраска только портила цветные сканы.
+        private static void ComposePage(string source, string target, int quality)
         {
             using (var scan = new MagickImage(source))
             using (MagickImage sheet = FitOntoSheet(scan))
             {
-                // Оттенки серого, а не порог: отсечка убивала светлые линии и текст.
-                if (mode == ScanMode.Greyscale)
-                    sheet.ColorType = ColorType.Grayscale;
-
                 sheet.Quality = (uint)quality;
                 sheet.Format = MagickFormat.Jpeg;
                 sheet.Write(target);

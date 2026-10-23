@@ -64,7 +64,11 @@ namespace Kite2.Tests
         {
             FakeScanner.EnableFromArguments(new[] { FakeScanner.Switch });
 
-            var request = new ScanRequest { SourceIndex = 0, Colour = colour };
+            // Цветность теперь собственное свойство тестовой камеры: решает
+            // драйвер, но тесту нужно рисовать и серые, и цветные листы.
+            FakeScanner.Colour = colour;
+
+            var request = new ScanRequest { SourceIndex = 0 };
 
             ScannerService.Capture(request, System.Threading.CancellationToken.None);
 

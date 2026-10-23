@@ -12,7 +12,7 @@ namespace Kite2.Scan
 {
     // Запускается программой, не человеком:
     //   Kite2.Scan.exe sources <файл ответа>
-    //   Kite2.Scan.exe acquire <индекс> <dpi> <цвет> <каталог> <файл ответа>
+    //   Kite2.Scan.exe acquire <индекс> <каталог> <файл ответа>
     // Консоли нет — иначе при каждом захвате мелькало бы чёрное окно.
     internal static class Program
     {
@@ -88,29 +88,26 @@ namespace Kite2.Scan
                     ThreadDumpDiag.DumpForeign(Number(args[1]), args[2]);
                     code = Answer(responsePath, new List<string> { args[2] });
                 }
-                else if (args[0] == "acquire" && args.Length == 6)
+                else if (args[0] == "acquire" && args.Length == 4)
                 {
-                    Log.Info("Команда acquire: источник={0}, dpi={1}, цвет={2}, каталог={3}",
-                        args[1], args[2], args[3], args[4]);
+                    Log.Info("Команда acquire: источник={0}, каталог={1}", args[1], args[2]);
 
                     List<string> pages = await CaptureEngine.Capture(
                         Number(args[1]),
-                        Number(args[2]),
-                        Number(args[3]),
-                        args[4]);
+                        args[2]);
 
                     Log.Info("Захват завершён, страниц {0}", pages.Count);
                     code = Answer(responsePath, pages);
                 }
-                else if (args[0] == "twain" && args.Length == 12)
+                else if (args[0] == "twain" && args.Length == 10)
                 {
                     Log.Info(
-                        "Команда twain (дочерний процесс): диспетчер={0}, режим={1}, dpi={2}, окно={3}, имя={4}, клиент={5}",
-                        args[1], args[2], args[3], args[8], args[7], args[9]);
+                        "Команда twain (дочерний процесс): диспетчер={0}, режим={1}, окно={2}, имя={3}, клиент={4}",
+                        args[1], args[2], args[6], args[5], args[7]);
 
-                    WatchParent(Number(args[10]));
+                    WatchParent(Number(args[8]));
 
-                    int client = Number(args[9]);
+                    int client = Number(args[7]);
 
                     if (client == 1 || client == 2 || client == 3)
                     {
@@ -127,8 +124,8 @@ namespace Kite2.Scan
                             skipPending ? ", без счётчика передач" : string.Empty);
 
                         string page = KyoceraTwainScanner.Capture(
-                            args[6],
-                            args[7],
+                            args[4],
+                            args[5],
                             withWindow ? TimeSpan.FromMinutes(6) : TimeSpan.FromSeconds(90),
                             withWindow,
                             skipPending);
@@ -162,12 +159,10 @@ namespace Kite2.Scan
                         var chapter = await CaptureEngine.TryTwainChild(
                             Number(args[1]),
                             Number(args[2]),
+                            args[4],
+                            args[5],
                             Number(args[3]),
-                            Number(args[4]),
-                            args[6],
-                            args[7],
-                            Number(args[5]),
-                            args[8] == "1");
+                            args[6] == "1");
 
                         if (chapter.Pages.Count > 0)
                         {

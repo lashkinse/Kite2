@@ -47,8 +47,8 @@ namespace Kite2.Tests
             }
         }
 
-        [Test("Режим Ч/Б даёт оттенки серого, а не чистый чёрный с белым")]
-        public static void GreyscaleKeepsHalfTones()
+        [Test("Полутона в документе сохраняются, отсечки по порогу нет")]
+        public static void HalfTonesSurvive()
         {
             using (var folder = new TemporaryFolder())
             {
@@ -56,33 +56,29 @@ namespace Kite2.Tests
                 // всю правую половину одинаковой, и полутонов в документе не осталось бы.
                 string scan = WriteGradient(folder);
 
-                var request = new ScanRequest { Colour = CaptureColour.BlackAndWhite };
+                var request = new ScanRequest();
                 ComposeInto(request, scan);
 
                 using (var page = new MagickImage(PageOf(request)))
                 {
                     // Точный тип цвета при чтении обратно зависит от того, как ImageMagick
-                    // сложит серые уровни в палитру, и на требования не влияет.
-                    // Проверяется главное: полутонов много, а не два.
+                    // сложит уровни в палитру, и на требования не влияет. Проверяется
+                    // главное: оттенков много, а не два, и никакой кодировки «Ч/Б».
                     Check.True(
-                        page.ColorType == ColorType.Grayscale || page.ColorType == ColorType.Palette,
-                        "страница серая");
-
-                    // Оттенков должно быть много: при отсечке по порогу остались бы
-                    // ровно два — чёрный и белый.
-                    Check.True(page.Histogram().Count > 8, "в странице больше двух оттенков серого");
+                        page.Histogram().Count > 8,
+                        "в странице больше двух оттенков: " + page.Histogram().Count);
                 }
             }
         }
 
-        [Test("Цветной режим оставляет страницу цветной")]
+        [Test("Если драйвер отдал цветную страницу, она остаётся цветной")]
         public static void ColourStaysColour()
         {
             using (var folder = new TemporaryFolder())
             {
                 string scan = WriteScan(folder, 600, 400);
 
-                var request = new ScanRequest { Colour = CaptureColour.Colour };
+                var request = new ScanRequest();
                 ComposeInto(request, scan);
 
                 using (var page = new MagickImage(PageOf(request)))
