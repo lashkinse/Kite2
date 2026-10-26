@@ -11,10 +11,9 @@ namespace Kite2.Scan
     // процесс умер. Дамп кладётся рядом с журналом: %APPDATA%\Kite2\logs.
     internal static class CrashDump
     {
-        // Normal + стабильные потоки/стеки; без памяти целиком — файл лёгкий.
-        private const uint DumpType = 0
-            | 0x00000001 // MiniDumpWithDataSegs
-            | 0x00000004; // MiniDumpWithHandleData
+        // Обычный дамп: стеки всех потоков и модули. Чем меньше флагов, тем
+        // меньше шансов, что сама запись сбоит раньше кода исключения.
+        private const uint DumpType = 0;
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate int FilterDelegate(ref EXCEPTION_POINTERS info);
@@ -56,8 +55,17 @@ namespace Kite2.Scan
             public int ClientPointers;
         }
 
+        // Ставится один раз: фильтр не должен звать сам себя, когда сбоит запись.
+        private static int _writing;
+
         private static int OnException(ref EXCEPTION_POINTERS info)
         {
+            if (System.Threading.Interlocked.Exchange(ref _writing, 1) == 1)
+            {
+                // Рекурсивный вход: дамп уже пишется — не затирать его крашем.
+                return 1;
+            }
+
             try
             {
                 string directory = Path.Combine(
