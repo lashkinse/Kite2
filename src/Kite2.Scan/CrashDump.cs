@@ -62,8 +62,29 @@ namespace Kite2.Scan
         {
             if (System.Threading.Interlocked.Exchange(ref _writing, 1) == 1)
             {
-                // Рекурсивный вход: дамп уже пишется — не затирать его крашем.
+                // Рекурсивный вход: запись уже началась — не рвать её вторым крашем.
                 return 1;
+            }
+
+            // ПОСЛЕДНЯЯ запись журнала — самая ценная: код краша и адрес
+            // инструкции, найдя которым модуль драйвера в момент падения.
+            try
+            {
+                uint code = unchecked((uint)Marshal.ReadInt32(info.PointerRecord, 0));
+                uint exAddr = unchecked((uint)Marshal.ReadInt32(info.PointerRecord, 0x10));
+                uint eip = unchecked((uint)Marshal.ReadInt32(info.PointerContext, 0xB8));
+                uint esp = unchecked((uint)Marshal.ReadInt32(info.PointerContext, 0xC4));
+
+                string module = CrashModuleOf(eip);
+
+                NLog.LogManager.GetLogger("crash").Fatal(
+                    "Kyocera: краш 0x{0:X8} по адресу 0x{1:X8}; EIP 0x{2:X8} ({3}); ESP 0x{4:X8}",
+                    code, exAddr, eip, module, esp);
+                try { NLog.LogManager.Flush(); } catch { }
+            }
+            catch
+            {
+                // Даже чтение контекста сбоит — идём дальше к дампу.
             }
 
             try
@@ -128,6 +149,73 @@ namespace Kite2.Scan
             {
                 // Без дампа работаем как раньше.
             }
+        }
+
+        // Адрес → модуль в момент краша: GetModuleHandleEx не берёт ссылку
+        // и терпит брошенные модули. Возврат «имя+RVA» для точного попадания
+        // в карту Ghidra.
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool GetModuleHandleExW(uint flags, IntPtr name, out IntPtr module);
+
+        [DllImport("psapi.dll", CharSet = CharSet.Unicode)]
+        private static extern uint GetModuleFileNameExW(IntPtr process, IntPtr module, [Out] System.Text.StringBuilder name, uint size);
+
+        private static string CrashModuleOf(uint address)
+        {
+            try
+            {
+                long allocBase = AllocationBaseOf(new IntPtr(unchecked((long)address)));
+                if (allocBase == 0)
+                    return "не в модуле (адрес за пределами образов)";
+
+                if (GetModuleHandleExW(2 /*UNCHANGED_REFCOUNT*/ | 4 /*FROM_ADDRESS*/,
+                    new IntPtr(unchecked((long)address)), out IntPtr module)
+                    && module != IntPtr.Zero)
+                {
+                    var name = new System.Text.StringBuilder(512);
+                    GetModuleFileNameExW(GetCurrentProcess(), module, name, 512);
+
+                    string[] parts = name.ToString().Split('\\');
+                    string file = parts[parts.Length - 1];
+
+                    long rva = address - allocBase;
+                    return file + "+0x" + rva.ToString("X");
+                }
+            }
+            catch
+            {
+            }
+            return "модуль не найден";
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool VirtualQueryEx(IntPtr process, IntPtr address, out MEMORY_BASIC_INFORMATION info, uint length);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MEMORY_BASIC_INFORMATION
+        {
+            public IntPtr BaseAddress;
+            public IntPtr AllocationBase;
+            public uint AllocationProtect;
+            public uint RegionSize;
+            public uint State;
+            public uint Protect;
+            public uint Type;
+        }
+
+        private static long AllocationBaseOf(IntPtr address)
+        {
+            try
+            {
+                if (VirtualQueryEx(GetCurrentProcess(), address,
+                    out MEMORY_BASIC_INFORMATION info,
+                    (uint)Marshal.SizeOf(typeof(MEMORY_BASIC_INFORMATION))))
+                    return info.AllocationBase.ToInt64();
+            }
+            catch
+            {
+            }
+            return 0;
         }
     }
 }
