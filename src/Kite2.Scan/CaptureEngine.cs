@@ -48,7 +48,7 @@ namespace Kite2.Scan
 
         public static async Task<List<string>> Capture(int sourceIndex, string directory)
         {
-            List<CatalogSource> sources = await BuildCatalog(-1);
+            List<CatalogSource> sources = await BuildCatalog(sourceIndex);
 
             if (sources.Count <= sourceIndex)
                 throw new InvalidOperationException(

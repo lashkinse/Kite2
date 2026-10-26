@@ -36,6 +36,10 @@ namespace Kite2.Scan
         {
             HelperLogging.Initialize();
 
+            // Дамп на краш раньше любых TWAIN-работ: паники драйвера гасят
+            // процесс до всякой обратной связи, и только файл дампа остаётся.
+            CrashDump.Install();
+
             SetErrorMode(SemFailCriticalErrors | SemNoGpFaultErrorBox);
 
             Log.Info("Помощник, версия {0}", typeof(Program).Assembly.GetName().Version);
