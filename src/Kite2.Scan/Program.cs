@@ -53,13 +53,18 @@ namespace Kite2.Scan
                 Log.Info("Окно-владелец диалога не передано");
             }
 
-            // Фон наблюдает файл отмены: пока основной поток сидит в модальном
-            // диалоге, отмену из программы исполняет именно он.
-            uint appPid = CaptureEngine.DialogParentValue != 0
-                ? AbortWatcher.ProcessOfWindow(new IntPtr(CaptureEngine.DialogParentValue))
-                : 0;
+            string responsePath = args.Length < 2 ? null : args[args.Length - 1];
 
-            AbortWatcher.Start(responsePath + ".abort", appPid);
+            if (responsePath != null)
+            {
+                // Фон наблюдает файл отмены: пока основной поток сидит в
+                // модальном диалоге, отмену из программы исполняет именно он.
+                uint appPid = CaptureEngine.DialogParentValue != 0
+                    ? AbortWatcher.ProcessOfWindow(new IntPtr(CaptureEngine.DialogParentValue))
+                    : 0;
+
+                AbortWatcher.Start(responsePath + ".abort", appPid);
+            }
 
             // Тихие сбои фонового захвата больше нигде не видны: зависания
             // и падения без этих записей в логе не объяснить.
@@ -74,8 +79,6 @@ namespace Kite2.Scan
                 Log.Error("Не хватает аргументов: получено {0}", args.Length);
                 return 2;
             }
-
-            string responsePath = args[args.Length - 1];
 
             int code;
 
