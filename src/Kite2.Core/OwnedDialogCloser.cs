@@ -52,7 +52,9 @@ namespace Kite2.Core
 
             EnumWindows((window, _) =>
             {
-                if (!IsWindowVisible(window))
+                // Окно-владелец само себе корень: исключается сразу, иначе
+                // «чин» закроет главное окно программы.
+                if (window == ownerWindow || !IsWindowVisible(window))
                     return true;
 
                 // Прямое владение и владение через цепочку: диалог драйвера
