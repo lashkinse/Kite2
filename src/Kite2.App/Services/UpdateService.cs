@@ -12,44 +12,36 @@ using NLog;
 
 namespace Kite2.App.Services
 {
-    // Обновления раздаются архивами в выпусках репозитория: программа спрашивает
-    // человека при входе и распаковывает новую версию в хранилище, а отдельный
-    // обновлятор подменяет файлы и запускает программу заново.
+    // Вопрос об обновлении при входе: страница releases/latest отдаёт последнюю
+    // версию (она видна в адресе приземления — API не используется из-за лимитов
+    // запросов), скачивание и подмену файлов делает Kite2.Updater из хранилища.
     public static class UpdateService
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        // Вход в программу ждать нельзя: сети может не оказаться вовсе. Проверка
-        // десять секунд, а дальше обновление откладывается до следующего запуска.
+        // Сети может не оказаться вовсе: не дождавшись, проверка откладывается
+        // до следующего запуска.
         private static readonly TimeSpan NetworkWait = TimeSpan.FromSeconds(10);
 
-        // Страница обязательного выпуска: адрес редиректит на последний,
-        // и версия видна прямо в адресе приземления.
         private const string ReleasesLatestUrl =
             "https://github.com/lashkinse/Kite2/releases/latest";
 
         private static readonly HttpClient Http = CreateHttp();
 
-        // Дата-хранилище одно на пользователя, не на каталог установки:
-        // архивы в Program Files хранить нельзя.
+        // Хранилище одно на пользователя: архивы в Program Files хранить нельзя.
         private static string Storage =>
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Kite2",
                 "Update");
 
-        // Ответ проверки: само обновление и признак того, что страница вообще
-        // ответила. «Обновлений нет» повторов не просит, сеть без ответа — просит.
-        // Каталогом через API программа больше не ходит: у того лимит запросов
-        // в час на компьютер, а версию можно увидеть в адресе обычной страницы
-        // выпуска — на неё лимиты не давят.
+        // (update == null, answered == true) — обновлений нет, вопрос не задаётся;
+        // (null, false) — сеть не ответила, проверка повторится.
         public static async Task<(ReleaseCatalog.Entry Update, bool Answered)> Latest()
         {
             return await LatestByPage();
         }
 
-        // Отмена здесь не нужна: человек сам попросил обновиться и видит плашку,
-        // пока идёт скачивание.
         public static async Task Stage(ReleaseCatalog.Entry update, IProgress<int> progress)
         {
             string temporary = Path.Combine(Storage, "package.zip");
@@ -57,7 +49,7 @@ namespace Kite2.App.Services
 
             Directory.CreateDirectory(Storage);
 
-            // Папки в хранилище — остатки прошлых обновлений.
+            // Остатки прошлых обновлений.
             foreach (string stale in Directory.GetDirectories(Storage))
                 Directory.Delete(stale, true);
 
@@ -68,13 +60,11 @@ namespace Kite2.App.Services
 
             ZipFile.ExtractToDirectory(temporary, versionDirectory);
 
-            // Архив после распаковки не нужен.
             File.Delete(temporary);
         }
 
-        // Подменить свои файлы запущенная программа не может — это делает
-        // обновлятор, запущенный из хранилища (его собственный файл не мешает
-        // копированию).
+        // Запущенная программа не может подменить свои файлы — запускает обновлятор,
+        // который дождётся выхода и скопирует версию поверх установки.
         public static void Launch(Version version)
         {
             string programPath = Assembly.GetEntryAssembly().Location;
@@ -83,8 +73,6 @@ namespace Kite2.App.Services
 
             File.Copy(updaterSource, target, true);
 
-            // Перезапуск просит обновлятор. Ключей запуска не передаётся:
-            // тестовый режим до вопроса об обновлении не доходит.
             var startInfo = new ProcessStartInfo
             {
                 FileName = target,
@@ -118,7 +106,7 @@ namespace Kite2.App.Services
 
                         done += taken;
 
-                        // Процентов нет, если адрес отдал файл без длины.
+                        // Длины может не быть — процентов тогда не показать.
                         if (total > 0 && progress != null)
                             progress.Report((int)(done * 100 / total));
                     }
@@ -145,16 +133,10 @@ namespace Kite2.App.Services
 
         private static string Quote(string value) => "\"" + value + "\"";
 
-        // Проверка по странице выпуска: обычный сайт вместо API. Адрес
-        // обязательного выпуска (releases/latest) уходит редиректом на страницу
-        // самого выпуска, а версия видна прямо в адресе приземления. Архив
-        // складывается из версии: имя актива всегда ходит в ногу с ней.
         private static async Task<(ReleaseCatalog.Entry Update, bool Answered)> LatestByPage()
         {
             try
             {
-                // Вход в программу ждать нельзя: у страницы десять секунд,
-                // не успела — обновление откладывается до следующего запуска.
                 using (var wait = new CancellationTokenSource(NetworkWait))
                 using (HttpResponseMessage response = await Http.GetAsync(
                     ReleasesLatestUrl, HttpCompletionOption.ResponseHeadersRead, wait.Token))
@@ -169,8 +151,7 @@ namespace Kite2.App.Services
                         return (null, false);
                     }
 
-                    // Обновлением считается только то, что младше не запущено:
-                    // выпуск совпал с установленной версией — вопроса не будет.
+                    // Выпуск совпал с установленной версией — вопроса не будет.
                     Version current = Assembly.GetEntryAssembly().GetName().Version;
 
                     if (current >= version)
