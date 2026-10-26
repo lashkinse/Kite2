@@ -38,6 +38,16 @@ namespace Kite2.Scan
 
             Log.Info("Помощник, версия {0}", typeof(Program).Assembly.GetName().Version);
 
+            // Окно программы — владелец диалога драйвера; передаётся
+            // переменной окружения, а не аргументом.
+            string parent = Environment.GetEnvironmentVariable("KITE2_SCAN_PARENT");
+
+            if (long.TryParse(parent, NumberStyles.Integer, CultureInfo.InvariantCulture, out long handle)
+                && handle != 0)
+            {
+                CaptureEngine.DialogParentValue = handle;
+            }
+
             // Тихие сбои фонового захвата больше нигде не видны: зависания
             // и падения без этих записей в логе не объяснить.
             AppDomain.CurrentDomain.UnhandledException += (_, e) =>
@@ -68,10 +78,6 @@ namespace Kite2.Scan
                 else if (args[0] == "acquire" && args.Length == 4)
                 {
                     Log.Info("Команда acquire: источник={0}, каталог={1}", args[1], args[2]);
-
-                    // Названия поднятых окон драйвера пишутся рядом с ответом:
-                    // на отмене программа закроет их точным попаданием.
-                    CaptureEngine.RaisedTitlesFile = responsePath + ".raised";
 
                     List<string> pages = await CaptureEngine.Capture(
                         Number(args[1]),

@@ -255,7 +255,6 @@ namespace Kite2.Scan
             string directory, int pagesBefore, AttemptChapter chapter, ScanController controller)
         {
             using (var quiet = new CancellationTokenSource())
-            using (var visible = new CancellationTokenSource())
             {
                 // В родном окне страниц от машинного вызова не бывает: жмётся «Скан».
                 TimeSpan firstPageWait = attempt.NativeUi ? NativeUiWall : FirstPageWait;
@@ -264,11 +263,6 @@ namespace Kite2.Scan
                 // CancelAfter перезапускает таймер целиком: одна метка отсчитывает
                 // тишину и до первой страницы, и между страницами.
                 quiet.CancelAfter(firstPageWait);
-
-                // Окно держится наверху, пока человек сканирует.
-                Task raising = attempt.NativeUi
-                    ? Task.Run(() => RaiseDriverWindowLoop(attempt.Device.Name, visible.Token))
-                    : Task.CompletedTask;
 
                 try
                 {
@@ -279,6 +273,9 @@ namespace Kite2.Scan
                         // Ни dpi, ни цветности: их задают в окне драйвера.
                         PageSize = PageSize.A4,
                         UseNativeUI = attempt.NativeUi,
+                        // Окно программы — владелец диалога: диалог держится
+                        // поверх окна программы и не мелькает на панели задач.
+                        DialogParent = new IntPtr(DialogParentValue),
                         WiaOptions = new WiaOptions { WiaApiVersion = attempt.WiaVersion }
                     };
 
@@ -324,90 +321,14 @@ namespace Kite2.Scan
                     Log.Error("Попытка упала: {0}", ex);
                     chapter.Failure = GetFailureMessage(ex, chapter.Pages.Count > 0);
                 }
-                finally
-                {
-                    visible.Cancel();
-                }
-
-                try
-                {
-                    await raising;
-                }
-                catch
-                {
-                }
             }
         }
 
-        // Пока человек в окне драйвера, его окна держатся наверху и не
-        // прячутся за окном программы. Диалог может жить в чужом процессе,
-        // поэтому поиск не по процессу: окно нашей программы поднимается
-        // безусловно, чужое — только если его название похоже на имя
-        // устройства. Первый показ получает фокус: так гаснет мигание
-        // чужого окна на панели задач.
-        private static async Task RaiseDriverWindowLoop(string deviceName, CancellationToken cancellation)
-        {
-            uint ownProcess = (uint)Process.GetCurrentProcess().Id;
-            HashSet<IntPtr> existed = WindowRaiser.VisibleWindows();
-            var activated = new HashSet<IntPtr>();
-
-            while (!cancellation.IsCancellationRequested)
-            {
-                foreach (IntPtr window in WindowRaiser.VisibleWindows())
-                {
-                    if (existed.Contains(window))
-                        continue;
-
-                    string title = WindowRaiser.Title(window);
-                    bool isOurs = WindowRaiser.ProcessOf(window) == ownProcess;
-
-                    if (!isOurs && !WindowRaiser.TitleMatchesDevice(title, deviceName))
-                        continue;
-
-                    if (activated.Add(window))
-                    {
-                        Log.Info("Новое окно захвата: {0}", title);
-
-                        if (!isOurs)
-                            RecordRaisedTitle(title);
-
-                        WindowRaiser.BringToFront(window);
-                    }
-                    else
-                    {
-                        WindowRaiser.KeepAboveOthers(window);
-                    }
-                }
-
-                try
-                {
-                    await Task.Delay(500, cancellation);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
-            }
-        }
-
-        // Файл для названий поднятых чужих окон; задан при команде acquire.
-        internal static string RaisedTitlesFile;
-
-        // Названия поднятых окон дублируются файлом рядом с ответом:
-        // когда человек отменяет скан в программе, она закрывает такие
-        // окна по точному названию — смертью помощника их не погасить.
-        private static void RecordRaisedTitle(string title)
-        {
-            try
-            {
-                if (!string.IsNullOrEmpty(RaisedTitlesFile))
-                    File.AppendAllText(RaisedTitlesFile, title + Environment.NewLine, new UTF8Encoding(false));
-            }
-            catch (Exception ex)
-            {
-                Log.Debug(ex, "Название окна не записано");
-            }
-        }
+        // Дескриптор окна программы — владелец диалога драйвера. Задаётся
+        // Program-ом из окружения, а не аргументом сканирования: дескриптор
+        // окна — не часть протокола. Диалог с владельцем не может уйти за
+        // окно программы и не имеет собственной строки на панели задач.
+        internal static long DialogParentValue;
 
         private static ScanController NewController()
         {

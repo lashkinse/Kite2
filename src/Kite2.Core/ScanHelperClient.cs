@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Kite2.ScanProtocol;
 using NLog;
@@ -20,6 +21,13 @@ namespace Kite2.Core
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
         private const string HelperName = "Kite2.Scan.exe";
+
+        private const string ScanParentEnvironmentKey = "KITE2_SCAN_PARENT";
+
+        // Владелец диалога помощника берётся у этой программы, а мини-право
+        // вывода на передний план — передаётся помощнику явно.
+        [DllImport("user32.dll")]
+        private static extern bool AllowSetForegroundWindow(uint processId);
 
         public static IReadOnlyList<string> GetSources()
         {
@@ -72,27 +80,40 @@ namespace Kite2.Core
 
             try
             {
-                var startInfo = new ProcessStartInfo(helperPath, arguments + " \"" + responsePath + "\"")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WorkingDirectory = AppPaths.AppDirectory
-                };
-
-                var helperStartWindows = ScanWindowCloser.VisibleWindows();
-
-                using (var helper = Process.Start(startInfo))
-                {
-                    if (helper == null)
-                        return Failure(Messages.ScanHelperMissing);
-
-                    var clock = Stopwatch.StartNew();
-                    Log.Info("Помощник запущен: {0}", arguments);
-
-                    using (cancellationToken.Register(() => StopHelper(helper, helperStartWindows, responsePath)))
+                    var startInfo = new ProcessStartInfo(helperPath, arguments + " \"" + responsePath + "\"")
                     {
-                        helper.WaitForExit();
-                    }
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WorkingDirectory = AppPaths.AppDirectory
+                    };
+
+                    // Окно программы передаётся помощнику как владелец будущего
+                    // диалога WIA-драйвера: владельцу окно не может уйти за
+                    // окно программы, а панель задач у него не мигает. Дескриптор
+                    // окна — не часть протокола сканирования, поэтому идёт
+                    // переменной окружения, а не аргументом.
+                    IntPtr mainWindow = Process.GetCurrentProcess().MainWindowHandle;
+
+                    if (mainWindow != IntPtr.Zero)
+                        startInfo.EnvironmentVariables[ScanParentEnvironmentKey] =
+                            mainWindow.ToInt64().ToString(CultureInfo.InvariantCulture);
+
+                    using (var helper = Process.Start(startInfo))
+                    {
+                        if (helper == null)
+                            return Failure(Messages.ScanHelperMissing);
+
+                        // Право выводить окно на передний план есть только у окна
+                        // переднего плана; помощнику оно передаётся явно.
+                        AllowSetForegroundWindow((uint)helper.Id);
+
+                        var clock = Stopwatch.StartNew();
+                        Log.Info("Помощник запущен: {0}", arguments);
+
+                        using (cancellationToken.Register(() => TryKill(helper)))
+                        {
+                            helper.WaitForExit();
+                        }
 
                     clock.Stop();
 
@@ -122,27 +143,15 @@ namespace Kite2.Core
             }
             finally
             {
-                File.Delete(responsePath + ".raised");
-
                 if (File.Exists(responsePath))
                     File.Delete(responsePath);
             }
         }
 
-        // Смерть помощника чужое окно драйвера не гасит, поэтому прежде —
-        // просьба закрыться по названиям, что помощник записал рядом с
-        // файлом ответа.
-        private static void StopHelper(Process helper, HashSet<IntPtr> helperStartWindows, string responsePath)
+        private static void TryKill(Process helper)
         {
             try
             {
-                IReadOnlyList<string> closed = ScanWindowCloser.CloseCaptured(
-                    helperStartWindows,
-                    responsePath + ".raised");
-
-                if (closed.Count > 0)
-                    Log.Info("Окно драйвера закрыто по отмене: {0}", string.Join("; ", closed));
-
                 helper.Kill();
             }
             catch (Exception ex)
