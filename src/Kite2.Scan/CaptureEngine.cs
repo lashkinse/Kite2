@@ -234,8 +234,11 @@ namespace Kite2.Scan
         // Один ScanOptions-экземпляр не переиспользуется между опросами.
         private static IEnumerable<ScanOptions> CatalogOptions()
         {
-            yield return new ScanOptions { Driver = Driver.Twain, TwainOptions = { Dsm = TwainDsm.New } };
-            yield return new ScanOptions { Driver = Driver.Twain, TwainOptions = { Dsm = TwainDsm.Old } };
+            // TWAIN отключён по решению пользователя: «давай попробуем с wia,
+            // пока убери twain». GDI-драйвер Kyocera роняет ост в остную середину
+            // сеанса и пачки не существует (0xC000041D/0xC0000409), обработка
+            // его в приложении признана бесплодной. Вернуть TWAIN = вернуть
+            // эти два варианта в список.
             yield return new ScanOptions { Driver = Driver.Wia, WiaOptions = { WiaApiVersion = WiaApiVersion.Default } };
             yield return new ScanOptions { Driver = Driver.Wia, WiaOptions = { WiaApiVersion = WiaApiVersion.Wia10 } };
             yield return new ScanOptions { Driver = Driver.Wia, WiaOptions = { WiaApiVersion = WiaApiVersion.Wia20 } };
