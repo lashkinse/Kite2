@@ -619,7 +619,7 @@ namespace Kite2.App.ViewModels
             HideNotice();
         }
 
-        // Отмена закрывает сессию TWAIN через помощника: ждать её поток перестаёт.
+        // Отмена прерывает захват в помощнике: ждать её поток перестаёт.
         private void CancelOperation()
         {
             if (_scanCancellation == null)

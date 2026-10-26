@@ -3,8 +3,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net48</TargetFramework>
-    <!-- Помощник 32-разрядный не по выбору, а по необходимости: драйверы TWAIN
-         грузятся только в 32-разрядный процесс, и в 64-разрядном их не будет вовсе. -->
+    <!-- Помощник 32-разрядный: WIA-драйверы живут в процессе-потребителе,
+         а у части старых сканеров они выпущены только под x86. -->
     <PlatformTarget>x86</PlatformTarget>
     <Platforms>x64</Platforms>
     <RootNamespace>Kite2.Scan</RootNamespace>
@@ -40,29 +40,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Kite2.ScanProtocol\Kite2.ScanProtocol.csproj" />
-    <!-- Вендоренный NTwain с локальной правкой: перед виснущим на Kyocera
-         DAT_PENDINGXFERS/MSG_GET делается спек-легальный звонок
-         DAT_IMAGEINFO/MSG_GET (только для KYOCERA-драйверов). Пакет
-         NAPS2.NTwain от этого исключается — его место занимает наша сборка
-         с тем же именем и той же версией (1.0.0.0). -->
-    <ProjectReference Include="..\Kite2.NTwain\NTwain.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- Запретить транзитивный NAPS2.NTwain: иначе рядом положат пакетный
-         NTwain.dll без правки, и кто-то из двух загрузится первым. -->
-    <PackageReference Include="NAPS2.NTwain" Version="1.0.1" ExcludeAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Нативный TWAIN-диспетчер 2.x: NuGet-пакеты NAPS2 его не раздают, а сам
-         NAPS2 вендорит из исходников TWAIN Working Group (LGPL, как и Sdk).
-         Без него список устройств строится через старый C:\Windows\twain_32.dll,
-         а второе открытие этого диспетчера в одном процессе на части машин
-         зависает. Файл лежит рядом с помощником: LoadLibrary по умолчанию
-         ищет его в каталоге экзешника, подпапка _win32 не обязательна. -->
-    <None Include="Native\x86\twaindsm.dll" Link="twaindsm.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
-  </ItemGroup>
+  <!-- Нативного TWAIN-диспетчера больше нет: захват полностью перешёл на WIA. -->
 
   <!-- Лишнее срезается прямо с выхода сборки: не нужны WPF-реализация zxing,
        PDF-экспорт внутри NAPS2 (PdfSharpCore, SharpZipLib) и полсотни
@@ -70,7 +50,7 @@
        обрезка не трогает: тип EsclOptions живёт в конструкторе ScanOptions,
        и его цепочка зависимостей обязана быть рядом. Копия ниток и сканера
        раскладывается в Scan\ через CopySidePrograms — чем меньше файлов, тем
-       компактнее поставка. Драйвер по умолчанию тут TWAIN и WIA, а лог
+       компактнее поставка. Захват идёт через WIA, а лог
        помощник пишет сам, на своём русском. -->
   <Target Name="TrimScanOutput" AfterTargets="Build">
     <ItemGroup>
@@ -91,10 +71,10 @@
   </Target>
 
   <ItemGroup>
-    <!-- Движок сканирования — NAPS2.Sdk: один API закрывает TWAIN (оба диспетчера)
-         и WIA, а разбор страниц при любом механизме передачи сделан внутри
-         библиотеки и обкатан на сотнях моделей. Сами пакеты NAPS2 выпущены под
-         LGPL 2.1 — динамическая сборка не делает нашу программу частью NAPS2. -->
+    <!-- Движок сканирования — NAPS2.Sdk (LGPL): WIA ведётся тем же API, а разбор
+         страниц при передаче сделан внутри библиотеки и обкатан на сотнях
+         моделей. Пакеты NAPS2 выпущены под LGPL 2.1 — динамическая сборка не
+         делает нашу программу частью NAPS2. -->
     <PackageReference Include="NAPS2.Sdk" Version="1.5.0" />
     <!-- Бэкенд изображений на System.Drawing: он превращает отсканированные
          страницы в файлы, которые умеет читать страница сжатия программы. -->

@@ -31,12 +31,10 @@ namespace Kite2.Scan
                 var configuration = new LoggingConfiguration();
                 configuration.AddTarget(file);
 
-                // NTwain-мост и мост NAPS2 пишут самыми нижними уровнями, и без
-                // отдельных правил их (debug-)строки утекли бы мимо общей границы
-                // Info. Final=true: правило заканчивает выбор — иначе общее
+                // Мост NAPS2 пишет самыми нижними уровнями, и без отдельных правил
+                // его (debug-)строки утекли бы мимо общей границы Info.
+                // Final=true: правило заканчивает выбор — иначе общее
                 // правило записало бы те же Info/Fatal строки повторно.
-                configuration.LoggingRules.Add(
-                    new LoggingRule("NTwain", LogLevel.Debug, LogLevel.Fatal, file) { Final = true });
                 configuration.LoggingRules.Add(
                     new LoggingRule("NAPS2", LogLevel.Debug, LogLevel.Fatal, file) { Final = true });
                 configuration.LoggingRules.Add(

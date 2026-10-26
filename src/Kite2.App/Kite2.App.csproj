@@ -74,7 +74,7 @@
            Text="Помощник захвата не собран: без Kite2.Scan.exe программа не увидит сканер." />
     <Error Condition="'@(UpdaterProgram)' == ''"
            Text="Обновлятор не собран: без Kite2.Updater.exe программа не обновится." />
-    <!-- Рядом, а не в подпапке: и приложение, и TWAIN-помощник живут из одного
+    <!-- Рядом, а не в подпапке: и приложение, и помощник захвата живут из одного
          каталога, как просил пользователь. -->
     <Copy SourceFiles="@(ScanFile)"
           DestinationFiles="@(ScanFile->'$(TargetDir)%(RecursiveDir)%(Filename)%(Extension)')"

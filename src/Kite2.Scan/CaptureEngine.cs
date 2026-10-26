@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Kite2.ScanProtocol;
 using NAPS2.Images;
 using NAPS2.Images.Gdi;
 using NAPS2.Scan;
@@ -14,28 +13,23 @@ using NAPS2.Scan.Exceptions;
 using NLog;
 namespace Kite2.Scan
 {
-    // Движок — NAPS2.Sdk (LGPL): TWAIN обоих диспетчеров и WIA под одним API.
-    // Работает в отдельном 32-разрядном процессе: драйверу TWAIN нужен 32-битный
-    // вызывающий процесс, а само приложение x64. Внутри остаётся только список
+    // Движок — NAPS2.Sdk (LGPL): WIA под одним API. Работает в отдельном
+    // процессе: у части старых сканеров WIA-драйверы живут по x86, да и сбой
+    // драйвера гасит помощника, а не окно программы. Внутри — только список
     // устройств, порядок попыток обхода капризных драйверов и паузы тишины.
     internal static class CaptureEngine
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        // Тишина ждётся терпеливо: на Kyocera обработка XferReady висит внутри
-        // первого триплета (PendingXfers.Get) 12-18 с и неизвестно, вернётся ли
-        // вообще: снимок стеков 15:29 поймал вызов ещё живым, а отсечка 30 с
-        // обрезала попытку в момент разгрузки. 2,5 минуты: и драйверу простор,
-        // и пользователю не вечность.
+        // Тишина ждётся терпеливо: разогрев Kyocera и приём страницы тянутся
+        // десятки секунд, а короткая отсечка бросала попытку в момент разгрузки.
+        // 2,5 минуты: и драйверу простор, и пользователю не вечность.
         private static readonly TimeSpan FirstPageWait = TimeSpan.FromSeconds(150);
         private static readonly TimeSpan PageGapWait = TimeSpan.FromSeconds(100);
         private static readonly TimeSpan ListingWait = TimeSpan.FromSeconds(10);
         // Стенка на всю попытку: таймер тишины доходит до итератора только между
-        // страницами, а молчаливый драйвер может зависнуть внутри вызова TWAIN —
-        // без стенки попытка висела бы часами (Kyocera TWAIN(2) молчала 15 минут
-        // в twain_32 и без результата на новом диспетчере).
-        // Стенка родителя длиннее детской тишины (150 с): иначе попытку гасит
-        // родитель, не дав детской отмене сработать и донести состояние.
+        // страницами, а молчаливый драйвер может зависнуть внутри вызова —
+        // без стенки попытка висела бы часами.
         private static readonly TimeSpan AttemptWall = TimeSpan.FromSeconds(180);
         // Родное окно драйвера требует участия человека: ждали бы неизвестно
         // сколько, поэтому стенка щедрая, но не бесконечная.
@@ -60,12 +54,8 @@ namespace Kite2.Scan
 
             var pages = new List<string>();
             string lastFailure = null;
-            // Стекло прошло физически, но изображение не доехало: жалоба
-            // откладывается до конца лестницы, ведь следующая попытка (с другой
-            // передачей) всё ещё может довезти результат.
-            bool sawTransfer = false;
 
-            foreach (ScanAttempt attempt in AttemptsFor(source, sources))
+            foreach (ScanAttempt attempt in AttemptsFor(source))
             {
                 Log.Info("Попытка: {0}", attempt.Title);
 
@@ -84,16 +74,6 @@ namespace Kite2.Scan
                 {
                     pages.AddRange(chapter.Pages);
                     return pages;
-                }
-
-                // Раньше тишина после XferReady останавливала лестницу: казалось,
-                // что повторное стекло — впустую. Данные NAPS2 (#577) показывают
-                // обратное: Kyocera молчит в памяти, но отдаёт картинку в
-                // нативной передаче (8.1.3: Ecosys → Native). Поэтому лестницу
-                // ведём до конца, а жалобу переоткрываем у выхода.
-                if (chapter.SawTransfer)
-                {
-                    sawTransfer = true;
                 }
 
                 // Родное окно показывалось человеку и закрылось без страниц:
@@ -117,77 +97,22 @@ namespace Kite2.Scan
                     : null);
             }
 
-            if (sawTransfer)
-            {
-                // Хотя бы одна попытка дозвала стекло, но ни одна не довезла
-                // изображение: это особый случай, он собрату-человеку понятнее
-                // общей тишины.
-                throw new InvalidOperationException(
-                    "Сканер просканировал страницу, но драйвер не передал изображение."
-                    + (lastFailure != null ? " По данным попытки: " + lastFailure :
-                        " Перезапустите сканер и попробуйте ещё раз."));
-            }
-
             throw new InvalidOperationException(lastFailure ?? "Сканер не отдал ни одной страницы.");
         }
 
-        // Одна TWAIN-попытка в дочернем процессе: Kyocera TWAIN(2) виснет на
-        // повторном открытии диспетчера в том же процессе, а свежий процесс
-        // диспетчер для себя открывает с чистого листа. Страницы пишутся прямо
-        // в каталог серии — их жизнь не зависит от жизни процессов.
-        internal static async Task<AttemptChapter> TryTwainChild(
-            int dsm, int mode, string directory, string name, int pagesBefore,
-            bool nativeUi)
-        {
-            TwainDsm dispatcher = ParseDsm(dsm);
-            TwainTransferMode transfer = ParseMode(mode);
-
-            Log.Info(
-                "Попытка в дочернем процессе: TWAIN ({0}, {1}{2}), {3}",
-                dispatcher == TwainDsm.New ? "новый диспетчер" : "старый диспетчер",
-                transfer == TwainTransferMode.Memory ? "передача памятью" : "передача целиком",
-                nativeUi ? ", родное окно" : "",
-                name);
-
-            var attempt = new ScanAttempt
-            {
-                Driver = Driver.Twain,
-                Device = new ScanDevice(Driver.Twain, name, name),
-                Dsm = dispatcher,
-                Mode = transfer,
-                NativeUi = nativeUi,
-                Title = nativeUi ? "TWAIN (родное окно драйвера)" : "TWAIN (дочерний процесс)"
-            };
-
-            var chapter = new AttemptChapter();
-            var controller = NewController();
-            var consume = ConsumePages(attempt, directory, pagesBefore, chapter, controller);
-
-            // Стенка у дочернего не своя: следит родитель, а сюда доходит только
-            // таймер тишины из ConsumePages. Ждём до конца, не отрезая.
-            await consume;
-
-            return chapter;
-        }
-
         // Источник адресуется индексом, поэтому порядок устройств обязан совпадать
-        // в «sources» и в «acquire»: сначала TWAIN обоих диспетчеров, затем WIA.
+        // в «sources» и в «acquire».
         private sealed class CatalogSource
         {
             public int Index;
             public string Name;
             public ScanDevice Device;
             public WiaApiVersion WiaVersion;
-            // Диспетчер, чей опрос нашёл устройство: ему первая попытка и доверяем.
-            public TwainDsm TwainDsm = TwainDsm.Old;
         }
 
         private sealed class ScanAttempt
         {
-            public Driver Driver;
             public ScanDevice Device;
-            public TwainDsm Dsm;
-            public TwainTransferMode Mode;
             public WiaApiVersion WiaVersion;
             public PaperSource PaperSource = PaperSource.Auto;
             // Родное окно драйвера вместо программных значений: молчаливые
@@ -195,17 +120,10 @@ namespace Kite2.Scan
             public bool NativeUi;
             public string Title;
 
-            // Kyocera: 0 — обычный путь NAPS2, 1 — наш клиент TWAIN тихо,
-            // 2 — наш клиент TWAIN с родным окном драйвера.
-            public int KyoceraClient;
-
             // Стенка попытки; null — общий AttemptWall.
             public TimeSpan? Wall;
         }
 
-        // Одна стройка каталога для «sources» и «acquire»: индексация устройств
-        // обязана совпадать. neededIndex правит ранний выход: acquire не обязан
-        // ждать опрос молчаливого старого диспетчера ради источников дальше.
         private static async Task<List<CatalogSource>> BuildCatalog(int neededIndex)
         {
             var sources = new List<CatalogSource>();
@@ -214,11 +132,6 @@ namespace Kite2.Scan
 
             foreach (var options in CatalogOptions())
             {
-                // Каждая TWAIN-версия счастливо увидит свои устройства. Обе
-                // опрашиваются всегда: под новым диспетчером живёт драйвер
-                // GDI-пакета, а под старым (twain_32) — классический дубль
-                // «Kyocera TWAIN», на котором спека-цикл берёт всю пачку
-                // (так работала первая версия с Saraff.Twain).
                 await CollectDevices(sources, controller, options, index);
                 index = sources.Count;
 
@@ -234,11 +147,10 @@ namespace Kite2.Scan
         // Один ScanOptions-экземпляр не переиспользуется между опросами.
         private static IEnumerable<ScanOptions> CatalogOptions()
         {
-            // TWAIN отключён по решению пользователя: «давай попробуем с wia,
-            // пока убери twain». GDI-драйвер Kyocera роняет ост в остную середину
-            // сеанса и пачки не существует (0xC000041D/0xC0000409), обработка
-            // его в приложении признана бесплодной. Вернуть TWAIN = вернуть
-            // эти два варианта в список.
+            // Захват полностью перешёл на WIA: TWAIN вырезан (решение
+            // пользователя). Вариантов WIA-интерфейса осталось три ради
+            // совместимости: часть драйверов отвечает только поверх 1.0,
+            // часть молчит в нём и говорит по 2.0.
             yield return new ScanOptions { Driver = Driver.Wia, WiaOptions = { WiaApiVersion = WiaApiVersion.Default } };
             yield return new ScanOptions { Driver = Driver.Wia, WiaOptions = { WiaApiVersion = WiaApiVersion.Wia10 } };
             yield return new ScanOptions { Driver = Driver.Wia, WiaOptions = { WiaApiVersion = WiaApiVersion.Wia20 } };
@@ -262,8 +174,7 @@ namespace Kite2.Scan
                         Index = sources.Count,
                         Name = device.Name,
                         Device = device,
-                        WiaVersion = options.Driver == Driver.Wia ? options.WiaOptions.WiaApiVersion : default,
-                        TwainDsm = options.Driver == Driver.Twain ? options.TwainOptions.Dsm : TwainDsm.Old
+                        WiaVersion = options.WiaOptions.WiaApiVersion
                     });
                 }
 
@@ -278,9 +189,7 @@ namespace Kite2.Scan
         }
 
         private static string OptionsLabel(ScanOptions options) =>
-            options.Driver == Driver.Twain
-                ? "TWAIN (" + options.TwainOptions.Dsm + ")"
-                : "WIA (" + options.WiaOptions.WiaApiVersion + ")";
+            "WIA (" + options.WiaOptions.WiaApiVersion + ")";
 
         private static async Task<List<ScanDevice>> ListDevices(ScanController controller, ScanOptions options)
         {
@@ -293,146 +202,36 @@ namespace Kite2.Scan
             return await listing;
         }
 
-        // Лестница попыток: только источник, который выбрал человек. Резервный
-        // WIA для TWAIN-источника убран по просьбе пользователя: «как указано
-        // в источнике так и должно быть». Скан выполняется напрямую, без окна
-        // драйвера (просьба пользователя: «заставить окно не появляться, а
-        // напрямую сканировать»). Родное окно — лишь последний резерв: оно
-        // добирается только в том случае, если все прямые попытки кончились,
-        // не сканировав стекло (иначе сработало бы правило остановки на пустой
-        // передаче — окно лишь заставило бы сканер трудиться заново).
-        private static List<ScanAttempt> AttemptsFor(CatalogSource source, List<CatalogSource> sources)
+        // Лестница попыток: только источник, который выбрал человек. Скан
+        // выполняется напрямую, без окна драйвера (просьба пользователя:
+        // «заставить окно не появляться, а напрямую сканировать»). Родное
+        // окно — лишь последний резерв: оно добирается только в том случае,
+        // если все прямые попытки кончились, не сканировав стекло (иначе
+        // сработало бы правило остановки на пустой передаче — окно лишь
+        // заставило бы сканер трудиться заново).
+        private static List<ScanAttempt> AttemptsFor(CatalogSource source)
         {
-            var attempts = new List<ScanAttempt>();
-
-            if (source.Device.Driver == Driver.Twain)
+            var attempts = new List<ScanAttempt>
             {
-                TwainDsm first = source.TwainDsm == TwainDsm.New ? TwainDsm.New : TwainDsm.Old;
-                TwainDsm second = source.TwainDsm == TwainDsm.New ? TwainDsm.Old : TwainDsm.New;
+                WiaAttempt(source, PaperSource.Auto, "WIA"),
+                WiaAttempt(source, PaperSource.Feeder, "WIA (автоподатчик)")
+            };
 
-                // Kyocera — особый случай. GDI-драйвер (найден новым
-                // диспетчером): пачку на нём ведёт наш клиент с родным окном
-                // драйвера. Классический дубль «Kyocera TWAIN» (найден старым
-                // диспетчером twain_32) — обычный спека-порядок: NAPS2 с
-                // ENDXFER после каждого листа берёт всю пачку, как Saraff
-                // в первой версии.
-                if (IsKyocera(source) && source.TwainDsm == TwainDsm.New)
-                {
-                    attempts.Add(KyoceraTwainAttempt(source.Device, true));
-                    attempts.Add(KyoceraTwainAttempt(source.Device, false));
-                    // Запасной путь: без DAT_PENDINGXFERS (на этом драйвере он
-                    // срывает процесс), тоже тихо.
-                    attempts.Add(KyoceraTwainAttempt(source.Device, false, skipPending: true));
-                    attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
-                    attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
-                    attempts[3].Wall = TimeSpan.FromSeconds(105);
-                    attempts[4].Wall = TimeSpan.FromSeconds(105);
-                    return attempts;
-                }
-
-                // Нативная передача первой: NAPS2 ради этой же болезни Kyocera
-                // (молчание после XferReady, issue #577) с 8.1.3 переключает
-                // Ecosys с памяти на нативный режим и подтверждает результат
-                // (коммит 633aff91). Если нативный снова откажется сразу после
-                // включения — он отработает быстро, и память догонит своей
-                // очередью: память доходила до стекла, но изображение не везла.
-                attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Native));
-                attempts.Add(TwainAttempt(source.Device, first, TwainTransferMode.Memory));
-                attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Native));
-                attempts.Add(TwainAttempt(source.Device, second, TwainTransferMode.Memory));
-                attempts.Add(TwainNativeUiAttempt(source.Device, first));
-
-                // Старый диспетчер за долгие прогоны ни разу не завёл стекло на
-                // этом драйвере: не держим его 2,5 минуты, бросаем раньше.
-                attempts[2].Wall = TimeSpan.FromSeconds(105);
-                attempts[3].Wall = TimeSpan.FromSeconds(105);
-            }
-            else
+            attempts.Add(new ScanAttempt
             {
-                CatalogSource self = sources.First(s => s.Device.Driver == Driver.Wia && s.Name == source.Name);
-
-                attempts.Add(WiaAttempt(self, PaperSource.Auto, "WIA"));
-                attempts.Add(WiaAttempt(self, PaperSource.Feeder, "WIA (автоподатчик)"));
-
-                attempts.Add(new ScanAttempt
-                {
-                    Driver = Driver.Wia,
-                    Device = self.Device,
-                    WiaVersion = self.WiaVersion,
-                    NativeUi = true,
-                    Wall = NativeUiWall,
-                    Title = "WIA (родное окно драйвера)"
-                });
-            }
-
-            return attempts;
-        }
-
-        private static ScanAttempt TwainNativeUiAttempt(ScanDevice device, TwainDsm dsm,
-            TwainTransferMode mode = TwainTransferMode.Native)
-        {
-            string dispatcher = dsm == TwainDsm.New ? "новый диспетчер" : "старый диспетчер";
-            string transfer = mode == TwainTransferMode.Memory ? ", передача памятью" : string.Empty;
-
-            return new ScanAttempt
-            {
-                Driver = Driver.Twain,
-                Device = device,
-                Dsm = dsm,
-                Mode = mode,
-                // Родное окно вместо программной передачи: молчаливый драйвер
-                // Kyocera программную не отдаёт, а собственным окном ведёт сам.
+                Device = source.Device,
+                WiaVersion = source.WiaVersion,
                 NativeUi = true,
                 Wall = NativeUiWall,
-                Title = "TWAIN (родное окно драйвера, " + dispatcher + transfer + ")"
-            };
-        }
+                Title = "WIA (родное окно драйвера)"
+            });
 
-        // Kyocera TWAIN(2): захват ведёт наш собственный клиент TWAIN.
-        // Тихий вариант (без окна) идёт первым, вариант с родным окном
-        // драйвера — следом: там сканирование запускает человек.
-        private static ScanAttempt KyoceraTwainAttempt(ScanDevice device, bool withWindow, bool skipPending = false)
-        {
-            return new ScanAttempt
-            {
-                Driver = Driver.Twain,
-                Device = device,
-                Mode = TwainTransferMode.Native,
-                NativeUi = withWindow,
-                KyoceraClient = withWindow ? 2 : (skipPending ? 3 : 1),
-                Wall = withWindow ? NativeUiWall : TimeSpan.FromSeconds(90),
-                Title = withWindow
-                    ? "TWAIN Kyocera (родное окно драйвера)"
-                    : (skipPending
-                        ? "TWAIN Kyocera (тихий режим, без счётчика передач)"
-                        : "TWAIN Kyocera (тихий режим)")
-            };
-        }
-
-        // Kyocera ли это устройство: у них свой порядок работы с драйвером.
-        private static bool IsKyocera(CatalogSource source) =>
-            (source.Device.Name ?? string.Empty).IndexOf("KYOCERA", StringComparison.OrdinalIgnoreCase) >= 0
-            || (source.Name ?? string.Empty).IndexOf("KYOCERA", StringComparison.OrdinalIgnoreCase) >= 0;
-
-        private static ScanAttempt TwainAttempt(ScanDevice device, TwainDsm dsm, TwainTransferMode mode)
-        {
-            string dispatcher = dsm == TwainDsm.New ? "новый диспетчер" : "старый диспетчер";
-            string transfer = mode == TwainTransferMode.Memory ? "передача памятью" : "передача целиком";
-
-            return new ScanAttempt
-            {
-                Driver = Driver.Twain,
-                Device = device,
-                Dsm = dsm,
-                Mode = mode,
-                Title = "TWAIN (" + dispatcher + ", " + transfer + ")"
-            };
+            return attempts;
         }
 
         private static ScanAttempt WiaAttempt(CatalogSource source, PaperSource paperSource, string title) =>
             new ScanAttempt
             {
-                Driver = Driver.Wia,
                 Device = source.Device,
                 WiaVersion = source.WiaVersion,
                 PaperSource = paperSource,
@@ -449,11 +248,6 @@ namespace Kite2.Scan
             // true — попытка брошена по стенке тишины: страницы могли прийти от
             // зависшего вызова позже, и их приём нужен только до брошенной отметки.
             public bool Abandoned;
-
-            // true — драйвер уже просканировал страницу (данные были готовы),
-            // но изображение до захвата не доехало: следующие попытки гоняют
-            // сканер впустую, и лестница обязана остановиться.
-            public bool SawTransfer;
         }
 
         private static async Task<AttemptChapter> TryCapture(
@@ -462,254 +256,37 @@ namespace Kite2.Scan
             var chapter = new AttemptChapter();
             TimeSpan wall = attempt.Wall ?? AttemptWall;
 
-            using (var child = attempt.Driver == Driver.Twain ? TwainChild.Start(attempt, directory, pagesBefore) : null)
+            var consume = ConsumePages(attempt, directory, pagesBefore, chapter, NewController());
+
+            // Стенка на попытку, но не жёсткая: если страницы идут — стенка
+            // перезапускается по каждой пришедшей. Бросаем только когда вызов
+            // зависит и за всё время не отдал ничего нового.
+            int lastCount = 0;
+
+            while (true)
             {
-                var consume = child != null
-                    ? ConsumeTwainChild(child, attempt, directory, pagesBefore, chapter)
-                    : ConsumePages(
-                        attempt, directory, pagesBefore, chapter, NewController());
+                Task done = await Task.WhenAny(consume, Task.Delay(wall));
 
-                // Внешние снимки стеков: ребёнок со вмороженным нативным вызовом
-                // умирает от собственного ClrMD-снимка, поэтому его стеки снимает
-                // соседний процесс на 25/60/100/140-й секунде попытки. Съёмка на
-                // 25-й отвечает на главный вопрос: поток помпы висит внутри
-                // триплета передачи или давно свободен.
-                if (child != null)
-                {
-                    ForeignSnapshot(child, 25000, "25с");
-                    ForeignSnapshot(child, 60000, "60с");
-                    ForeignSnapshot(child, 100000, "100с");
-                    ForeignSnapshot(child, 140000, "140с");
-                }
-
-                // Стенка на попытку, но не жёсткая: если страницы идут — стенка
-                // перезапускается по каждой пришедшей. Бросаем только когда вызов
-                // TWAIN завис и за всё время не отдал ничего нового.
-                int lastCount = 0;
-
-                while (true)
-                {
-                    Task done = await Task.WhenAny(consume, Task.Delay(wall));
-
-                    if (done == consume)
-                        break;
-
-                    // У ребёнка счётчик прогресса смотрит в каталог серии:
-                    // страницы появляются на диске по мере захвата, а ответ
-                    // пишется одним файлом только в конце.
-                    int progress = child != null
-                        ? Directory.GetFiles(directory, "scan*.bmp").Length
-                        : chapter.Pages.Count;
-
-                    if (progress != lastCount)
-                    {
-                        // Страница прокралась ровно в момент стенки: время пошло заново.
-                        lastCount = progress;
-                        continue;
-                    }
-
-                    chapter.Abandoned = true;
-                    chapter.Failure ??= string.Format(
-                        CultureInfo.CurrentCulture,
-                        "Попытка молчала больше {0} с: драйвер не отвечает.",
-                        (int)wall.TotalSeconds);
-
-                    // Дочерний TWAIN-процесс остаётся с зависшим драйвером: гасим,
-                    // до страниц, которые он успел записать, добирается ниже.
-                    child?.Dispose();
-
+                if (done == consume)
                     break;
-                }
-            }
 
-            // Дочерний процесс, живший на стенку тишины, отдал бы страницы файлом
-            // ответа, но убитый — только тем, что писал в каталог серии. Всё
-            // написанное в каталоге этой серии берём оттуда, если ответ пуст.
-            if (chapter.Pages.Count == 0 && attempt.Driver == Driver.Twain)
-                FillPagesFromDirectory(chapter, directory);
+                if (chapter.Pages.Count != lastCount)
+                {
+                    // Страница прокралась ровно в момент стенки: время пошло заново.
+                    lastCount = chapter.Pages.Count;
+                    continue;
+                }
+
+                chapter.Abandoned = true;
+                chapter.Failure ??= string.Format(
+                    CultureInfo.CurrentCulture,
+                    "Попытка молчала больше {0} с: драйвер не отвечает.",
+                    (int)wall.TotalSeconds);
+
+                break;
+            }
 
             return chapter;
-        }
-
-        // Один запланированный внешний снимок: съёмщик живёт не дольше 20 с, а
-        // всякий сбой остаётся записью в общем журнале — попытке он не враг.
-        private static Task ForeignSnapshot(TwainChild child, int delayMs, string tag)
-        {
-            return Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(delayMs);
-
-                    if (child.Process.HasExited)
-                        return;
-
-                    int targetPid = child.Process.Id;
-
-                    string logs = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                        "Kite2",
-                        "logs");
-
-                    string outPath = Path.Combine(
-                        logs,
-                        string.Format(CultureInfo.InvariantCulture, "stack-{0}-{1}.txt", targetPid, tag));
-
-                    var snap = Process.Start(new ProcessStartInfo(
-                        Process.GetCurrentProcess().MainModule.FileName,
-                        string.Format(
-                            CultureInfo.InvariantCulture,
-                            "stackdump {0} \"{1}\" \"{2}\"",
-                            targetPid,
-                            outPath,
-                            Path.Combine(Path.GetTempPath(), "kite2-snap-" + Guid.NewGuid().ToString("N") + ".txt")))
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    });
-
-                    // Съёмщик не должен пережить попытку.
-                    if (!snap.WaitForExit(20000))
-                    {
-                        try { snap.Kill(); } catch { }
-                        Log.Warn("Съёмщик стеков не уложился в 20 с ({0})", tag);
-                        return;
-                    }
-
-                    if (!File.Exists(outPath) || new FileInfo(outPath).Length == 0)
-                    {
-                        Log.Warn("Съёмщик стеков не оставил файл {0}", outPath);
-                        return;
-                    }
-
-                    Log.Info(
-                        "==== Внешний снимок стеков ({0}) ====" + Environment.NewLine + "{1}==== Снимок окончен ====",
-                        tag,
-                        File.ReadAllText(outPath));
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn(ex, "Внешний снимок стеков не удался");
-                }
-            });
-        }
-
-        private static void FillPagesFromDirectory(AttemptChapter chapter, string directory)
-        {
-            // Серия очищает каталог прежде захвата, поэтому scan*.bmp здесь —
-            // только страницы этой серии.
-            AppendSortedScans(chapter, Directory.GetFiles(directory, "scan*.bmp"));
-        }
-
-        // TWAIN всегда издёргивается в дочернем процессе: зависший вызов тянет
-        // за собой весь процесс, и осиротевший ребёнок гасится сам, увидев
-        // смерть родителя.
-        private sealed class TwainChild : IDisposable
-        {
-            public Process Process;
-
-            public string ResponsePath;
-
-            public static TwainChild Start(
-                ScanAttempt attempt, string directory, int pagesBefore)
-            {
-                Process self = Process.GetCurrentProcess();
-
-                string responsePath = Path.Combine(
-                    Path.GetTempPath(),
-                    "kite2-twain-" + Guid.NewGuid().ToString("N") + ".txt");
-
-                string arguments = string.Format(
-                    CultureInfo.InvariantCulture,
-                    "twain {0} {1} {2} \"{3}\" \"{4}\" {5} {6} {7} \"{8}\"",
-                    (int)attempt.Dsm,
-                    (int)attempt.Mode,
-                    pagesBefore,
-                    directory,
-                    attempt.Device.Name,
-                    attempt.NativeUi ? 1 : 0,
-                    attempt.KyoceraClient,
-                    self.Id,
-                    responsePath);
-
-                var child = new TwainChild
-                {
-                    Process = Process.Start(new ProcessStartInfo(self.MainModule.FileName, arguments)
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    }),
-                    ResponsePath = responsePath
-                };
-
-                Log.Info(
-                    "Попытка TWAIN идёт в отдельном процессе: диспетчер={0}, режим={1}, клиент={2}",
-                    attempt.Dsm, attempt.Mode, attempt.KyoceraClient);
-
-                return child;
-            }
-
-            public void Dispose()
-            {
-                try
-                {
-                    if (Process != null && !Process.HasExited)
-                        Process.Kill();
-                }
-                catch (Exception)
-                {
-                    // Сам ушёл — и слава богу.
-                }
-            }
-        }
-
-        private static async Task ConsumeTwainChild(
-            TwainChild child, ScanAttempt attempt,
-            string directory, int pagesBefore, AttemptChapter chapter)
-        {
-            await Task.Run(() => child.Process.WaitForExit());
-
-            // Код выхода отличает падение (например, 0xC0000005) от штатного
-            // завершения: без него «ребёнок умер без ответа» остаётся загадкой.
-            Log.Info(
-                "Дочерний процесс завершился, код 0x{0:X8}, ответ {1}",
-                child.Process.ExitCode,
-                File.Exists(child.ResponsePath) ? "есть" : "отсутствует");
-
-            if (chapter.Abandoned)
-                return;
-
-            // Список страниц приходит файлом ответа; имена файлов в каталоге
-            // те же, что пишутся обычным захватом.
-            if (File.Exists(child.ResponsePath))
-            {
-                ScanResult result = ScanExchange.Read(child.ResponsePath);
-
-                // Сигнал «данные были готовы» говорит о физическом проходе стекла
-                // даже в случае неудачи: без него повторные попытки гоняют сканер.
-                chapter.SawTransfer = result.HasSignal("xfer");
-
-                if (result.Succeeded)
-                {
-                    AppendSortedScans(chapter, result.Items.ToArray());
-                    return;
-                }
-
-                chapter.Failure = result.Error;
-            }
-
-            // Может случиться и так, что ребёнок умер насильственно, а файл
-            // ответа не написан: страницы на диске всё ещё существуют.
-            chapter.Failure ??= "Дочерний процесс сканирования завершился без ответа.";
-        }
-
-        // Список файлов нужен серии по порядку номеров: страницы пронумеруются
-        // scan001... scanNNN, и лексический порядок нулей означает хронологию.
-        private static void AppendSortedScans(AttemptChapter chapter, string[] files)
-        {
-            chapter.Pages.AddRange(files
-                .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
-                .ToArray());
         }
 
         private static async Task ConsumePages(
@@ -720,7 +297,7 @@ namespace Kite2.Scan
             using (var visible = new CancellationTokenSource())
             {
                 // В родном окне драйвера страниц не дождаться и от машинного
-                // вызова: человек должен сам щёлкнуть «Сканер» в диалоге.
+                // вызова: человек должен сам щёлкнуть «Скан» в диалоге.
                 TimeSpan firstPageWait = attempt.NativeUi ? NativeUiWall : FirstPageWait;
                 TimeSpan pageGapWait = attempt.NativeUi ? NativeUiWall : PageGapWait;
 
@@ -728,35 +305,9 @@ namespace Kite2.Scan
                 // метка отсчитывает тишину и до первой страницы, и между страницами.
                 quiet.CancelAfter(firstPageWait);
 
-                // Срезы стеков по ходу тишины: треть, две трети и за пару секунд
-                // до отмены. По ним видно, держится ли зависание в первом
-                // триплете передачи или разгружается со временем.
-                Task diag = attempt.Driver == Driver.Twain && !attempt.NativeUi
-                    ? Task.Run(async () =>
-                    {
-                        double wall = firstPageWait.TotalSeconds;
-                        double[] points =
-                        {
-                            wall * 0.3,
-                            wall * 0.6,
-                            wall - 2
-                        };
-
-                        double previous = 0;
-                        foreach (double point in points)
-                        {
-                            await Task.Delay(TimeSpan.FromSeconds(point - previous));
-                            previous = point;
-
-                            if (quiet.IsCancellationRequested || chapter.Pages.Count > 0)
-                                return;
-
-                            ThreadDumpDiag.Dump("тишина при передаче");
-                        }
-                    })
-                    : Task.CompletedTask;
-
-                Task raising = attempt.Driver == Driver.Twain && attempt.NativeUi
+                // Пока открыто родное окно, его держат наверху: иначе человек
+                // мог бы его не найти и закрыть, отменив скан.
+                Task raising = attempt.NativeUi
                     ? Task.Run(() => RaiseDriverWindowLoop(visible.Token))
                     : Task.CompletedTask;
 
@@ -774,13 +325,9 @@ namespace Kite2.Scan
                         PageSize = PageSize.A4,
                         // Родное окно WIA-драйверу: молчаливый драйвер Kyocera
                         // программную передачу отдаёт E_FAIL.
-                        UseNativeUI = attempt.NativeUi
+                        UseNativeUI = attempt.NativeUi,
+                        WiaOptions = new WiaOptions { WiaApiVersion = attempt.WiaVersion }
                     };
-
-                    if (attempt.Driver == Driver.Twain)
-                        options.TwainOptions = new TwainOptions { Dsm = attempt.Dsm, TransferMode = attempt.Mode };
-                    else
-                        options.WiaOptions = new WiaOptions { WiaApiVersion = attempt.WiaVersion };
 
                     await foreach (var page in controller.Scan(options, quiet.Token))
                     {
@@ -806,11 +353,6 @@ namespace Kite2.Scan
                 {
                     Log.Warn("Попытка прервана по тишине, страниц {0}", chapter.Pages.Count);
 
-                    // Срез на самой отмене: был ли поток помпы всё ещё внутри
-                    // зависшего вызова или уже разгрузился к этому моменту.
-                    if (attempt.Driver == Driver.Twain && !attempt.NativeUi)
-                        ThreadDumpDiag.Dump("на отмене по тишине");
-
                     if (chapter.Pages.Count == 0)
                     {
                         chapter.Failure = attempt.NativeUi
@@ -835,30 +377,20 @@ namespace Kite2.Scan
                     visible.Cancel();
                 }
 
-                // Снимок короткий и к моменту отмены уже снят: дождаться и забыть.
-                try
-                {
-                    await diag;
-                }
-                catch
-                {
-                    // Диагностика не важнее скана: её сбой игнорируем.
-                }
-
+                // Подниматель окна не важнее скана: его сбой игнорируем.
                 try
                 {
                     await raising;
                 }
                 catch
                 {
-                    // Подниматель окна не важнее скана: его сбой игнорируем.
                 }
             }
         }
 
         // Пока открыто родное окно драйвера, каждые полсекунды поднимаем его
         // наверх: без этого окно прячется за окном программы, и человек
-        // «закрывает окно без страницы», могло и не найдя его.
+        // «закрывает окно без страницы», мог и не найти его.
         private static async Task RaiseDriverWindowLoop(CancellationToken cancellation)
         {
             int self = Process.GetCurrentProcess().Id;
@@ -878,27 +410,10 @@ namespace Kite2.Scan
             }
         }
 
-        private static TwainDsm ParseDsm(int value)
-        {
-            if (value == (int)TwainDsm.New)
-                return TwainDsm.New;
-
-            return TwainDsm.Old;
-        }
-
-        private static TwainTransferMode ParseMode(int value)
-        {
-            if (value == (int)TwainTransferMode.Native)
-                return TwainTransferMode.Native;
-
-            return TwainTransferMode.Memory;
-        }
-
         private static ScanController NewController()
         {
-            // Диагностика NAPS2 («NAPS2.TW — Invalid memory buffer» и подобные)
-            // иначе никуда не пишется: именно там видна причина молчаливой
-            // передачи памяти Kyocera.
+            // Диагностика NAPS2 иначе никуда не пишется: именно там видна причина
+            // молчаливой передачи.
             var context = new ScanningContext(new GdiImageContext()) { Logger = Naps2Logging.Instance };
 
             return new ScanController(context);
