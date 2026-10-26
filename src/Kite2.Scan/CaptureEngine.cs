@@ -186,25 +186,12 @@ namespace Kite2.Scan
 
         // Порядок: прямой захват, затем автоподатчик, затем родное окно.
         // Окно — последний резерв: прямые попытки кончились, не сканировав стекло.
-        // Порядок: прямой захват, затем автоподатчик, затем родное окно.
-        // Драйвер Kyocera прямой WIA-вызов не держит (E_FAIL), податчик в
-        // capability не заявляет, но пачку берёт через своё окно — поэтому
-        // у него окно идёт первым.
-        private static List<ScanAttempt> AttemptsFor(CatalogSource source)
-        {
-            if (KyoceraLikeName(source))
-                return new List<ScanAttempt> { NativeUiAttempt(source) };
-
-            return new List<ScanAttempt>
-            {
-                WiaAttempt(source, PaperSource.Auto, "WIA"),
-                WiaAttempt(source, PaperSource.Feeder, "WIA (автоподатчик)"),
-                NativeUiAttempt(source)
-            };
-        }
-
-        private static bool KyoceraLikeName(CatalogSource source) =>
-            (source.Name ?? string.Empty).IndexOf("KYOCERA", StringComparison.OrdinalIgnoreCase) >= 0;
+        // Одна попытка — родное окно драйвера: параметры задаёт там человек,
+        // пачку ведёт сам драйвер. Прямые программные вызовы убраны: у Kyocera
+        // они отвечали ошибками (E_FAIL, «нет автоподатчика»), а общение
+        // приложения с настройками за драйвером и так отменено.
+        private static List<ScanAttempt> AttemptsFor(CatalogSource source) =>
+            new List<ScanAttempt> { NativeUiAttempt(source) };
 
         private static ScanAttempt NativeUiAttempt(CatalogSource source) =>
             new ScanAttempt
@@ -214,15 +201,6 @@ namespace Kite2.Scan
                 NativeUi = true,
                 Wall = NativeUiWall,
                 Title = "WIA (родное окно драйвера)"
-            };
-
-        private static ScanAttempt WiaAttempt(CatalogSource source, PaperSource paperSource, string title) =>
-            new ScanAttempt
-            {
-                Device = source.Device,
-                WiaVersion = source.WiaVersion,
-                PaperSource = paperSource,
-                Title = title
             };
 
         internal sealed class AttemptChapter
