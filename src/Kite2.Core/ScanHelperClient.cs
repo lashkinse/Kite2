@@ -110,7 +110,7 @@ namespace Kite2.Core
                         var clock = Stopwatch.StartNew();
                         Log.Info("Помощник запущен: {0}", arguments);
 
-                        using (cancellationToken.Register(() => StopHelper(helper, mainWindow)))
+                        using (cancellationToken.Register(() => StopHelper(helper, mainWindow, responsePath)))
                         {
                             helper.WaitForExit();
                         }
@@ -143,18 +143,27 @@ namespace Kite2.Core
             }
             finally
             {
+                File.Delete(responsePath + ".abort");
+
                 if (File.Exists(responsePath))
                     File.Delete(responsePath);
             }
         }
 
-        // Отмена: диалогу драйвера, живущему в чужом процессе, уходит
-        // штатное закрытие по его владельцу — окну программы; помощник
-        // добивается следом и не остаётся при висящем диалоге.
-        private static void StopHelper(Process helper, IntPtr ownerWindow)
+        // Отмена: помощнику уходит файл-сигнал — его фоновый поток сам закроет
+        // окна сессии сканера (хост UI драйвера живёт в чужом процессе, и смерти
+        // помощника этого не отменяет). Если за отведённое время помощник не
+        // вышел — окне-владельце достаётся штатное закрытие, помощник добивается.
+        private static void StopHelper(Process helper, IntPtr ownerWindow, string responsePath)
         {
             try
             {
+                File.WriteAllText(responsePath + ".abort", "cancel");
+
+                // Дружеский выход: диалог закрывается, сеанс завершается сам.
+                if (helper.WaitForExit(2500))
+                    return;
+
                 Log.Info("Окна драйвера при отмене: {0}", OwnedDialogCloser.CloseFor(ownerWindow, helper.Id));
 
                 helper.Kill();

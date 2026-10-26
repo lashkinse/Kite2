@@ -53,6 +53,14 @@ namespace Kite2.Scan
                 Log.Info("Окно-владелец диалога не передано");
             }
 
+            // Фон наблюдает файл отмены: пока основной поток сидит в модальном
+            // диалоге, отмену из программы исполняет именно он.
+            uint appPid = CaptureEngine.DialogParentValue != 0
+                ? AbortWatcher.ProcessOfWindow(new IntPtr(CaptureEngine.DialogParentValue))
+                : 0;
+
+            AbortWatcher.Start(responsePath + ".abort", appPid);
+
             // Тихие сбои фонового захвата больше нигде не видны: зависания
             // и падения без этих записей в логе не объяснить.
             AppDomain.CurrentDomain.UnhandledException += (_, e) =>
