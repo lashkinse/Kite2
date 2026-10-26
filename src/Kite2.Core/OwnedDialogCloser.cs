@@ -1,15 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Kite2.Core
 {
     // Диалог WIA-драйвера живёт в чужом процессе (прокси по битности), и смерть
-    // помощника-клиента такое окно не гасит. Перечень «своих» диалогов точен:
-    // это окна, чей корень владельцев — главное окно программы (само владение
-    // бывает провести не напрямую, а через цепочку: диалог WIA — прогресс).
-    // Штатное WM_CLOSE действует как «Отмена» в самом диалоге.
+    // помощника-клиента такое окно не гасит. При отмене сдирается полный отсек
+    // видимых окон: класс, заголовок, процесс, владелец. Ровно свои окна
+    // закрываются штатным WM_CLOSE; отсек записывается в журнал целиком,
+    // потому что владение у драйверов бывает всякое, и править нужно по факту.
     internal static class OwnedDialogCloser
     {
         private delegate bool EnumProc(IntPtr window, IntPtr lParam);
@@ -24,7 +25,13 @@ namespace Kite2.Core
         private static extern IntPtr GetAncestor(IntPtr window, uint command);
 
         [DllImport("user32.dll")]
+        private static extern bool IsWindow(IntPtr window);
+
+        [DllImport("user32.dll")]
         private static extern bool IsWindowVisible(IntPtr window);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
+        private static extern uint WindowThreadAndProcess(IntPtr window, out uint processId);
 
         [DllImport("user32.dll")]
         private static extern int GetWindowTextLength(IntPtr window);
@@ -42,44 +49,69 @@ namespace Kite2.Core
         private const uint CommandRootOwner = 0x0003;  // GA_ROOTOWNER
         private const uint CloseMessage = 0x0010;      // WM_CLOSE
 
-        // Возвращает краткий отчёт: какие окна закрыты либо почему ни одного.
-        public static string CloseFor(IntPtr ownerWindow)
+        private const int ReportLimit = 25;
+
+        // ownerWindow — главное окно программы; helperPid — процесс помощника,
+        // чьи окна тоже «свои» для закрытия. Возвращает отчёт для журнала.
+        public static string CloseFor(IntPtr ownerWindow, int helperPid)
         {
             if (ownerWindow == IntPtr.Zero)
                 return "у программы нет окна-владельца";
 
-            var found = new List<string>();
+            var report = new List<string>();
 
             EnumWindows((window, _) =>
             {
-                // Окно-владелец само себе корень: исключается сразу, иначе
-                // «чин» закроет главное окно программы.
-                if (window == ownerWindow || !IsWindowVisible(window))
+                if (report.Count > ReportLimit || !IsWindowVisible(window))
                     return true;
 
-                // Прямое владение и владение через цепочку: диалог драйвера
-                // может сам владеть окном прогресса.
                 IntPtr owner = GetWindow(window, CommandGetOwner);
                 IntPtr rootOwner = GetAncestor(window, CommandRootOwner);
-
-                if (owner != ownerWindow && rootOwner != ownerWindow)
-                    return true;
-
-                PostMessage(window, CloseMessage, IntPtr.Zero, IntPtr.Zero);
+                WindowThreadAndProcess(window, out uint processId);
 
                 var title = new StringBuilder(64);
-                GetWindowText(window, title, 64);
+                if (GetWindowTextLength(window) > 0)
+                    GetWindowText(window, title, 64);
                 var className = new StringBuilder(64);
                 GetClassName(window, className, 64);
 
-                found.Add("0x" + window.ToInt64().ToString("X") + " [" + className + "] " + title);
+                string entry = string.Format(
+                    "0x{0:X} [{1}] \"{2}\" pid={3} владелец=0x{4:X}({5}) корень=0x{6:X}",
+                    window.ToInt64(), className, title, processId,
+                    GetOwnerHandle(owner), OwnerDescription(owner, helperPid),
+                    GetOwnerHandle(rootOwner));
+
+                bool forOwner = owner == ownerWindow || rootOwner == ownerWindow;
+
+                // Окну-владельцу и нашей программе не касаемся вирально: только
+                // чужие диалоги в владельческой цепочке главного окна.
+                if (window != ownerWindow && forOwner)
+                {
+                    PostMessage(window, CloseMessage, IntPtr.Zero, IntPtr.Zero);
+                    report.Add("ЗАКРЫТО " + entry);
+                    return true;
+                }
+
+                report.Add("пропущено " + entry);
 
                 return true;
             }, IntPtr.Zero);
 
-            return found.Count > 0
-                ? "закрыто: " + string.Join("; ", found)
-                : "владельческих окон не найдено";
+            return string.Join(" | ", report);
+        }
+
+        private static string GetOwnerHandle(IntPtr owner) => owner.ToInt64().ToString("X");
+
+        private static string OwnerDescription(IntPtr owner, int helperPid)
+        {
+            if (owner == IntPtr.Zero)
+                return "нет";
+
+            if (!IsWindow(owner))
+                return "мёртв";
+
+            WindowThreadAndProcess(owner, out uint processId);
+            return "pid=" + processId + (processId == (uint)helperPid ? " помощник" : null);
         }
     }
 }

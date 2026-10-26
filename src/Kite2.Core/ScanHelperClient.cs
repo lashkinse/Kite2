@@ -155,7 +155,7 @@ namespace Kite2.Core
         {
             try
             {
-                Log.Info("Окна драйвера при отмене: {0}", OwnedDialogCloser.CloseFor(ownerWindow));
+                Log.Info("Окна драйвера при отмене: {0}", OwnedDialogCloser.CloseFor(ownerWindow, helper.Id));
 
                 helper.Kill();
             }

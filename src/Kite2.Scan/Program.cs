@@ -46,6 +46,11 @@ namespace Kite2.Scan
                 && handle != 0)
             {
                 CaptureEngine.DialogParentValue = handle;
+                Log.Info("Окно-владелец диалога: 0x{0:X}", handle);
+            }
+            else
+            {
+                Log.Info("Окно-владелец диалога не передано");
             }
 
             // Тихие сбои фонового захвата больше нигде не видны: зависания
