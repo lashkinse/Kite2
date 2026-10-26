@@ -11,13 +11,12 @@
     <AssemblyName>Kite2.Scan</AssemblyName>
     <!-- C# 8 нужен ради «await foreach»: страницы прилетают потоком от NAPS2. -->
     <LangVersion>8.0</LangVersion>
-    <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <AssemblyTitle>Kite2.Scan</AssemblyTitle>
     <Description>Захват изображений со сканера</Description>
     <!-- Версия ходит в ногу с программой: штамп в журнале помощника говорит,
          какой именно бинарь исполнялся на компьютере пользователя. -->
-    <Version>1.7.50</Version>
+    <Version>1.7.51</Version>
   </PropertyGroup>
 
   <!-- Папка сборки повторяет решение (x64), хотя сама программа 32-разрядная:
@@ -34,24 +33,15 @@
 
   <ItemGroup>
     <PackageReference Include="NLog" Version="5.5.1" />
-    <!-- Снимки стеков живых потоков для диагностики молчащей передачи. -->
-    <PackageReference Include="Microsoft.Diagnostics.Runtime" Version="3.1.512801" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Kite2.ScanProtocol\Kite2.ScanProtocol.csproj" />
   </ItemGroup>
 
-  <!-- Нативного TWAIN-диспетчера больше нет: захват полностью перешёл на WIA. -->
-
-  <!-- Лишнее срезается прямо с выхода сборки: не нужны WPF-реализация zxing,
-       PDF-экспорт внутри NAPS2 (PdfSharpCore, SharpZipLib) и полсотни
-       спутниковых переводов NAPS2. Транспорт eSCL (NAPS2.Escl, gRPC, DNS)
-       обрезка не трогает: тип EsclOptions живёт в конструкторе ScanOptions,
-       и его цепочка зависимостей обязана быть рядом. Копия ниток и сканера
-       раскладывается в Scan\ через CopySidePrograms — чем меньше файлов, тем
-       компактнее поставка. Захват идёт через WIA, а лог
-       помощник пишет сам, на своём русском. -->
+  <!-- Лишнее срезается прямо с выхода сборки: собственные PDF-экспорт и
+       спутниковые переводы NAPS2 не нужны. Транспорт eSCL не трогается:
+       тип EsclOptions живёт в конструкторе ScanOptions. -->
   <Target Name="TrimScanOutput" AfterTargets="Build">
     <ItemGroup>
       <SatelliteTranslations Include="$(TargetDir)*\NAPS2.Sdk.resources.dll" />

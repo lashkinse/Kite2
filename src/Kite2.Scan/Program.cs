@@ -34,10 +34,6 @@ namespace Kite2.Scan
         {
             HelperLogging.Initialize();
 
-            // Дамп на краш раньше любых захватных работ: паника драйвера гасит
-            // процесс до всякой обратной связи, и только файл дампа остаётся.
-            CrashDump.Install();
-
             SetErrorMode(SemFailCriticalErrors | SemNoGpFaultErrorBox);
 
             Log.Info("Помощник, версия {0}", typeof(Program).Assembly.GetName().Version);
@@ -68,14 +64,6 @@ namespace Kite2.Scan
                     List<string> sources = await CaptureEngine.GetSources();
                     Log.Info("Список получен: источников {0}", sources.Count);
                     code = Answer(responsePath, sources);
-                }
-                else if (args[0] == "threaddump")
-                {
-                    // Скрытая команда: живой снимок стеков потоков. Нужна для
-                    // проверки диагностики на машине без сканера.
-                    Log.Info("Команда threaddump");
-                    ThreadDumpDiag.Dump("ручной вызов");
-                    code = Answer(responsePath, new List<string>());
                 }
                 else if (args[0] == "acquire" && args.Length == 4)
                 {
@@ -111,8 +99,7 @@ namespace Kite2.Scan
 
             LogManager.Flush();
 
-            // Явный выход гарантирует код возврата, даже если остались живые
-            // фоновые потоки диагностики.
+            // Явный выход: зависшие COM-потоки WIA не должны держать процесс.
             Environment.Exit(code);
 
             return code;
