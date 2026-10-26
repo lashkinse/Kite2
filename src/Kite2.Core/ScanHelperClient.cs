@@ -89,7 +89,7 @@ namespace Kite2.Core
                     var clock = Stopwatch.StartNew();
                     Log.Info("Помощник запущен: {0}", arguments);
 
-                    using (cancellationToken.Register(() => StopHelper(helper, helperStartWindows)))
+                    using (cancellationToken.Register(() => StopHelper(helper, helperStartWindows, responsePath)))
                     {
                         helper.WaitForExit();
                     }
@@ -122,26 +122,26 @@ namespace Kite2.Core
             }
             finally
             {
+                File.Delete(responsePath + ".raised");
+
                 if (File.Exists(responsePath))
                     File.Delete(responsePath);
             }
         }
 
-        private static void StopHelper(Process helper, HashSet<IntPtr> helperStartWindows)
+        // Смерть помощника чужое окно драйвера не гасит, поэтому прежде —
+        // просьба закрыться по названиям, что помощник записал рядом с
+        // файлом ответа.
+        private static void StopHelper(Process helper, HashSet<IntPtr> helperStartWindows, string responsePath)
         {
             try
             {
-                // Сначала окну драйвера, которое могло появиться в чужом
-                // процессе, уходит просьба закрыться; затем помощник —
-                // иначе его окно висело бы после отмены.
-                try
-                {
-                    ScanWindowCloser.CloseNew(helperStartWindows);
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug(ex, "Окно драйвера не удалось закрыть по-тихому");
-                }
+                IReadOnlyList<string> closed = ScanWindowCloser.CloseCaptured(
+                    helperStartWindows,
+                    responsePath + ".raised");
+
+                if (closed.Count > 0)
+                    Log.Info("Окно драйвера закрыто по отмене: {0}", string.Join("; ", closed));
 
                 helper.Kill();
             }

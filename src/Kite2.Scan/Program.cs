@@ -69,6 +69,10 @@ namespace Kite2.Scan
                 {
                     Log.Info("Команда acquire: источник={0}, каталог={1}", args[1], args[2]);
 
+                    // Названия поднятых окон драйвера пишутся рядом с ответом:
+                    // на отмене программа закроет их точным попаданием.
+                    CaptureEngine.RaisedTitlesFile = responsePath + ".raised";
+
                     List<string> pages = await CaptureEngine.Capture(
                         Number(args[1]),
                         args[2]);

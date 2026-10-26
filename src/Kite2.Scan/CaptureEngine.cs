@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using NAPS2.Images;
@@ -266,7 +267,7 @@ namespace Kite2.Scan
 
                 // Окно держится наверху, пока человек сканирует.
                 Task raising = attempt.NativeUi
-                    ? Task.Run(() => RaiseDriverWindowLoop(visible.Token))
+                    ? Task.Run(() => RaiseDriverWindowLoop(attempt.Device.Name, visible.Token))
                     : Task.CompletedTask;
 
                 try
@@ -340,10 +341,13 @@ namespace Kite2.Scan
 
         // Пока человек в окне драйвера, его окна держатся наверху и не
         // прячутся за окном программы. Диалог может жить в чужом процессе,
-        // поэтому не по процессу ищем: что нового со старта захвата, то и
-        // поднимаем; первый показу фокус — гасит мигание на панели задач.
-        private static async Task RaiseDriverWindowLoop(CancellationToken cancellation)
+        // поэтому поиск не по процессу: окно нашей программы поднимается
+        // безусловно, чужое — только если его название похоже на имя
+        // устройства. Первый показ получает фокус: так гаснет мигание
+        // чужого окна на панели задач.
+        private static async Task RaiseDriverWindowLoop(string deviceName, CancellationToken cancellation)
         {
+            uint ownProcess = (uint)Process.GetCurrentProcess().Id;
             HashSet<IntPtr> existed = WindowRaiser.VisibleWindows();
             var activated = new HashSet<IntPtr>();
 
@@ -354,9 +358,19 @@ namespace Kite2.Scan
                     if (existed.Contains(window))
                         continue;
 
+                    string title = WindowRaiser.Title(window);
+                    bool isOurs = WindowRaiser.ProcessOf(window) == ownProcess;
+
+                    if (!isOurs && !WindowRaiser.TitleMatchesDevice(title, deviceName))
+                        continue;
+
                     if (activated.Add(window))
                     {
-                        Log.Info("Новое окно захвата: {0}", WindowRaiser.Title(window));
+                        Log.Info("Новое окно захвата: {0}", title);
+
+                        if (!isOurs)
+                            RecordRaisedTitle(title);
+
                         WindowRaiser.BringToFront(window);
                     }
                     else
@@ -373,6 +387,25 @@ namespace Kite2.Scan
                 {
                     return;
                 }
+            }
+        }
+
+        // Файл для названий поднятых чужих окон; задан при команде acquire.
+        internal static string RaisedTitlesFile;
+
+        // Названия поднятых окон дублируются файлом рядом с ответом:
+        // когда человек отменяет скан в программе, она закрывает такие
+        // окна по точному названию — смертью помощника их не погасить.
+        private static void RecordRaisedTitle(string title)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(RaisedTitlesFile))
+                    File.AppendAllText(RaisedTitlesFile, title + Environment.NewLine, new UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "Название окна не записано");
             }
         }
 
