@@ -6,10 +6,8 @@ using MsLogging = Microsoft.Extensions.Logging.ILogger;
 
 namespace Kite2.Scan
 {
-    // Внутренние дневники NAPS2 («NAPS2.TW — …») пишутся в ILogger из
-    // Microsoft.Extensions.Logging, и без моста не видны нигде. Именно там
-    // лежит разгадка молчаливой передачи памяти Kyocera — отброшенные буферы
-    // «Invalid memory buffer» с нулевой геометрией — и все её попутные улики.
+    // Мост в ILogger NAPS2: внутренние дневники NAPS2.TW без него не видны нигде,
+    // а именно там лежит причина молчаливой передачи.
     internal sealed class Naps2Logging : MsLogging
     {
         public static readonly Naps2Logging Instance = new Naps2Logging();

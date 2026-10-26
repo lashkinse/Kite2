@@ -9,53 +9,31 @@ using Kite2.App.ViewModels;
 
 namespace Kite2.App.Views
 {
-    // Левая кнопка мыши выделяет участок, средняя двигает лист. Одно на другое в
-    // одном жесте не уживается: протяжка либо двигает лист, либо выделяет.
+    // Левая кнопка выделяет фрагмент, средняя двигает лист, колесо — масштаб.
     public partial class PageViewer : UserControl
     {
         private const double MinZoom = 0.05;
-
         private const double MaxZoom = 4.0;
-
-        // На что делить, чтобы получить увеличение в полтора раза.
         private const double WheelFactor = 1.5;
-
-        // Отступ листа от края окна — как в прежней версии программы.
         private const double PageMargin = 24;
-
         private const double HandleSize = 6;
-
         private const double SaveGap = 8;
-
         private const double HintGap = 6;
-
-        // Минимальный размер выделения: меньше обрезать нечего.
         private const double MinimumSelection = 8;
 
         private double _zoom = 1.0;
-
         private bool _dragging;
-
         private Point _dragOrigin;
-
         private double _dragLeft;
-
         private double _dragTop;
-
         private bool _middleDrag;
 
-        // Запрошено сохранение фрагмента. В событии идёт прямоугольник в пикселях
-        // картинки страницы: пересчёт из координат листа делает тот, кто видит и
-        // лист, и картинку, — область просмотра.
+        private readonly DispatcherTimer _scrollEndTimer;
+
         public event EventHandler<Rect> FragmentRequested;
 
-        // Лист поехал под мышью или прокруткой. Панель команд над страницей на это
-        // время прячется: под ней оказался бы тот самый лист.
+        // Пока лист тянут (илинули прокрутку), панель команд поверх страницы прячется.
         public event EventHandler<bool> SheetDragChanged;
-
-        // Таймер, которым ловится конец прокрутки. Само событие приходит на каждое
-        // движение полосы, а «остановился» оно не сообщает.
-        private readonly DispatcherTimer _scrollEndTimer;
 
         public PageViewer()
         {
@@ -63,9 +41,8 @@ namespace Kite2.App.Views
 
             DataContextChanged += OnDataContextChanged;
 
-            // Обработчики висят на корне (лист меняет размер, а колесо должно работать
-            // и над серым столом) и берутся предпросмотровые: обычные до корня
-            // не доходят, их перехватывают полоса прокрутки и картинка.
+            // Предпросмотровые обработчики на корне: события ниже перехватывают
+            // полоса прокрутки и картинка.
             Root.PreviewMouseWheel += OnMouseWheel;
             Root.SizeChanged += OnRootSizeChanged;
             Root.PreviewMouseDown += OnMouseDown;
@@ -75,14 +52,11 @@ namespace Kite2.App.Views
             Scroller.ScrollChanged += OnScrollerScrollChanged;
 
             _scrollEndTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-            _scrollEndTimer.Tick += OnScrollEnded;
-        }
-
-        private void OnScrollEnded(object sender, EventArgs args)
-        {
-            _scrollEndTimer.Stop();
-
-            RaiseSheetDragChanged(false);
+            _scrollEndTimer.Tick += (s, a) =>
+            {
+                _scrollEndTimer.Stop();
+                RaiseSheetDragChanged(false);
+            };
         }
 
         private void OnScrollerScrollChanged(object sender, ScrollChangedEventArgs args)
@@ -112,8 +86,6 @@ namespace Kite2.App.Views
                 ShowPage();
         }
 
-        // Показывает выбранную страницу. Подгонка размера отложена до следующего
-        // прохода разметки: в момент смены страницы элемент ещё не получил размера.
         private void ShowPage()
         {
             var model = DataContext as MainViewModel;
@@ -133,44 +105,33 @@ namespace Kite2.App.Views
             }
 
             Picture.Source = page.Page;
-
-            // Выделение относится к прежней странице: на новой оно указывало бы
-            // на пустое место.
             ClearSelection();
 
+            // Размер элемента ещё не посчитан — подгонка следующим проходом разметки.
             Dispatcher.BeginInvoke(new Action(FitPage), DispatcherPriority.Loaded);
         }
 
         private void FitPage()
         {
-            var model = DataContext as MainViewModel;
-            var page = model?.SelectedPage;
+            var page = SelectedPageOf(DataContext);
 
-            // Пока у элемента нет настоящего размера, подгонять нечего: масштаб вышел бы
-            // из расчёта «ширина окна равна нулю» и лист схлопнулся бы в точку.
             if (page?.Page == null || ActualWidth < 100 || ActualHeight < 100)
                 return;
 
-            double availableWidth = Math.Max(1, ActualWidth - PageMargin * 2);
-            double availableHeight = Math.Max(1, ActualHeight - PageMargin * 2);
-
+            // Масштаб: лист вписывается в окно с полями.
             double scale = Math.Min(
-                availableWidth / page.Page.Width,
-                availableHeight / page.Page.Height);
+                Math.Max(1, ActualWidth - PageMargin * 2) / page.Page.Width,
+                Math.Max(1, ActualHeight - PageMargin * 2) / page.Page.Height);
 
             _zoom = scale;
-
 
             LayoutSheet(scale);
             CentreSheet();
         }
 
-        // Задаёт размеры листа под масштаб вручную: растянутая картинка должна
-        // давать полосе прокрутки ровно те размеры, что видны.
         private void LayoutSheet(double scale)
         {
-            var model = DataContext as MainViewModel;
-            var page = model?.SelectedPage;
+            var page = SelectedPageOf(DataContext);
 
             if (page?.Page == null)
                 return;
@@ -179,8 +140,7 @@ namespace Kite2.App.Views
             Sheet.Height = page.Page.Height * scale;
         }
 
-        // Ставит лист по центру, а не помещающийся лист — к левому верхнему краю
-        // с полями: по центру он уезжал бы за края без возможности добраться.
+        // Лист помещается по центру; не помещающийся — у левого верхнего края с полями.
         private void CentreSheet()
         {
             double viewportWidth = Scroller.ViewportWidth > 0 ? Scroller.ViewportWidth : ActualWidth;
@@ -192,24 +152,14 @@ namespace Kite2.App.Views
             UpdateCursor();
         }
 
-        // Вид курсора говорит, что будет делать протягивание: левой кнопкой —
-        // выделять участок, средней — двигать лист.
         private void UpdateCursor()
         {
-            if (Sheet.Visibility != Visibility.Visible)
-            {
-                Root.Cursor = Cursors.Arrow;
-                return;
-            }
-
-            Root.Cursor = Cursors.Cross;
+            Root.Cursor = Sheet.Visibility == Visibility.Visible ? Cursors.Cross : Cursors.Arrow;
         }
 
-        // После изменения размера окна лист возвращается в исходный масштаб.
         private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
         {
-            // Подгонка откладывается до следующего прохода разметки: полосы
-            // прокрутки ещё старого размера.
+            // Полосы прокрутки ещё старого размера — подгонка следующим проходом.
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 FitPage();
@@ -217,16 +167,12 @@ namespace Kite2.App.Views
             }), DispatcherPriority.Loaded);
         }
 
-        // Колесо меняет масштаб, удерживая на месте точку листа под курсором, и
-        // убирает выделение: после увеличения рамка указывала бы совсем не на тот
-        // участок, который отмечали.
         private void OnMouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (e.Delta == 0 || Sheet.Visibility != Visibility.Visible)
                 return;
 
-            var model = DataContext as MainViewModel;
-            var page = model?.SelectedPage;
+            var page = SelectedPageOf(DataContext);
 
             if (page?.Page == null)
                 return;
@@ -240,36 +186,28 @@ namespace Kite2.App.Views
 
             ClearSelection();
 
-            // Доля листа под курсором до изменения масштаба: она же должна остаться
-            // под курсором после.
+            // Точка листа под курсором остаётся под курсором после смены масштаба.
             double ratioX = cursor.X / Sheet.ActualWidth;
             double ratioY = cursor.Y / Sheet.ActualHeight;
 
             _zoom = next;
             LayoutSheet(next);
 
-            double left = Canvas.GetLeft(Sheet) + cursor.X - ratioX * Sheet.Width;
-            double top = Canvas.GetTop(Sheet) + cursor.Y - ratioY * Sheet.Height;
-
-            Canvas.SetLeft(Sheet, left);
-            Canvas.SetTop(Sheet, top);
+            Canvas.SetLeft(Sheet, Canvas.GetLeft(Sheet) + cursor.X - ratioX * Sheet.Width);
+            Canvas.SetTop(Sheet, Canvas.GetTop(Sheet) + cursor.Y - ratioY * Sheet.Height);
 
             UpdateCursor();
             e.Handled = true;
         }
 
-        // Нажатие начинает выделение (слева) или перетаскивание листа (средней).
         private void OnMouseDown(object sender, MouseButtonEventArgs e)
         {
             if (Sheet.Visibility != Visibility.Visible)
                 return;
 
-            // Щелчок по кнопке поверх листа доходит до самой кнопки.
             if (e.ChangedButton == MouseButton.Left && IsOnOverlay(e.OriginalSource))
                 return;
 
-            // Двойной щелчок возвращает лист в исходный размер. События двойного
-            // щелчка у Grid нет, второй щелчок узнаётся по счётчику.
             if (e.ClickCount == 2)
             {
                 FitPage();
@@ -283,8 +221,6 @@ namespace Kite2.App.Views
             if (_middleDrag)
                 RaiseSheetDragChanged(true);
 
-            // Точка отсчёта берётся от области просмотра: отсчёт от едущего листа
-            // менялся бы каждый раз — лист трясся бы вместо того, чтобы ехать.
             _dragOrigin = e.GetPosition(Root);
             _dragLeft = Canvas.GetLeft(Sheet);
             _dragTop = Canvas.GetTop(Sheet);
@@ -324,8 +260,6 @@ namespace Kite2.App.Views
             UpdateCursor();
         }
 
-        // Продолжает начатое мышью: средней кнопкой двигает лист, левой тянет
-        // рамку выделения.
         private void ContinueDrag(Point current)
         {
             if (!_middleDrag)
@@ -340,7 +274,6 @@ namespace Kite2.App.Views
             FollowSheet();
         }
 
-        // Точка мыши в координатах листа; пересчёт на каждое обращение, пока лист едет.
         private Point PointInSheet(Point point)
         {
             Point origin = Sheet.TranslatePoint(new Point(0, 0), Root);
@@ -348,14 +281,11 @@ namespace Kite2.App.Views
             return new Point(point.X - origin.X, point.Y - origin.Y);
         }
 
-        private bool IsDragButtonDown()
-        {
-            if (_middleDrag)
-                return Mouse.MiddleButton == MouseButtonState.Pressed;
+        private bool IsDragButtonDown() =>
+            _middleDrag
+                ? Mouse.MiddleButton == MouseButtonState.Pressed
+                : Mouse.LeftButton == MouseButtonState.Pressed;
 
-            return Mouse.LeftButton == MouseButtonState.Pressed;
-        }
-        // Одиночный щелчок выделения не оставляет: отмечать надо протяжкой.
         private void ShowSelection(Point from, Point to)
         {
             double width = Math.Abs(to.X - from.X);
@@ -367,12 +297,8 @@ namespace Kite2.App.Views
                 return;
             }
 
-            double left = Math.Min(from.X, to.X);
-            double top = Math.Min(from.Y, to.Y);
-
-            // Выделение не выходит за лист.
-            left = Math.Max(0, Math.Min(left, Sheet.ActualWidth));
-            top = Math.Max(0, Math.Min(top, Sheet.ActualHeight));
+            double left = Math.Max(0, Math.Min(Math.Min(from.X, to.X), Sheet.ActualWidth));
+            double top = Math.Max(0, Math.Min(Math.Min(from.Y, to.Y), Sheet.ActualHeight));
 
             width = Math.Min(width, Sheet.ActualWidth - left);
             height = Math.Min(height, Sheet.ActualHeight - top);
@@ -388,7 +314,6 @@ namespace Kite2.App.Views
 
             Selection.Width = width;
             Selection.Height = height;
-
             Selection.Visibility = Visibility.Visible;
 
             LayoutSelection();
@@ -409,15 +334,10 @@ namespace Kite2.App.Views
             Place(HandleBottomLeft, left, bottom);
             Place(HandleBottomRight, right, bottom);
 
-            // Кнопка сохранения стоит у правого нижнего угла рамки, но не на самом
-            // углу: иначе она закрывает точку, за которую рамку тянут.
             PlaceSaveButton(right, bottom);
-
             PlaceHint(left, top);
         }
 
-        // Ставит точку в углу рамки. Смещение на половину точки нужно, чтобы она
-        // попадала на сам угол, а не на его внутренний край.
         private void Place(FrameworkElement handle, double left, double top)
         {
             Canvas.SetLeft(handle, left - HandleSize / 2);
@@ -426,10 +346,6 @@ namespace Kite2.App.Views
             handle.Visibility = Visibility.Visible;
         }
 
-        // Ставит кнопку сохранения у нижнего правого угла рамки. Координаты рамки
-        // заданы в листе, а полотно лежит поверх окна просмотра, поэтому точка
-        // переводится из одного пространства в другое. Никаких зажимов: у края
-        // окна кнопка уезжает за него вместе со своим углом, но не прилипает к краю.
         private void PlaceSaveButton(double right, double bottom)
         {
             Point corner = Sheet.TranslatePoint(new Point(right, bottom), Overlay);
@@ -440,36 +356,25 @@ namespace Kite2.App.Views
             FragmentSave.Visibility = Visibility.Visible;
         }
 
-        // Ставит подсказку «Esc — отменить» над левым верхним углом рамки. Никаких
-        // зажимов: у верхнего и левого края окна подсказка уезжает за них вместе со
-        // своим углом, но не прилипает к краю.
         private void PlaceHint(double left, double top)
         {
             Point corner = Sheet.TranslatePoint(new Point(left, top), Overlay);
 
-            // Пока элемент свёрнут, его высота нулевая, поэтому подсказку сначала
-            // показываем, а потом уже меряем её высоту.
+            // Высота свёрнутого элемента нулевая — сначала показать, потом мерить.
             SelectionHint.Visibility = Visibility.Visible;
 
             Canvas.SetLeft(SelectionHint, corner.X - HintGap);
             Canvas.SetTop(SelectionHint, corner.Y - SelectionHint.ActualHeight - HintGap);
         }
 
-        // Ставит кнопку сохранения и подсказку к рамке выделения. Они лежат в слое
-        // поверх листа, а рамка — внутри листа, поэтому при переносе листа их
-        // положение пересчитывается.
         private void FollowSheet()
         {
-            if (Selection.Visibility != Visibility.Visible)
-                return;
-
-            LayoutSelection();
+            if (Selection.Visibility == Visibility.Visible)
+                LayoutSelection();
         }
 
-        private void RaiseSheetDragChanged(bool dragging)
-        {
+        private void RaiseSheetDragChanged(bool dragging) =>
             SheetDragChanged?.Invoke(this, dragging);
-        }
 
         private void OnCropClick(object sender, RoutedEventArgs e)
         {
@@ -481,12 +386,9 @@ namespace Kite2.App.Views
             e.Handled = true;
         }
 
-        // Прямоугольник выделения в пикселях картинки: координаты рамки делятся
-        // на масштаб, в котором показан лист.
         private Rect SelectionInImagePixels()
         {
-            var model = DataContext as MainViewModel;
-            var page = model?.SelectedPage;
+            var page = SelectedPageOf(DataContext);
 
             if (page?.Page == null || Sheet.ActualWidth < 1 || Sheet.ActualHeight < 1)
                 return Rect.Empty;
@@ -503,9 +405,7 @@ namespace Kite2.App.Views
                 Selection.Height / scale);
         }
 
-
-        // Снимает выделение и убирает ножницы. Возвращает, было ли выделение:
-        // окну это нужно, чтобы отдать клавишу дальше, если снимать было нечего.
+        // true — было скрыто выделение (окно решает, продолжать ли обработку Esc).
         public bool ClearSelection()
         {
             bool had = Selection.Visibility == Visibility.Visible;
@@ -525,9 +425,6 @@ namespace Kite2.App.Views
             return had;
         }
 
-        // Нажатие пришло по кнопке поверх листа, а не по самому листу. Кнопка
-        // лежит в полотне, которое перекрывает просмотр, и её нажатия не должны
-        // начинать ни выделение, ни перетаскивание.
         private bool IsOnOverlay(object source)
         {
             DependencyObject current = source as DependencyObject;
@@ -542,5 +439,8 @@ namespace Kite2.App.Views
 
             return false;
         }
+
+        private static PageViewModel SelectedPageOf(object viewModel) =>
+            (viewModel as MainViewModel)?.SelectedPage;
     }
 }

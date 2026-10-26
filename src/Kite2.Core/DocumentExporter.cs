@@ -44,7 +44,6 @@ namespace Kite2.Core
             {
                 Write(pages, draft, mode, extension);
 
-                // Проверяется, что переехало хоть что-то.
                 if (Promote(folder, name, mark) == 0)
                     throw new IOException("Экспорт не создал ни одного файла: " + filePath);
             }
@@ -104,7 +103,6 @@ namespace Kite2.Core
             }
             catch (IOException)
             {
-                // Остаток черновика переживёт до очистки папки: документ-то уже записан.
             }
             catch (UnauthorizedAccessException)
             {

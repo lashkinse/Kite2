@@ -68,9 +68,6 @@ namespace Kite2.Core
             return target;
         }
 
-        // Прежний режим «оттенками серого» убран вместе с выбором «Ч/Б» у
-        // приложения: драйвер сам отдаёт то, что выбрал человек, и принудительная
-        // перекраска только портила цветные сканы.
         private static void ComposePage(string source, string target, int quality)
         {
             using (var scan = new MagickImage(source))

@@ -18,8 +18,7 @@ using System.Windows.Threading;
 
 namespace Kite2.App.ViewModels
 {
-    // Долгие операции идут в фоновом потоке: команды блокируются,
-    // плашка показывает, что происходит.
+    // Целый сеанс интерфейса: команды, плашка хода, коллекция страниц.
     public sealed class MainViewModel : ObservableObject
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
@@ -43,11 +42,9 @@ namespace Kite2.App.ViewModels
         {
             NewDocumentCommand = new RelayCommand(NewDocument, () => !IsBusy);
             SaveCommand = new RelayCommand(Save, () => !IsBusy && _pages.Count > 0);
-            // Цветность и разрешение больше не задаёт программа: у драйвера
-            // своё окно, где человек сам выбирает цвет, Ч/Б и всё прочее.
-            // Одна кнопка — открыть окно и принять то, что оно отсканирует.
+            // Один режим на обе кнопки и прокручивание документом: параметры
+            // всегда задаёт окно драйвера.
             ScanCommand = new RelayCommand(ScanAsync, () => !IsBusy);
-            // «+» просто повторяет сканирование: режим выбирает драйвер.
             ScanAgainCommand = new RelayCommand(ScanAsync, () => !IsBusy);
             SettingsCommand = new RelayCommand(ChooseSource, () => !IsBusy);
             DeletePageCommand = new RelayCommand(DeletePage, () => !IsBusy && SelectedPage != null);
@@ -131,13 +128,11 @@ namespace Kite2.App.ViewModels
 
         public RelayCommand LogFolderCommand { get; }
 
-        // Подготовка после показа окна: чистка каталога и запуск ImageMagick
-        // не должны задерживать раскрытие.
         public void Start()
         {
             try
             {
-                // Остатки страниц прошлых запусков не нужны: документ живёт в памяти.
+                // Остатки прошлых запусков не нужны: документ живёт в памяти.
                 AppPaths.ClearFolder(AppPaths.Scan);
                 AppPaths.ClearFolder(AppPaths.Pages);
             }
@@ -158,12 +153,10 @@ namespace Kite2.App.ViewModels
             CheckForUpdateAsync();
         }
 
-        // --- Обновление ------------------------------------------------------
+        // Обновление -----------------------------------------------------------
 
-        // Повторный вопрос, если сеть не ответила: дешевле, чем перезапуск программы.
         private const int UpdateRepeatDelaySeconds = 5 * 60;
 
-        // Один проверочный вопрос за сеанс и только вне тестового режима.
         private async void CheckForUpdateAsync()
         {
             if (FakeScanner.Enabled)
@@ -173,7 +166,6 @@ namespace Kite2.App.ViewModels
 
             if (update == null)
             {
-                // «Обновлений нет» — окончательный ответ, недоступная сеть — нет.
                 if (!answered)
                     ScheduleRepeatCheck();
 
@@ -188,7 +180,6 @@ namespace Kite2.App.ViewModels
             if (!UserDialogs.Confirm("Обновление", Messages.UpdateQuestion))
                 return;
 
-            // Плашка показывает не только факт, но и ход загрузки.
             var percent = new Progress<int>(value => NoticeText = Messages.UpdatingProgress(value));
 
             SetBusy(true);
@@ -215,19 +206,16 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        // Повтор приостанавливается на минуты: чаще дёргать GitHub незачем.
         private async void ScheduleRepeatCheck()
         {
             await Task.Delay(TimeSpan.FromSeconds(UpdateRepeatDelaySeconds));
 
-            // Программа могла уже закрыться: вопроса по покойнику быть не должно.
             if (Application.Current != null && Application.Current.Windows.Count > 0)
                 CheckForUpdateAsync();
         }
 
-        // --- Журнал -----------------------------------------------------------
+        // Журнал ---------------------------------------------------------------
 
-        // Путь одинаков на всякой машине: по нему журнал передают с другого компьютера.
         private void OpenLogsFolder()
         {
             try
@@ -242,10 +230,8 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        // --- Сканирование ----------------------------------------------------
+        // Сканирование ---------------------------------------------------------
 
-        // Порядок страниц задаётся временем создания файлов, поэтому композиция
-        // идёт сразу после захвата.
         private async void ScanAsync()
         {
             if (!FakeScanner.Enabled && AppSettings.ScanSourceIndex == AppSettings.NotSelected)
@@ -259,8 +245,6 @@ namespace Kite2.App.ViewModels
 
             try
             {
-                // Вопрос задаётся между сериями, но не после серии без страниц:
-                // пустой захват — провал, а не просьба продолжить.
                 int scanned;
 
                 do
@@ -286,7 +270,6 @@ namespace Kite2.App.ViewModels
                 DisposeScanCancellation();
                 SetBusy(false);
 
-                // Плашку хода убираем всегда, даже после ошибки; результат убирается сам.
                 if (NoticeVisible && !NoticeIsResult)
                     HideNotice();
             }
@@ -308,8 +291,8 @@ namespace Kite2.App.ViewModels
                 return PageImage.ComposeDirectory(request, PageQuality);
             }, cancellationToken);
 
-            // Страницы забираются сразу: следующая серия очистит каталог
-            // вместе с только что отсканированным.
+            // Следующая серия очищает каталог вместе с отсканированным —
+            // страницы забираются в постоянное хранилище сразу.
             var pages = await Task.Run(() => BuildPages(request.Directory), cancellationToken);
 
             AddPages(pages);
@@ -317,7 +300,6 @@ namespace Kite2.App.ViewModels
             return pages.Count;
         }
 
-        // В тестовом режиме вопрос остановил бы и прогон, и автоматическую проверку.
         private bool AskToContinue()
         {
             if (FakeScanner.Enabled && !FakeScanner.AlwaysAsk)
@@ -352,21 +334,17 @@ namespace Kite2.App.ViewModels
             RenumberPages();
             RefreshCommands();
 
-            // В плашке — размер серии, а не документа: вопрос о продолжении
-            // относится к следующему захвату.
             if (pages.Count > 0)
                 ShowNotice(Messages.PagesAdded(pages.Count), result: true, cancel: false);
         }
 
-        // Номера проставляются подряд после всякого изменения состава: иначе
-        // остаются пропуски и повторы.
         private void RenumberPages()
         {
             for (int i = 0; i < _pages.Count; i++)
                 _pages[i].Number = i + 1;
         }
 
-        // --- Сохранение -------------------------------------------------------
+        // Сохранение -----------------------------------------------------------
 
         private async void Save()
         {
@@ -377,10 +355,6 @@ namespace Kite2.App.ViewModels
 
             string[] files = _pages.Select(page => page.FilePath).ToArray();
 
-            // Режим кодировки — всегда «как отсканировано»: цветность и прочее
-            // задаёт драйвер в своём окне, и программа ничего не решает за него.
-            ScanMode mode = ScanMode.Colour;
-
             SetBusy(true);
             ShowNotice(Messages.Saving, result: false, cancel: false);
 
@@ -388,10 +362,8 @@ namespace Kite2.App.ViewModels
 
             try
             {
-                await Task.Run(() => DocumentExporter.Export(files, path, mode));
+                await Task.Run(() => DocumentExporter.Export(files, path, ScanMode.Colour));
 
-                // В журнал пишется то, что появилось на диске: у картинок это
-                // отдельные файлы с номерами страниц, а не запрошенное имя.
                 Log.Info("Экспорт завершён: {0}, мс={1}, файлов={2}", path, watch.ElapsedMilliseconds, Describe(path));
 
                 ShowNotice(Messages.Saved + " " + Path.GetFileName(path), result: true, cancel: false);
@@ -407,8 +379,6 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        // Для картинок в запрошенном имени может не быть ничего — вместо него
-        // появляются файлы с номерами страниц.
         private static string Describe(string requestedPath)
         {
             if (File.Exists(requestedPath))
@@ -429,7 +399,7 @@ namespace Kite2.App.ViewModels
             return string.Join(", ", written.Select(file => file.Name + " (" + file.Length + " байт)"));
         }
 
-        // --- Работа со страницами --------------------------------------------
+        // Работа со страницами -------------------------------------------------
 
         private void NewDocument()
         {
@@ -462,8 +432,7 @@ namespace Kite2.App.ViewModels
             _pages.Remove(page);
             page.Delete();
 
-            // После удаления выбирается соседняя страница: область просмотра
-            // не должна гаснуть.
+            // Соседняя страница вместо удалённой: просмотр не гаснет.
             SelectedPage = _pages.Count == 0
                 ? null
                 : _pages[Math.Min(index, _pages.Count - 1)];
@@ -489,7 +458,6 @@ namespace Kite2.App.ViewModels
             RenumberPages();
         }
 
-        // Страница не меняется: фрагмент уходит рядом, документ остаётся прежним.
         public async void SaveSelectedFragment(Rect area)
         {
             PageViewModel page = SelectedPage;
@@ -508,8 +476,6 @@ namespace Kite2.App.ViewModels
             if (string.IsNullOrEmpty(target))
                 return;
 
-            string source = page.FilePath;
-
             SetBusy(true);
 
             try
@@ -517,7 +483,7 @@ namespace Kite2.App.ViewModels
                 var watch = Stopwatch.StartNew();
 
                 await Task.Run(() => PageImage.SaveFragment(
-                    source, (int)area.X, (int)area.Y, (int)area.Width, (int)area.Height, target));
+                    page.FilePath, (int)area.X, (int)area.Y, (int)area.Width, (int)area.Height, target));
 
                 Log.Info(
                     "Фрагмент сохранён: {0}, {1} x {2} пикселей, мс={3}, байт={4}",
@@ -536,9 +502,6 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        // Поворот меняет файл, а не только картинку на экране. Область просмотра
-        // следит за выбором страницы, поэтому после перечитывания ей это
-        // сообщение и нужно.
         private void RotatePage()
         {
             PageViewModel page = SelectedPage;
@@ -588,7 +551,7 @@ namespace Kite2.App.ViewModels
             AppSettings.Save();
         }
 
-        // --- Уведомление -----------------------------------------------------
+        // Уведомление ----------------------------------------------------------
 
         private void ShowNotice(string text, bool result, bool cancel)
         {
@@ -597,7 +560,6 @@ namespace Kite2.App.ViewModels
             CancelWanted = cancel;
             NoticeVisible = true;
 
-            // Отсчёт заново на каждое сообщение.
             _resultNoticeTimer.Stop();
 
             if (result)
@@ -619,7 +581,6 @@ namespace Kite2.App.ViewModels
             HideNotice();
         }
 
-        // Отмена прерывает захват в помощнике: ждать её поток перестаёт.
         private void CancelOperation()
         {
             if (_scanCancellation == null)
@@ -631,7 +592,7 @@ namespace Kite2.App.ViewModels
             }
             catch (ObjectDisposedException)
             {
-                // Сканирование завершилось раньше, чем нажали «Отмена».
+                // Завершилось раньше, чем нажали «Отмена».
             }
         }
 
