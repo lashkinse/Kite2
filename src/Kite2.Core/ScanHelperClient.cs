@@ -110,7 +110,7 @@ namespace Kite2.Core
                         var clock = Stopwatch.StartNew();
                         Log.Info("Помощник запущен: {0}", arguments);
 
-                        using (cancellationToken.Register(() => TryKill(helper)))
+                        using (cancellationToken.Register(() => StopHelper(helper, mainWindow)))
                         {
                             helper.WaitForExit();
                         }
@@ -148,10 +148,15 @@ namespace Kite2.Core
             }
         }
 
-        private static void TryKill(Process helper)
+        // Отмена: диалогу драйвера, живущему в чужом процессе, уходит
+        // штатное закрытие по его владельцу — окну программы; помощник
+        // добивается следом и не остаётся при висящем диалоге.
+        private static void StopHelper(Process helper, IntPtr ownerWindow)
         {
             try
             {
+                OwnedDialogCloser.Close(ownerWindow);
+
                 helper.Kill();
             }
             catch (Exception ex)
