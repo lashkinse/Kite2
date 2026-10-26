@@ -41,7 +41,20 @@ namespace Kite2.Scan
         [DllImport("kernel32.dll")]
         private static extern int GetCurrentProcessId();
 
+        [DllImport("kernel32.dll")]
+        private static extern int GetCurrentThreadId();
+
         private static int ProcessId => GetCurrentProcessId();
+
+        // dbghelp ждёт не указатель на исключение, а упаковку: номер краш-потока,
+        // указатель на EXCEPTION_POINTERS и флаг «клиентский указатель».
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        private struct MINIDUMP_EXCEPTION_INFORMATION
+        {
+            public uint ThreadId;
+            public IntPtr ExceptionPointers;
+            public int ClientPointers;
+        }
 
         private static int OnException(ref EXCEPTION_POINTERS info)
         {
@@ -56,13 +69,33 @@ namespace Kite2.Scan
                     directory,
                     "Kite2.Scan.crash-" + ProcessId + ".dmp");
 
+                var pack = new MINIDUMP_EXCEPTION_INFORMATION
+                {
+                    ThreadId = unchecked((uint)GetCurrentThreadId()),
+                    ExceptionPointers = Marshal.AllocHGlobal(
+                        Marshal.SizeOf(typeof(EXCEPTION_POINTERS))),
+                    ClientPointers = 0
+                };
+                Marshal.StructureToPtr(info, pack.ExceptionPointers, false);
+
                 using (var stream = new FileStream(
                     file, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
-                    MiniDumpWriteDump(
-                        GetCurrentProcess(), ProcessId,
-                        stream.SafeFileHandle.DangerousGetHandle(), DumpType,
-                        info.PointerRecord, IntPtr.Zero, IntPtr.Zero);
+                    IntPtr packBuffer = Marshal.AllocHGlobal(
+                        Marshal.SizeOf(typeof(MINIDUMP_EXCEPTION_INFORMATION)));
+                    Marshal.StructureToPtr(pack, packBuffer, false);
+                    try
+                    {
+                        MiniDumpWriteDump(
+                            GetCurrentProcess(), ProcessId,
+                            stream.SafeFileHandle.DangerousGetHandle(), DumpType,
+                            packBuffer, IntPtr.Zero, IntPtr.Zero);
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(packBuffer);
+                        Marshal.FreeHGlobal(pack.ExceptionPointers);
+                    }
                 }
             }
             catch
