@@ -189,30 +189,50 @@ namespace Kite2.Scan.Twain
                     // он включён. Наша роль — ПАССИВНЫЙ приём: следующая
                     // честная готовность → передача, и так до тишины.
                     //
-                    // НИКАКИХ звонков между листами: минидампы и журналы
+                    // НИКАКИХ звонков TWAIN между листами: минидампы и журналы
                     // обследователя доказали трижды, что от имени приложения
                     // середина сессии роняет драйвер (второй DAT_PENDINGXFERS/
                     // MSG_ENDXFER — 0xC000041D в диалоге прогресса драйвера;
                     // пересессия DS — падение на переоткрытии). Один ENDXFER
                     // в конце пачки (в Close) — безопасен.
                     //
-                    // Единственный допустимый звонок — KmUsbScnAccept (перевод
-                    // движка в режим ACCEPT). Без него драйвер в паузе после
-                    // передачи страницы ронял сам себя (прогон 1.7.38:
-                    // 0xC000041D через 1,3 с после страницы, звонков не было);
-                    // с ним обследователь жил с драйвером 4 минуты чисто
-                    // (эксп. 21).
-                    while (WaitReady(app, ds, pump, TimeSpan.FromSeconds(90)))
+                    // Разговор с ДВИЖКОМ (KMUSBSCN3) разрешён и обязан
+                    // происходит в формате окна драйвера:
+                    //   после листа — KmUsbScnAccept (перевод движка в режим
+                    //   подачи ACCEPT; без него в паузе падал сам — 1.7.38),
+                    //   каждые 5 с тишины — KmUsbScnRefresh (так окно драйвера
+                    //   слушает устройство из своего таймера, twMainWnd),
+                    //   на финале тишины — KmUsbScnCancel («Сброс» окна: гасит
+                    //   задание, податчик перестаёт моргать).
+                    TimeSpan slice = TimeSpan.FromSeconds(5);
+                    int idle = 0;
+                    const int SilenceWall = 90;
+
+                    while (true)
                     {
-                        if (!TransferOne(app, ds, directory, skipPending, ref failure))
+                        if (WaitReady(app, ds, pump, slice))
                         {
-                            Log.Info("Kyocera: передача сорвалась — пачку прекращаем, страниц {0}", Pages.Count);
-                            break;
+                            idle = 0;
+
+                            if (!TransferOne(app, ds, directory, skipPending, ref failure))
+                            {
+                                Log.Info("Kyocera: передача сорвалась — пачку прекращаем, страниц {0}", Pages.Count);
+                                break;
+                            }
+
+                            EnsureAcceptMode();
+                            continue;
                         }
 
-                        EnsureAcceptMode();
+                        // Тишина: раз в 5 с — Refresh, как таймер окна драйвера.
+                        idle += (int)slice.TotalSeconds;
+                        Log.Info("Kyocera: тишина {0} с — Refresh движка", idle);
+                        EngineRefresh();
+                        if (idle >= SilenceWall)
+                            break;
                     }
 
+                    EngineCancel();
                     Log.Info("Kyocera: пачка окончена (тишина между листами), страниц {0}", Pages.Count);
                 }
 
@@ -423,6 +443,59 @@ namespace Kite2.Scan.Twain
             catch (Exception ex)
             {
                 Log.Warn("Kyocera: отключение источника не удалось: {0}", ex.Message);
+            }
+            finally
+            {
+                try { LogManager.Flush(); } catch { }
+            }
+        }
+
+        // KmUsbScnRefresh по таймеру тишины: ровно то, что делает окно драйвера
+        // из своего таймера (twMainWnd → FUN_10006dd0(0,2)) — обновляет
+        // состояние податчика. Молча отступает при любой неудаче.
+        private static void EngineRefresh()
+        {
+            try
+            {
+                IntPtr dll = KmScn.GetModule(0);
+                if (dll == IntPtr.Zero)
+                    return; // движок выгружен —Drv сам завершил задание
+
+                var prof = KmScn.Detect(dll);
+                if (prof == null)
+                    return;
+
+                int ret = KmScn.CallRefresh(dll, prof, KmScn.ReadParams(dll, prof));
+                Log.Info("Kyocera: KmUsbScnRefresh → {0}; режим движка {1}", ret, KmScn.ReadMode(dll, prof));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Kyocera: звонок KmUsbScnRefresh сорвался ({0}) — работаем дальше", ex.Message);
+            }
+        }
+
+        // KmUsbScnCancel на финале пачки — «Сброс» окна драйвера: гасит задание
+        // движка, податчик перестаёт моргать «идёт сканирование».
+        private static void EngineCancel()
+        {
+            try
+            {
+                IntPtr dll = KmScn.GetModule(0);
+                if (dll == IntPtr.Zero)
+                {
+                    Log.Info("Kyocera: движок выгружен — задание движка уже закрыто");
+                    return;
+                }
+
+                var prof = KmScn.Detect(dll);
+                if (prof == null)
+                    return;
+
+                KmScn.CallCancel(dll, prof);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Kyocera: звонок KmUsbScnCancel сорвался ({0})", ex.Message);
             }
             finally
             {

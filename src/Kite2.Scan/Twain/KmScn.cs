@@ -97,8 +97,55 @@ namespace Kite2.Scan.Twain
             }
         }
 
-        public static int[] ReadParams(IntPtr dll, Profile prof)
+        // KmUsbScnRefresh: окно драйвера зовёт его из своего таймера при каждой
+        // смене состояния устройства (twMainWnd → FUN_10006dd0(0,2)) — так оно
+        // «услышивает» податчик заново и держит движок в живом разговоре.
+        // Карта та же 20 int, что у Accept. Любая ошибка — только в журнал.
+        public static int CallRefresh(IntPtr dll, Profile prof, int[] p)
         {
+            IntPtr proc = GetProcAddress(dll, "KmUsbScnRefresh");
+            if (proc == IntPtr.Zero)
+            {
+                Log.Info("Kyocera: GetProcAddress(KmUsbScnRefresh) = 0 (код {0})", Marshal.GetLastWin32Error());
+                return -1;
+            }
+            Log.Info("Kyocera: KmUsbScnRefresh @ 0x{0:X8} — идём", proc.ToInt64());
+            try { LogManager.Flush(); } catch { }
+            var fp = (AcceptDelegate)Marshal.GetDelegateForFunctionPointer(proc, typeof(AcceptDelegate));
+            try
+            {
+                return fp(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9],
+                          p[10], p[11], p[12], p[13], p[14], p[15], p[16], p[17], p[18], p[19]);
+            }
+            catch (Exception ex)
+            {
+                Log.Info("Kyocera: вызов KmUsbScnRefresh не удался: {0}", ex.Message);
+                return -2;
+            }
+        }
+
+        // KmUsbScnCancel — «Сброс» окна драйвера (FUN_1000add0): гасит задание
+        // движка, податчик перестаёт моргать, режим движка возвращается из
+        // ACCEPT (2) в покой. Звонок без параметров (__cdecl).
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void CancelDelegate();
+
+        public static void CallCancel(IntPtr dll, Profile prof)
+        {
+            IntPtr proc = GetProcAddress(dll, "KmUsbScnCancel");
+            if (proc == IntPtr.Zero)
+            {
+                Log.Info("Kyocera: GetProcAddress(KmUsbScnCancel) = 0 (код {0})", Marshal.GetLastWin32Error());
+                return;
+            }
+            Log.Info("Kyocera: KmUsbScnCancel @ 0x{0:X8} — гасим задание движка", proc.ToInt64());
+            try { LogManager.Flush(); } catch { }
+            var fp = (CancelDelegate)Marshal.GetDelegateForFunctionPointer(proc, typeof(CancelDelegate));
+            fp();
+            Log.Info("Kyocera: KmUsbScnCancel отработал; режим движка теперь {0}", ReadMode(dll, prof));
+        }
+
+        public static int[] ReadParams(IntPtr dll, Profile prof)        {
             var p = new int[ParamCount];
             for (int i = 0; i < ParamCount; i++)
                 p[i] = Marshal.ReadInt32(dll, prof.Params + i * 4);
@@ -119,6 +166,7 @@ namespace Kite2.Scan.Twain
                 return -1;
             }
             Log.Info("Kyocera: KmUsbScnAccept @ 0x{0:X8}, карта 20 int со стека — идём", proc.ToInt64());
+            try { LogManager.Flush(); } catch { }
             var fp = (AcceptDelegate)Marshal.GetDelegateForFunctionPointer(proc, typeof(AcceptDelegate));
             try
             {
