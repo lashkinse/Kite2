@@ -3,11 +3,10 @@ using System.Runtime.InteropServices;
 
 namespace Kite2.Scan
 {
-    // Окно диалога WIA-драйвера (ShowUI) живёт в нашем процессе, но хозяин
-    // у него — скрытое служебное окно насоса сообщений. Такое окно нередко
-    // остаётся позади окна программы, и человек не видит, что скан начался.
-    // Поднимаем все видимые окна процесса наверх: Z-порядок меняется без
-    // перехвата фокуса, драйвер при этом не трогается вовсе.
+    // Диалог WIA-драйвера (ShowUI) живёт в нашем процессе, но хозяин у него —
+    // скрытое служебное окно насоса сообщений, поэтому диалог нередко остаётся
+    // позади окна программы. Ставим его topmost: он держится наверху постоянно,
+    // не мигает и не отбирает фокус.
     internal static class WindowRaiser
     {
         private delegate bool EnumProc(IntPtr window, IntPtr lParam);
@@ -27,11 +26,11 @@ namespace Kite2.Scan
         [DllImport("user32.dll")]
         private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
 
-        private static readonly IntPtr TopWindow = new IntPtr(0);
-
+        private const int TopmostFlag = -1;    // HWND_TOPMOST
+        private const uint ShowWindow = 0x0040;
         private const uint NoSize = 0x0001;
         private const uint NoMove = 0x0002;
-        private const uint ShowWindow = 0x0040;
+        private const uint NoActivate = 0x0010;
 
         internal static void RaiseOwnedWindows(int processId)
         {
@@ -43,7 +42,8 @@ namespace Kite2.Scan
                     && IsWindowVisible(window)
                     && GetWindowTextLength(window) > 0)
                 {
-                    SetWindowPos(window, TopWindow, 0, 0, 0, 0, NoSize | NoMove | ShowWindow);
+                    SetWindowPos(window, new IntPtr(TopmostFlag), 0, 0, 0, 0,
+                        NoSize | NoMove | ShowWindow | NoActivate);
                 }
 
                 return true;

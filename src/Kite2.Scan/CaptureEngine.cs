@@ -186,25 +186,35 @@ namespace Kite2.Scan
 
         // Порядок: прямой захват, затем автоподатчик, затем родное окно.
         // Окно — последний резерв: прямые попытки кончились, не сканировав стекло.
+        // Порядок: прямой захват, затем автоподатчик, затем родное окно.
+        // Драйвер Kyocera прямой WIA-вызов не держит (E_FAIL), податчик в
+        // capability не заявляет, но пачку берёт через своё окно — поэтому
+        // у него окно идёт первым.
         private static List<ScanAttempt> AttemptsFor(CatalogSource source)
         {
-            var attempts = new List<ScanAttempt>
+            if (KyoceraLikeName(source))
+                return new List<ScanAttempt> { NativeUiAttempt(source) };
+
+            return new List<ScanAttempt>
             {
                 WiaAttempt(source, PaperSource.Auto, "WIA"),
-                WiaAttempt(source, PaperSource.Feeder, "WIA (автоподатчик)")
+                WiaAttempt(source, PaperSource.Feeder, "WIA (автоподатчик)"),
+                NativeUiAttempt(source)
             };
+        }
 
-            attempts.Add(new ScanAttempt
+        private static bool KyoceraLikeName(CatalogSource source) =>
+            (source.Name ?? string.Empty).IndexOf("KYOCERA", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        private static ScanAttempt NativeUiAttempt(CatalogSource source) =>
+            new ScanAttempt
             {
                 Device = source.Device,
                 WiaVersion = source.WiaVersion,
                 NativeUi = true,
                 Wall = NativeUiWall,
                 Title = "WIA (родное окно драйвера)"
-            });
-
-            return attempts;
-        }
+            };
 
         private static ScanAttempt WiaAttempt(CatalogSource source, PaperSource paperSource, string title) =>
             new ScanAttempt
@@ -381,6 +391,11 @@ namespace Kite2.Scan
 
         private static string GetFailureMessage(Exception error, bool hasPages)
         {
+            // Отмена в окне драйвера (в т.ч. его закрытие) рвала передачу:
+            // временный файл драйвера исчезал до чтения NAPS2 — это не ошибка.
+            if (error is FileNotFoundException)
+                return "Сканирование отменено в окне драйвера.";
+
             // Драйвер уже показал свою ошибку сам — приложение не дублирует её.
             if (error is AlreadyHandledDriverException)
                 return null;

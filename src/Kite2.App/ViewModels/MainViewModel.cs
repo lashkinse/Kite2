@@ -263,6 +263,14 @@ namespace Kite2.App.ViewModels
             }
             catch (Exception ex)
             {
+                // Отмена в окне драйвера (её же закрытие) — не ошибка: тихое завершение.
+                if (ex.Message.Contains("отменено"))
+                {
+                    Log.Info("Сканирование отменено в окне драйвера");
+                    HideNotice();
+                    return;
+                }
+
                 UserDialogs.Error(ex);
             }
             finally
