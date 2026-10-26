@@ -114,27 +114,31 @@ namespace Kite2.Scan
             var controller = NewController();
             int index = 0;
 
-            foreach (var options in CatalogOptions())
+            // Варианты WIA-API идут по цепочке: следующий опрашивается,
+            // только если предыдущий не нашёл ничего. Большинство машин
+            // отвечает на первом заопросе — это и есть главный выигрыш.
+            foreach (WiaApiVersion version in new[]
+                { WiaApiVersion.Default, WiaApiVersion.Wia10, WiaApiVersion.Wia20 })
             {
+                var options = new ScanOptions
+                {
+                    Driver = Driver.Wia,
+                    WiaOptions = { WiaApiVersion = version }
+                };
+
                 await CollectDevices(sources, controller, options, index);
                 index = sources.Count;
 
                 if (neededIndex >= 0 && neededIndex < sources.Count)
                     return sources;
+
+                if (sources.Count > 0)
+                    break;
             }
 
             Log.Info("Каталог собран: источников {0}", sources.Count);
 
             return sources;
-        }
-
-        // Три варианта WIA-API: часть драйверов отвечает только поверх 1.0,
-        // часть молчит в нём и говорит по 2.0.
-        private static IEnumerable<ScanOptions> CatalogOptions()
-        {
-            yield return new ScanOptions { Driver = Driver.Wia, WiaOptions = { WiaApiVersion = WiaApiVersion.Default } };
-            yield return new ScanOptions { Driver = Driver.Wia, WiaOptions = { WiaApiVersion = WiaApiVersion.Wia10 } };
-            yield return new ScanOptions { Driver = Driver.Wia, WiaOptions = { WiaApiVersion = WiaApiVersion.Wia20 } };
         }
 
         private static async Task CollectDevices(
@@ -169,7 +173,6 @@ namespace Kite2.Scan
 
         private static string OptionsLabel(ScanOptions options) =>
             "WIA (" + options.WiaOptions.WiaApiVersion + ")";
-
         private static async Task<List<ScanDevice>> ListDevices(ScanController controller, ScanOptions options)
         {
             var listing = controller.GetDeviceList(options);

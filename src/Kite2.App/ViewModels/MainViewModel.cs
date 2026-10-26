@@ -522,17 +522,35 @@ namespace Kite2.App.ViewModels
             }
         }
 
-        private void ChooseSource()
+        // Список источников опрашивается в фоновом потоке: WIA может думать
+        // секунды, и блокировать окно этим нельзя.
+        private async void ChooseSource()
         {
+            SetBusy(true);
+            ShowNotice("Опрашиваются источники сканера…", result: false, cancel: false);
+
             IReadOnlyList<string> sources;
+            bool failed = false;
 
             try
             {
-                sources = ScannerService.GetSources();
+                sources = await Task.Run(ScannerService.GetSources);
             }
             catch (Exception ex)
             {
-                UserDialogs.Error(ex);
+                Log.Warn(ex, "Список источников не получен");
+                sources = new string[0];
+                failed = true;
+            }
+            finally
+            {
+                SetBusy(false);
+                HideNotice();
+            }
+
+            if (failed)
+            {
+                UserDialogs.Error(Messages.NoSources);
                 return;
             }
 
