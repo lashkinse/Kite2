@@ -61,7 +61,7 @@
                 <!-- Одна кнопка сканирования: цветность, разрешение и податчик
                      задаёт родное окно драйвера, программа только принимает
                      страницы. «+» повторяет сканирование. -->
-                <Button Style="{StaticResource AccentCommandButtonStyle}" Content="Сканировать" controls:CommandBar.Hint="+"
+                <Button Style="{StaticResource AccentCommandButtonStyle}" Content="Сканировать" controls:CommandBar.Hint="+" Tag="{StaticResource IconScan}"
                         ToolTip="Сканировать (в окне драйвера выбираются цвет, Ч/Б и разрешение); «+» повторяет"
                         Command="{Binding ScanCommand}" />
                 <Rectangle Style="{StaticResource ToolBarSeparatorStyle}" />
