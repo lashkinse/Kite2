@@ -338,15 +338,32 @@ namespace Kite2.Scan
             }
         }
 
-        // Окно драйвера каждые полсекунды поднимается наверх: оно прячется
-        // за окном программы, и человек мог бы его не найти.
+        // Пока человек в окне драйвера, его окна держатся наверху и не
+        // прячутся за окном программы. Диалог может жить в чужом процессе,
+        // поэтому не по процессу ищем: что нового со старта захвата, то и
+        // поднимаем; первый показу фокус — гасит мигание на панели задач.
         private static async Task RaiseDriverWindowLoop(CancellationToken cancellation)
         {
-            int self = Process.GetCurrentProcess().Id;
+            HashSet<IntPtr> existed = WindowRaiser.VisibleWindows();
+            var activated = new HashSet<IntPtr>();
 
             while (!cancellation.IsCancellationRequested)
             {
-                WindowRaiser.RaiseOwnedWindows(self);
+                foreach (IntPtr window in WindowRaiser.VisibleWindows())
+                {
+                    if (existed.Contains(window))
+                        continue;
+
+                    if (activated.Add(window))
+                    {
+                        Log.Info("Новое окно захвата: {0}", WindowRaiser.Title(window));
+                        WindowRaiser.BringToFront(window);
+                    }
+                    else
+                    {
+                        WindowRaiser.KeepAboveOthers(window);
+                    }
+                }
 
                 try
                 {

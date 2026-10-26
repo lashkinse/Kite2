@@ -79,6 +79,8 @@ namespace Kite2.Core
                     WorkingDirectory = AppPaths.AppDirectory
                 };
 
+                var helperStartWindows = ScanWindowCloser.VisibleWindows();
+
                 using (var helper = Process.Start(startInfo))
                 {
                     if (helper == null)
@@ -87,7 +89,7 @@ namespace Kite2.Core
                     var clock = Stopwatch.StartNew();
                     Log.Info("Помощник запущен: {0}", arguments);
 
-                    using (cancellationToken.Register(() => TryKill(helper)))
+                    using (cancellationToken.Register(() => StopHelper(helper, helperStartWindows)))
                     {
                         helper.WaitForExit();
                     }
@@ -125,10 +127,22 @@ namespace Kite2.Core
             }
         }
 
-        private static void TryKill(Process helper)
+        private static void StopHelper(Process helper, HashSet<IntPtr> helperStartWindows)
         {
             try
             {
+                // Сначала окну драйвера, которое могло появиться в чужом
+                // процессе, уходит просьба закрыться; затем помощник —
+                // иначе его окно висело бы после отмены.
+                try
+                {
+                    ScanWindowCloser.CloseNew(helperStartWindows);
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "Окно драйвера не удалось закрыть по-тихому");
+                }
+
                 helper.Kill();
             }
             catch (Exception ex)
