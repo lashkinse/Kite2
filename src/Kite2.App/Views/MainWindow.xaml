@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:Kite2.App.Views"
         xmlns:controls="clr-namespace:Kite2.App.Controls"
-        Title="Kite2"
+        Title="Kite"
         Icon="pack://application:,,,/Kite2;component/icon.ico"
         Width="1000"
         Height="600"

@@ -47,7 +47,7 @@ namespace Kite2.Core
         public static void Save()
         {
             var content = new StringBuilder()
-                .AppendLine("; Настройки Kite2. Файл создаётся программой автоматически.")
+                .AppendLine("; Настройки Kite. Файл создаётся программой автоматически.")
                 .Append('[').Append(Section).AppendLine("]")
                 .Append(KeySourceIndex).Append('=')
                 .AppendLine(ScanSourceIndex.ToString(CultureInfo.InvariantCulture))

@@ -52,7 +52,7 @@ namespace Kite2.App
             MainWindow.Icon = ProgramIcon();
 
             // Версия в заголовке: какой сборкой человек работает, видно всегда.
-            MainWindow.Title = "Kite2 " + DisplayVersion();
+            MainWindow.Title = "Kite " + DisplayVersion();
 
             // Модель и область просмотра соединяются здесь: ни одна из сторон о другой
             // не знает, и круг между ними не возникнет.

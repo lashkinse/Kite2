@@ -3,8 +3,8 @@ using System.Windows.Input;
 
 namespace Kite2.App.Views
 {
-    // «+» и Enter продолжают сканирование, Esc завершает. В прежней версии окно
-    // ждало ещё и нажатия «ОК», а Esc просто закрывал его, ни о чём не сказав.
+    // «+» и Enter продолжают сканирование, Esc завершает; крестик считается
+    // отказом, ответ никогда не теряется молча.
     public partial class ScanContinueWindow : Window
     {
         public ScanContinueWindow()
