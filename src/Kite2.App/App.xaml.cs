@@ -51,6 +51,9 @@ namespace Kite2.App
 
             MainWindow.Icon = ProgramIcon();
 
+            // Версия в заголовке: какой сборкой человек работает, видно всегда.
+            MainWindow.Title = "Kite2 " + DisplayVersion();
+
             // Модель и область просмотра соединяются здесь: ни одна из сторон о другой
             // не знает, и круг между ними не возникнет.
             MainWindow.Connect(viewModel);
@@ -98,6 +101,17 @@ namespace Kite2.App
         {
             using (var process = System.Diagnostics.Process.GetCurrentProcess())
                 return process.MainModule.FileName;
+        }
+
+        // Ревизия не показывается: «1.8.1.0» читается как номер сборки CI,
+        // а для человека существует только первые три части.
+        private static string DisplayVersion()
+        {
+            Version version = typeof(App).Assembly.GetName().Version;
+
+            return version.Revision == 0 && version.Build == 0
+                ? version.Major + "." + version.Minor
+                : version.Major + "." + version.Minor + "." + version.Build;
         }
     }
 }
