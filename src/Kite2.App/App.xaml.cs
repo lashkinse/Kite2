@@ -97,6 +97,12 @@ namespace Kite2.App
                 MainWindow.Title += " (тестовый режим)";
 
             MainWindow.Show();
+
+            // Сплеш был показан первым, и WPF успел считать его главным
+            // окном: без явного переназначения закрытие сплеша закрывает
+            // и приложение.
+            Application.Current.MainWindow = MainWindow;
+
             splash.Close();
 
             viewModel.Start();
