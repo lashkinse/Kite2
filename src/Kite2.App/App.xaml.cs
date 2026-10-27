@@ -19,8 +19,8 @@ namespace Kite2.App
 
         public new MainWindow MainWindow { get; private set; }
 
-        // Короткий сплеш не прочитать: держим ровно столько, сколько нужно глазу.
-        private static readonly TimeSpan SplashMinimum = TimeSpan.FromSeconds(5);
+        // Спеш не читать «вполглаза»: держит экран, пока человек не успел пробежать текст.
+        private static readonly TimeSpan SplashMinimum = TimeSpan.FromSeconds(6);
 
         // Спит остаток минимального показа сплеша, если он уже истёк — ничего.
         private static async Task WaitSplashMinimum(Stopwatch shown)
