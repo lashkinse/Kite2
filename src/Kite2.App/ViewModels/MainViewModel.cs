@@ -124,28 +124,11 @@ namespace Kite2.App.ViewModels
 
         public RelayCommand LogFolderCommand { get; }
 
+        // Штартовая работа инициализации (очистка временных файлов, MagickNET)
+        // выполняется при старте под сплешем; здесь остаётся только проверка
+        // обновления.
         public void Start()
         {
-            try
-            {
-                // Остатки прошлых запусков не нужны: документ живёт в памяти.
-                AppPaths.ClearFolder(AppPaths.Scan);
-                AppPaths.ClearFolder(AppPaths.Pages);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn(ex, "Не удалось очистить каталог сканирования");
-            }
-
-            try
-            {
-                ImageMagickSetup.EnsureStarted();
-            }
-            catch (Exception ex)
-            {
-                UserDialogs.Error(ex);
-            }
-
             CheckForUpdateAsync();
         }
 

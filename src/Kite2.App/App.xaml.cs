@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -17,7 +18,7 @@ namespace Kite2.App
 
         public new MainWindow MainWindow { get; private set; }
 
-        protected override void OnStartup(StartupEventArgs e)
+        protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
 
@@ -32,7 +33,7 @@ namespace Kite2.App
             bool testMode = FakeScanner.EnableFromArguments(e.Args);
 
             Logging.WriteStartup(
-                $"Kite2, версия {typeof(App).Assembly.GetName().Version}",
+                $"Kite, версия {typeof(App).Assembly.GetName().Version}",
                 $"Ключи запуска: {Logging.StartupArguments}",
                 $"Каталог данных: {AppPaths.Data}",
                 $"Разрядность процесса: {(Environment.Is64BitProcess ? "64" : "32")} бита",
@@ -42,8 +43,42 @@ namespace Kite2.App
 
             // Сбой процесса: лишь бы показать пользователю; в журнал это запишет
             // подписка из Logging.CatchBackgroundFailures().
-            AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
                 UserDialogs.Error(args.ExceptionObject as Exception);
+
+            // Сплеш, как в первой версии: тяжёлая инициализация в фоне, шаги
+            // видны на экране, окно программы появляется только готовым.
+            var splash = new SplashWindow(DisplayVersion());
+            splash.Show();
+
+            IProgress<string> status = new Progress<string>(splash.SetStatus);
+
+            status.Report("Очистка временных файлов...");
+            await Task.Run(() =>
+            {
+                // Остатки прошлых запусков не нужны: документ живёт в памяти.
+                try
+                {
+                    AppPaths.ClearFolder(AppPaths.Scan);
+                    AppPaths.ClearFolder(AppPaths.Pages);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn(ex, "Не удалось очистить каталог сканирования");
+                }
+            });
+
+            status.Report("Инициализация MagickNET...");
+            try
+            {
+                await Task.Run(ImageMagickSetup.EnsureStarted);
+            }
+            catch (Exception ex)
+            {
+                UserDialogs.Error(ex);
+            }
+
+            status.Report("Инициализация пользовательского интерфейса...");
 
             var viewModel = new MainViewModel();
 
@@ -62,6 +97,7 @@ namespace Kite2.App
                 MainWindow.Title += " (тестовый режим)";
 
             MainWindow.Show();
+            splash.Close();
 
             viewModel.Start();
         }
