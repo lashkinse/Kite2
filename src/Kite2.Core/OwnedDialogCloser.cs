@@ -1,8 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text;
+using Kite2.Core;
 
 namespace Kite2.Core
 {
@@ -12,42 +11,6 @@ namespace Kite2.Core
     // владение у драйверов бывает всякое — править нужно по факту.
     internal static class OwnedDialogCloser
     {
-        private delegate bool EnumProc(IntPtr window, IntPtr lParam);
-
-        [DllImport("user32.dll")]
-        private static extern bool EnumWindows(EnumProc callback, IntPtr lParam);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetWindow(IntPtr window, uint command);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetAncestor(IntPtr window, uint command);
-
-        [DllImport("user32.dll")]
-        private static extern bool IsWindow(IntPtr window);
-
-        [DllImport("user32.dll")]
-        private static extern bool IsWindowVisible(IntPtr window);
-
-        [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
-        private static extern uint WindowThreadAndProcess(IntPtr window, out uint processId);
-
-        [DllImport("user32.dll")]
-        private static extern int GetWindowTextLength(IntPtr window);
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern int GetWindowText(IntPtr window, StringBuilder title, int length);
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern int GetClassName(IntPtr window, StringBuilder className, int length);
-
-        [DllImport("user32.dll", EntryPoint = "PostMessageW")]
-        private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParameter, IntPtr lParameter);
-
-        private const uint CommandGetOwner = 0x0004;   // GW_OWNER
-        private const uint CommandRootOwner = 0x0003;  // GA_ROOTOWNER
-        private const uint CloseMessage = 0x0010;      // WM_CLOSE
-
         private const int ReportLimit = 25;
 
         // ownerWindow — главное окно программы; helperPid — процесс помощника,
@@ -59,32 +22,26 @@ namespace Kite2.Core
 
             var report = new List<string>();
 
-            EnumWindows((window, _) =>
+            User32.EnumWindows((window, _) =>
             {
-                if (report.Count > ReportLimit || !IsWindowVisible(window))
+                if (report.Count > ReportLimit || !User32.IsWindowVisible(window))
                     return true;
 
-                IntPtr owner = GetWindow(window, CommandGetOwner);
-                IntPtr rootOwner = GetAncestor(window, CommandRootOwner);
-                WindowThreadAndProcess(window, out uint processId);
-
-                var title = new StringBuilder(64);
-                if (GetWindowTextLength(window) > 0)
-                    GetWindowText(window, title, 64);
-                var className = new StringBuilder(64);
-                GetClassName(window, className, 64);
+                IntPtr owner = User32.GetWindow(window, User32.CommandGetOwner);
+                IntPtr rootOwner = User32.GetAncestor(window, User32.CommandRootOwner);
+                User32.WindowThreadAndProcess(window, out uint processId);
 
                 string entry = string.Format(
                     "0x{0:X} [{1}] \"{2}\" pid={3} владелец=0x{4:X}({5}) корень=0x{6:X}",
-                    window.ToInt64(), className, title, processId,
-                    GetOwnerHandle(owner), OwnerDescription(owner, helperPid),
-                    GetOwnerHandle(rootOwner));
+                    window.ToInt64(), User32.ClassOf(window), User32.TitleOf(window), processId,
+                    OwnerHandle(owner), OwnerDescription(owner, helperPid),
+                    OwnerHandle(rootOwner));
 
                 bool forOwner = owner == ownerWindow || rootOwner == ownerWindow;
 
                 if (window != ownerWindow && forOwner)
                 {
-                    PostMessage(window, CloseMessage, IntPtr.Zero, IntPtr.Zero);
+                    User32.Close(window);
                     report.Add("ЗАКРЫТО " + entry);
                     return true;
                 }
@@ -97,17 +54,18 @@ namespace Kite2.Core
             return string.Join(" | ", report);
         }
 
-        private static string GetOwnerHandle(IntPtr owner) => owner.ToInt64().ToString("X");
+        private static string OwnerHandle(IntPtr owner) => owner.ToInt64().ToString("X");
 
         private static string OwnerDescription(IntPtr owner, int helperPid)
         {
             if (owner == IntPtr.Zero)
                 return "нет";
 
-            if (!IsWindow(owner))
+            if (!User32.IsWindow(owner))
                 return "мёртв";
 
-            WindowThreadAndProcess(owner, out uint processId);
+            User32.WindowThreadAndProcess(owner, out uint processId);
+
             return "pid=" + processId + (processId == (uint)helperPid ? " помощник" : null);
         }
     }

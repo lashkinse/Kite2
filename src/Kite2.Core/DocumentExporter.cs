@@ -227,15 +227,28 @@ namespace Kite2.Core
                 throw new NotSupportedException("Однобитные страницы в PDF не вкладываются.");
             }
 
+            // Кодек ищется один раз: страницы PDF не должны на каждом листе
+            // перечислять все кодеки сначала.
+            private static ImageCodecInfo jpegCodec;
+
             private static ImageCodecInfo JpegEncoder()
             {
-                foreach (ImageCodecInfo codec in ImageCodecInfo.GetImageEncoders())
+                if (jpegCodec == null)
                 {
-                    if (codec.FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid)
-                        return codec;
+                    foreach (ImageCodecInfo codec in ImageCodecInfo.GetImageEncoders())
+                    {
+                        if (codec.FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid)
+                        {
+                            jpegCodec = codec;
+                            break;
+                        }
+                    }
                 }
 
-                throw new InvalidOperationException("Кодек JPEG не найден.");
+                if (jpegCodec == null)
+                    throw new InvalidOperationException("Кодек JPEG не найден.");
+
+                return jpegCodec;
             }
 
             private static EncoderParameters JpegParameters(int quality)

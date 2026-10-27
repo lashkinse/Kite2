@@ -16,7 +16,7 @@
     <Description>Захват изображений со сканера</Description>
     <!-- Версия ходит в ногу с программой: штамп в журнале помощника говорит,
          какой именно бинарь исполнялся на компьютере пользователя. -->
-    <Version>1.8.7</Version>
+    <Version>1.8.8</Version>
   </PropertyGroup>
 
   <!-- Папка сборки повторяет решение (x64), хотя сама программа 32-разрядная:
@@ -33,6 +33,13 @@
 
   <ItemGroup>
     <PackageReference Include="NLog" Version="5.5.1" />
+  </ItemGroup>
+
+  <!-- Модуль Win32 общий с ядром: EnumWindows и соседи нужны и наблюдателю
+       отмены, и резервному закрывателю диалогов, а держать одинаковые списки
+       P/Invoke в двух сборках незачем. -->
+  <ItemGroup>
+    <Compile Include="..\Kite2.Core\User32.cs" Link="User32.cs" />
   </ItemGroup>
 
   <ItemGroup>

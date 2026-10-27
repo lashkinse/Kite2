@@ -45,7 +45,11 @@ namespace Kite2.Updater
 
         private static void WaitForProgramExit(string programPath)
         {
-            for (int attempt = 0; attempt < 60 && IsRunning(programPath); attempt++)
+            // Имя процесса дешевле полного перебора: процессов «Kite2»
+            // единицы, а список всех процессов может расти сотнями.
+            string processName = Path.GetFileNameWithoutExtension(programPath);
+
+            for (int attempt = 0; attempt < 60 && IsRunning(processName, programPath); attempt++)
                 Thread.Sleep(500);
         }
 
@@ -72,11 +76,13 @@ namespace Kite2.Updater
             }
         }
 
-        private static bool IsRunning(string programPath)
+        // true — процесс программы ещё жив; сверяется путь экзешника, а не
+        // только имя, чтобы не задеть программу другого каталога.
+        private static bool IsRunning(string processName, string programPath)
         {
             try
             {
-                foreach (Process process in Process.GetProcesses())
+                foreach (Process process in Process.GetProcessesByName(processName))
                 {
                     try
                     {
