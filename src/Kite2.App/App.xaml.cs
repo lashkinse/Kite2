@@ -19,8 +19,8 @@ namespace Kite2.App
 
         public new MainWindow MainWindow { get; private set; }
 
-        // Короткий сплеш читается как моргание: окно держится минимум столько.
-        private static readonly TimeSpan SplashMinimum = TimeSpan.FromSeconds(2.5);
+        // Короткий сплеш не прочитать: держим ровно столько, сколько нужно глазу.
+        private static readonly TimeSpan SplashMinimum = TimeSpan.FromSeconds(5);
 
         // Спит остаток минимального показа сплеша, если он уже истёк — ничего.
         private static async Task WaitSplashMinimum(Stopwatch shown)
