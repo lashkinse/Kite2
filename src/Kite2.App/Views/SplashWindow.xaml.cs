@@ -10,7 +10,7 @@ namespace Kite2.App.Views
         {
             InitializeComponent();
 
-            VersionText.Text = version;
+            VersionText.Text = "версия " + version;
         }
 
         // Панель хода: «Очистка временных файлов…» и подобные строки старта.
