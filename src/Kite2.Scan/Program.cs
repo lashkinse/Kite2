@@ -112,6 +112,11 @@ namespace Kite2.Scan
             {
                 // Штатная отмена человеком в окне драйвера: без трассировки.
                 Log.Info(CaptureEngine.CancelledInDialog);
+
+                // Ответ пишется всегда, даже при отмене: программа ждёт файл.
+                ScanExchange.Write(responsePath, false, CaptureEngine.CancelledInDialog, null);
+
+                code = 1;
             }
             catch (Exception ex)
             {
