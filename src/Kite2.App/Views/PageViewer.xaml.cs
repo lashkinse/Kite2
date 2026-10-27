@@ -17,7 +17,6 @@ namespace Kite2.App.Views
         private const double WheelFactor = 1.5;
         private const double PageMargin = 24;
         private const double HandleSize = 6;
-        private const double SaveGap = 8;
         private const double HintGap = 6;
         private const double MinimumSelection = 8;
 
@@ -334,7 +333,6 @@ namespace Kite2.App.Views
             Place(HandleBottomLeft, left, bottom);
             Place(HandleBottomRight, right, bottom);
 
-            PlaceSaveButton(right, bottom);
             PlaceHint(left, top);
         }
 
@@ -346,16 +344,6 @@ namespace Kite2.App.Views
             handle.Visibility = Visibility.Visible;
         }
 
-        private void PlaceSaveButton(double right, double bottom)
-        {
-            Point corner = Sheet.TranslatePoint(new Point(right, bottom), Overlay);
-
-            Canvas.SetLeft(FragmentSave, corner.X + SaveGap);
-            Canvas.SetTop(FragmentSave, corner.Y + SaveGap);
-
-            FragmentSave.Visibility = Visibility.Visible;
-        }
-
         private void PlaceHint(double left, double top)
         {
             Point corner = Sheet.TranslatePoint(new Point(left, top), Overlay);
@@ -364,7 +352,7 @@ namespace Kite2.App.Views
             SelectionHint.Visibility = Visibility.Visible;
 
             Canvas.SetLeft(SelectionHint, corner.X - HintGap);
-            Canvas.SetTop(SelectionHint, corner.Y - SelectionHint.ActualHeight - HintGap);
+            Canvas.SetTop(SelectionHint, Math.Max(PageMargin, corner.Y - HintGap - SelectionHint.ActualHeight));
         }
 
         private void FollowSheet()
@@ -419,7 +407,6 @@ namespace Kite2.App.Views
             HandleBottomLeft.Visibility = Visibility.Collapsed;
             HandleBottomRight.Visibility = Visibility.Collapsed;
 
-            FragmentSave.Visibility = Visibility.Collapsed;
             SelectionHint.Visibility = Visibility.Collapsed;
 
             return had;

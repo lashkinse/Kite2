@@ -61,62 +61,59 @@
             </Canvas>
         </ScrollViewer>
 
-        <!-- Полотно обрезано по краям области просмотра. Значки стоят строго у своего
-             угла рамки и не прилипают к краям, но за пределы просмотра не выходят:
-             иначе подсказка наезжала бы на панель команд, а кнопка — на полосу
-             прокрутки. -->
+        <!-- Полотно обрезано по краям области просмотра. Панель выделения стоит
+             у угла рамки и не прилипает к краям, но за пределы просмотра не
+             выходит: иначе она наезжала бы на панель команд и полосу прокрутки. -->
         <Canvas x:Name="Overlay" ClipToBounds="True">
-            <!-- Подсказка у левого верхнего угла рамки: иначе про отмену выделения
-                 приходилось бы помнить, а она появляется вместе с рамкой. -->
+            <!-- Панель выделения у левого верхнего угла рамки: отмена по Esc и
+                 сохранение фрагмента в одной строке, все средства выделения
+                 вместе и всегда в верхней части листа, у плашки сообщений. -->
             <Border x:Name="SelectionHint"
                     Visibility="Collapsed"
-                    IsHitTestVisible="False"
                     Background="{StaticResource Page}"
                     BorderBrush="{StaticResource SelectionStroke}"
                     BorderThickness="1"
                     CornerRadius="3"
                     Padding="6,2">
-                <TextBlock Text="Esc — отменить"
-                           FontFamily="{StaticResource UiFont}"
-                           FontSize="{StaticResource FontSizeSmall}"
-                           Foreground="{StaticResource TextPrimary}" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Esc — отменить"
+                               FontFamily="{StaticResource UiFont}"
+                               FontSize="{StaticResource FontSizeSmall}"
+                               Foreground="{StaticResource TextPrimary}"
+                               VerticalAlignment="Center"
+                               MaxWidth="360" />
+                    <Button x:Name="FragmentSave"
+                            Width="26"
+                            Height="22"
+                            Margin="6,0,0,0"
+                            Focusable="False"
+                            Cursor="Hand"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            ToolTip="Сохранить выделенный участок страницы файлом PNG"
+                            Click="OnCropClick">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Plate"
+                                        Background="{TemplateBinding Background}"
+                                        CornerRadius="3">
+                                    <Path Style="{StaticResource ChipIconStyle}"
+                                          Data="{StaticResource IconSaveFragment}"
+                                          Fill="{StaticResource SelectionStroke}" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Plate" Property="Background" Value="#E8F1FC" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="Plate" Property="Background" Value="#CFE3FB" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </StackPanel>
             </Border>
-
-            <Button x:Name="FragmentSave"
-                    Width="28"
-                    Height="28"
-                    Visibility="Collapsed"
-                    Focusable="False"
-                    Cursor="Hand"
-                    Background="{StaticResource Page}"
-                    BorderBrush="{StaticResource Hairline}"
-                    BorderThickness="1"
-                    ToolTip="Сохранить выделенный участок страницы файлом PNG"
-                    Click="OnCropClick">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <!-- Белая подложка во всю кнопку: на белом листе значок без
-                             неё тонул, а синий значок на белом читается сразу. -->
-                        <Border x:Name="Plate"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="3">
-                            <Path Style="{StaticResource ChipIconStyle}"
-                                  Data="{StaticResource IconSaveFragment}"
-                                  Fill="{StaticResource SelectionStroke}" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Plate" Property="Background" Value="#E8F1FC" />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Plate" Property="Background" Value="#CFE3FB" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
         </Canvas>
 
         <!-- Подсказка, когда страниц нет: пустой стол сам по себе ничего не объясняет. -->
