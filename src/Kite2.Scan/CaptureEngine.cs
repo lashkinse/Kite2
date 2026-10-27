@@ -88,6 +88,9 @@ namespace Kite2.Scan
                     : null);
             }
 
+            if (lastFailure == CancelledInDialog)
+                throw new ScanCancelledException();
+
             throw new InvalidOperationException(lastFailure ?? "Сканер не отдал ни одной страницы.");
         }
 
@@ -318,8 +321,13 @@ namespace Kite2.Scan
                 }
                 catch (Exception ex)
                 {
-                    Log.Error("Попытка упала: {0}", ex);
                     chapter.Failure = GetFailureMessage(ex, chapter.Pages.Count > 0);
+
+                    // Отмена человеком в окне драйвера — штатный исход, а не сбой.
+                    if (ex is FileNotFoundException)
+                        Log.Info("Отменено человеком в окне драйвера");
+                    else
+                        Log.Error("Попытка упала: {0}", ex);
                 }
             }
         }
@@ -329,6 +337,15 @@ namespace Kite2.Scan
         // окна — не часть протокола. Диалог с владельцем не может уйти за
         // окно программы и не имеет собственной строки на панели задач.
         internal static long DialogParentValue;
+
+        // Штатный исход: человек отменил скан в окне драйвера.
+        internal const string CancelledInDialog = "Сканирование отменено в окне драйвера.";
+
+        // Отменённый человеком захват не сбой: протокол ответа тот же,
+        // но журналы не обязаны расписывать трассировкой.
+        internal sealed class ScanCancelledException : InvalidOperationException
+        {
+        }
 
         private static ScanController NewController()
         {
@@ -343,7 +360,7 @@ namespace Kite2.Scan
             // Отмена в окне драйвера (в т.ч. его закрытие) рвала передачу:
             // временный файл драйвера исчезал до чтения NAPS2 — это не ошибка.
             if (error is FileNotFoundException)
-                return "Сканирование отменено в окне драйвера.";
+                return CancelledInDialog;
 
             // Драйвер уже показал свою ошибку сам — приложение не дублирует её.
             if (error is AlreadyHandledDriverException)

@@ -108,6 +108,11 @@ namespace Kite2.Scan
                     code = 2;
                 }
             }
+            catch (CaptureEngine.ScanCancelledException)
+            {
+                // Штатная отмена человеком в окне драйвера: без трассировки.
+                Log.Info(CaptureEngine.CancelledInDialog);
+            }
             catch (Exception ex)
             {
                 Log.Error("Захват не удался: {0}", ex);
