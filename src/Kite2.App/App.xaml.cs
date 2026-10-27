@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
@@ -17,6 +18,18 @@ namespace Kite2.App
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
         public new MainWindow MainWindow { get; private set; }
+
+        // Короткий сплеш читается как моргание: окно держится минимум столько.
+        private static readonly TimeSpan SplashMinimum = TimeSpan.FromSeconds(2.5);
+
+        // Спит остаток минимального показа сплеша, если он уже истёк — ничего.
+        private static async Task WaitSplashMinimum(Stopwatch shown)
+        {
+            TimeSpan remainder = SplashMinimum - shown.Elapsed;
+
+            if (remainder > TimeSpan.Zero)
+                await Task.Delay(remainder);
+        }
 
         protected override async void OnStartup(StartupEventArgs e)
         {
@@ -51,6 +64,8 @@ namespace Kite2.App
             var splash = new SplashWindow(DisplayVersion());
             splash.Show();
 
+            var shown = Stopwatch.StartNew();
+
             IProgress<string> status = new Progress<string>(splash.SetStatus);
 
             status.Report("Очистка временных файлов...");
@@ -79,6 +94,10 @@ namespace Kite2.App
             }
 
             status.Report("Инициализация пользовательского интерфейса...");
+
+            // Спеш не должен моргнуть: основное окно показывается,
+            // когда минимальное время показа сплеша отработало.
+            await WaitSplashMinimum(shown);
 
             var viewModel = new MainViewModel();
 

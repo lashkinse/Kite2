@@ -47,10 +47,17 @@
                            FontSize="{StaticResource FontSizeSmall}"
                            Foreground="{StaticResource TextPrimary}" />
 
-                <TextBlock x:Name="VersionText"
-                           FontSize="{StaticResource FontSizeSmall}"
-                           Foreground="{StaticResource TextSecondary}"
-                           HorizontalAlignment="Right" />
+                <StackPanel HorizontalAlignment="Right">
+                    <TextBlock Text="© lashkinse"
+                               FontSize="{StaticResource FontSizeSmall}"
+                               Foreground="{StaticResource TextSecondary}"
+                               HorizontalAlignment="Right" />
+
+                    <TextBlock x:Name="VersionText"
+                               FontSize="{StaticResource FontSizeSmall}"
+                               Foreground="{StaticResource TextSecondary}"
+                               HorizontalAlignment="Right" />
+                </StackPanel>
             </Grid>
         </Grid>
     </Border>
