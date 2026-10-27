@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Threading;
 using System.Threading.Tasks;
 using Kite2.ScanProtocol;
 using NLog;
@@ -16,11 +15,9 @@ namespace Kite2.Scan
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        // Падение фонового помощника (например, срыв уборки в драйвере)
-        // не должно выкатывать пользователю системный диалог Windows
-        // «программа завершилась с ошибкой»: результат докладывается
-        // в файле ответа, а окно с ошибкой только пугает и висит поверх
-        // всего, пока человек его не закроет — по два таких окна на захват.
+        // Падение фонового помощника не должно выкатывать системный диалог
+        // «программа завершилась с ошибкой»: результат докладывается в файле
+        // ответа, а такое окно только пугает и висит поверх всего.
         [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         private static extern uint SetErrorMode(uint newMode);
 
@@ -39,7 +36,7 @@ namespace Kite2.Scan
             Log.Info("Помощник, версия {0}", typeof(Program).Assembly.GetName().Version);
 
             // Окно программы — владелец диалога драйвера; передаётся
-            // переменной окружения, а не аргументом.
+            // переменной окружения, а не аргументом протокола.
             string parent = Environment.GetEnvironmentVariable("KITE2_SCAN_PARENT");
 
             if (long.TryParse(parent, NumberStyles.Integer, CultureInfo.InvariantCulture, out long handle)
@@ -51,19 +48,6 @@ namespace Kite2.Scan
             else
             {
                 Log.Info("Окно-владелец диалога не передано");
-            }
-
-            string responsePath = args.Length < 2 ? null : args[args.Length - 1];
-
-            if (responsePath != null)
-            {
-                // Фон наблюдает файл отмены: пока основной поток сидит в
-                // модальном диалоге, отмену из программы исполняет именно он.
-                uint appPid = CaptureEngine.DialogParentValue != 0
-                    ? AbortWatcher.ProcessOfWindow(new IntPtr(CaptureEngine.DialogParentValue))
-                    : 0;
-
-                AbortWatcher.Start(responsePath + ".abort", appPid);
             }
 
             // Тихие сбои фонового захвата больше нигде не видны: зависания
@@ -80,6 +64,16 @@ namespace Kite2.Scan
                 return 2;
             }
 
+            string responsePath = args[args.Length - 1];
+
+            // Фон наблюдает файл отмены: пока основной поток сидит в модальном
+            // диалоге, отмену из программы исполняет именно он.
+            uint appPid = CaptureEngine.DialogParentValue != 0
+                ? AbortWatcher.ProcessOfWindow(new IntPtr(CaptureEngine.DialogParentValue))
+                : 0;
+
+            AbortWatcher.Start(responsePath + ".abort", appPid);
+
             int code;
 
             try
@@ -87,8 +81,10 @@ namespace Kite2.Scan
                 if (args[0] == "sources")
                 {
                     Log.Info("Команда sources");
+
                     List<string> sources = await CaptureEngine.GetSources();
                     Log.Info("Список получен: источников {0}", sources.Count);
+
                     code = Answer(responsePath, sources);
                 }
                 else if (args[0] == "acquire" && args.Length == 4)
@@ -96,7 +92,7 @@ namespace Kite2.Scan
                     Log.Info("Команда acquire: источник={0}, каталог={1}", args[1], args[2]);
 
                     List<string> pages = await CaptureEngine.Capture(
-                        Number(args[1]),
+                        int.Parse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture),
                         args[2]);
 
                     Log.Info("Захват завершён, страниц {0}", pages.Count);
@@ -110,11 +106,10 @@ namespace Kite2.Scan
             }
             catch (CaptureEngine.ScanCancelledException)
             {
-                // Штатная отмена человеком в окне драйвера: без трассировки.
-                Log.Info(CaptureEngine.CancelledInDialog);
+                Log.Info(ScanExchange.CancelledInDialog);
 
                 // Ответ пишется всегда, даже при отмене: программа ждёт файл.
-                ScanExchange.Write(responsePath, false, CaptureEngine.CancelledInDialog, null);
+                ScanExchange.Write(responsePath, false, ScanExchange.CancelledInDialog, null);
 
                 code = 1;
             }
@@ -124,11 +119,7 @@ namespace Kite2.Scan
 
                 // Ответ пишется всегда, даже при ошибке: программа ждёт файл и иначе
                 // решила бы, что помощника нет вовсе.
-                ScanExchange.Write(
-                    responsePath,
-                    false,
-                    Describe(ex),
-                    null);
+                ScanExchange.Write(responsePath, false, ex.Message, null);
 
                 code = 1;
             }
@@ -141,17 +132,11 @@ namespace Kite2.Scan
             return code;
         }
 
-        // Тексты ошибок сканера уже сказаны по-русски внутри захвата.
-        private static string Describe(Exception error) => error.Message;
-
         private static int Answer(string responsePath, List<string> items)
         {
             ScanExchange.Write(responsePath, true, null, items);
 
             return 0;
         }
-
-        private static int Number(string text) =>
-            int.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);
     }
 }

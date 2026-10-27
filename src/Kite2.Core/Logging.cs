@@ -34,8 +34,6 @@ namespace Kite2.Core
             {
                 LogFile = Path.Combine(AppPaths.Logs, "Kite2-" + DateTime.Now.ToString("yyyyMMdd") + ".log");
 
-                var configuration = new LoggingConfiguration();
-
                 var file = new FileTarget("journal")
                 {
                     FileName = LogFile,
@@ -46,6 +44,7 @@ namespace Kite2.Core
                     ConcurrentWrites = false
                 };
 
+                var configuration = new LoggingConfiguration();
                 configuration.AddTarget(file);
                 configuration.AddRule(LogLevel.Debug, LogLevel.Fatal, file);
 

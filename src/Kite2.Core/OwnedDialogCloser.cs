@@ -6,11 +6,10 @@ using System.Text;
 
 namespace Kite2.Core
 {
-    // Диалог WIA-драйвера живёт в чужом процессе (прокси по битности), и смерть
-    // помощника-клиента такое окно не гасит. При отмене сдирается полный отсек
-    // видимых окон: класс, заголовок, процесс, владелец. Ровно свои окна
-    // закрываются штатным WM_CLOSE; отсек записывается в журнал целиком,
-    // потому что владение у драйверов бывает всякое, и править нужно по факту.
+    // Диалог WIA-драйвера живёт в чужом процессе-хосте, и смерть помощника
+    // такое окно не гасит. Закрываются только чужие диалоги в владельческой
+    // цепочке главного окна; в журнал пишется весь осмотр окон, потому что
+    // владение у драйверов бывает всякое — править нужно по факту.
     internal static class OwnedDialogCloser
     {
         private delegate bool EnumProc(IntPtr window, IntPtr lParam);
@@ -52,7 +51,7 @@ namespace Kite2.Core
         private const int ReportLimit = 25;
 
         // ownerWindow — главное окно программы; helperPid — процесс помощника,
-        // чьи окна тоже «свои» для закрытия. Возвращает отчёт для журнала.
+        // чьи окна тоже «свои». Возвращает отчёт для журнала.
         public static string CloseFor(IntPtr ownerWindow, int helperPid)
         {
             if (ownerWindow == IntPtr.Zero)
@@ -83,8 +82,6 @@ namespace Kite2.Core
 
                 bool forOwner = owner == ownerWindow || rootOwner == ownerWindow;
 
-                // Окну-владельцу и нашей программе не касаемся вирально: только
-                // чужие диалоги в владельческой цепочке главного окна.
                 if (window != ownerWindow && forOwner)
                 {
                     PostMessage(window, CloseMessage, IntPtr.Zero, IntPtr.Zero);

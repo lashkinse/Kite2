@@ -54,8 +54,6 @@ namespace Kite2.Core
                 File.Move(legacy, SettingsFile);
         }
 
-        public static string LogFile => Path.Combine(Logs, "Kite2-" + DateTime.Now.ToString("yyyyMMdd") + ".log");
-
         // Содержимое стирается, но не сам каталог.
         public static void ClearFolder(string path)
         {

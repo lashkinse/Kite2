@@ -13,6 +13,7 @@ using CommunityToolkit.Mvvm.Input;
 using Kite2.App.Services;
 using Kite2.App.Views;
 using Kite2.Core;
+using Kite2.ScanProtocol;
 using NLog;
 using System.Windows.Threading;
 
@@ -42,10 +43,7 @@ namespace Kite2.App.ViewModels
         {
             NewDocumentCommand = new RelayCommand(NewDocument, () => !IsBusy);
             SaveCommand = new RelayCommand(Save, () => !IsBusy && _pages.Count > 0);
-            // Один режим на обе кнопки и прокручивание документом: параметры
-            // всегда задаёт окно драйвера.
             ScanCommand = new RelayCommand(ScanAsync, () => !IsBusy);
-            ScanAgainCommand = new RelayCommand(ScanAsync, () => !IsBusy);
             SettingsCommand = new RelayCommand(ChooseSource, () => !IsBusy);
             DeletePageCommand = new RelayCommand(DeletePage, () => !IsBusy && SelectedPage != null);
             MovePageUpCommand = new RelayCommand(() => MovePage(-1), () => !IsBusy && SelectedPage != null);
@@ -56,7 +54,7 @@ namespace Kite2.App.ViewModels
 
             _commands = new[]
             {
-                NewDocumentCommand, SaveCommand, ScanCommand, ScanAgainCommand, SettingsCommand, DeletePageCommand,
+                NewDocumentCommand, SaveCommand, ScanCommand, SettingsCommand, DeletePageCommand,
                 MovePageUpCommand, MovePageDownCommand, RotatePageCommand
             };
 
@@ -111,8 +109,6 @@ namespace Kite2.App.ViewModels
         public RelayCommand SaveCommand { get; }
 
         public RelayCommand ScanCommand { get; }
-
-        public RelayCommand ScanAgainCommand { get; }
 
         public RelayCommand SettingsCommand { get; }
 
@@ -263,10 +259,10 @@ namespace Kite2.App.ViewModels
             }
             catch (Exception ex)
             {
-                // Отмена в окне драйвера (её же закрытие) — не ошибка: тихое завершение.
-                if (ex.Message.Contains("отменено"))
+                // Отмена в окне драйвера — штатный исход: тихое завершение.
+                if (ex.Message == ScanExchange.CancelledInDialog)
                 {
-                    Log.Info("Сканирование отменено в окне драйвера");
+                    Log.Info(ScanExchange.CancelledInDialog);
                     HideNotice();
                     return;
                 }
@@ -290,7 +286,7 @@ namespace Kite2.App.ViewModels
                 SourceIndex = FakeScanner.Enabled ? 0 : AppSettings.ScanSourceIndex
             };
 
-            await Task.Run(() =>
+            string[] composed = await Task.Run(() =>
             {
                 ScannerService.Capture(request, cancellationToken);
 
@@ -299,9 +295,8 @@ namespace Kite2.App.ViewModels
                 return PageImage.ComposeDirectory(request, PageQuality);
             }, cancellationToken);
 
-            // Следующая серия очищает каталог вместе с отсканированным —
-            // страницы забираются в постоянное хранилище сразу.
-            var pages = await Task.Run(() => BuildPages(request.Directory), cancellationToken);
+            List<PageViewModel> pages = await Task.Run(
+                () => BuildPages(composed), cancellationToken);
 
             AddPages(pages);
 
@@ -319,13 +314,13 @@ namespace Kite2.App.ViewModels
             return ScanContinueWindow.Ask(Application.Current.MainWindow);
         }
 
-        private List<PageViewModel> BuildPages(string directory)
+        private List<PageViewModel> BuildPages(string[] files)
         {
             var pages = new List<PageViewModel>();
 
             int number = 1;
 
-            foreach (string file in Directory.GetFiles(directory, "*.jpg").OrderBy(Path.GetFileName))
+            foreach (string file in files.OrderBy(Path.GetFileName))
                 pages.Add(new PageViewModel(PageImage.Store(file), number++));
 
             return pages;
@@ -556,13 +551,7 @@ namespace Kite2.App.ViewModels
                 HideNotice();
             }
 
-            if (failed)
-            {
-                UserDialogs.Error(Messages.NoSources);
-                return;
-            }
-
-            if (sources.Count == 0)
+            if (failed || sources.Count == 0)
             {
                 UserDialogs.Error(Messages.NoSources);
                 return;

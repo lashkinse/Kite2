@@ -12,9 +12,8 @@ using NLog;
 
 namespace Kite2.App.Services
 {
-    // Вопрос об обновлении при входе: страница releases/latest отдаёт последнюю
-    // версию (она видна в адресе приземления — API не используется из-за лимитов
-    // запросов), скачивание и подмену файлов делает Kite2.Updater из хранилища.
+    // Вопрос об обновлении при входе: последняя версия читается со страницы
+    // releases/latest, скачивание и подмену файлов делает Kite2.Updater.
     public static class UpdateService
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
@@ -39,7 +38,44 @@ namespace Kite2.App.Services
         // (null, false) — сеть не ответила, проверка повторится.
         public static async Task<(ReleaseCatalog.Entry Update, bool Answered)> Latest()
         {
-            return await LatestByPage();
+            try
+            {
+                using (var wait = new CancellationTokenSource(NetworkWait))
+                using (HttpResponseMessage response = await Http.GetAsync(
+                    ReleasesLatestUrl, HttpCompletionOption.ResponseHeadersRead, wait.Token))
+                {
+                    Version version = ReleaseCatalog.ReadVersion(
+                        response.RequestMessage.RequestUri?.ToString());
+
+                    if (version == null)
+                    {
+                        Log.Warn("Страница выпуска не отдала версии: {0}",
+                            response.RequestMessage.RequestUri);
+                        return (null, false);
+                    }
+
+                    // Выпуск совпал с установленной версией — вопроса не будет.
+                    Version current = Assembly.GetEntryAssembly().GetName().Version;
+
+                    if (current >= version)
+                        return (null, true);
+
+                    Log.Info("Актуальный выпуск по странице: {0}", version);
+
+                    return (new ReleaseCatalog.Entry(version, DownloadUrl(version)), true);
+                }
+            }
+            catch (OperationCanceledException ex)
+            {
+                Log.Debug(ex, "Проверка обновлений прервана по времени");
+
+                return (null, false);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(ex, "Полный сбой проверки обновлений");
+                return (null, false);
+            }
         }
 
         public static async Task Stage(ReleaseCatalog.Entry update, IProgress<int> progress)
@@ -132,50 +168,6 @@ namespace Kite2.App.Services
         }
 
         private static string Quote(string value) => "\"" + value + "\"";
-
-        private static async Task<(ReleaseCatalog.Entry Update, bool Answered)> LatestByPage()
-        {
-            try
-            {
-                using (var wait = new CancellationTokenSource(NetworkWait))
-                using (HttpResponseMessage response = await Http.GetAsync(
-                    ReleasesLatestUrl, HttpCompletionOption.ResponseHeadersRead, wait.Token))
-                {
-                    Version version = ReleaseCatalog.ReadVersion(
-                        response.RequestMessage.RequestUri?.ToString());
-
-                    if (version == null)
-                    {
-                        Log.Warn("Страница выпуска не отдала версии: {0}",
-                            response.RequestMessage.RequestUri);
-                        return (null, false);
-                    }
-
-                    // Выпуск совпал с установленной версией — вопроса не будет.
-                    Version current = Assembly.GetEntryAssembly().GetName().Version;
-
-                    if (current >= version)
-                        return (null, true);
-
-                    Log.Info("Актуальный выпуск по странице: {0}", version);
-
-                    var update = new ReleaseCatalog.Entry(version, DownloadUrl(version));
-
-                    return (update, true);
-                }
-            }
-            catch (OperationCanceledException ex)
-            {
-                Log.Debug(ex, "Проверка обновлений прервана по времени");
-
-                return (null, false);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn(ex, "Полный сбой проверки обновлений");
-                return (null, false);
-            }
-        }
 
         private static string DownloadUrl(Version version) =>
             "https://github.com/lashkinse/Kite2/releases/download/v" + version + "/Kite2-" + version + ".zip";

@@ -28,8 +28,8 @@
         <KeyBinding Key="Delete" Command="{Binding DeletePageCommand}" />
         <KeyBinding Key="Up" Modifiers="Control" Command="{Binding MovePageUpCommand}" />
         <KeyBinding Key="Down" Modifiers="Control" Command="{Binding MovePageDownCommand}" />
-        <KeyBinding Key="Add" Command="{Binding ScanAgainCommand}" />
-        <KeyBinding Key="OemPlus" Command="{Binding ScanAgainCommand}" />
+        <KeyBinding Key="Add" Command="{Binding ScanCommand}" />
+        <KeyBinding Key="OemPlus" Command="{Binding ScanCommand}" />
     </Window.InputBindings>
 
     <Grid>

@@ -22,15 +22,6 @@ namespace Kite2.App.Controls
                 typeof(CommandBar),
                 new PropertyMetadata(null));
 
-        // Помечает кнопку, которую повторит «+»: обе кнопки сканера выглядят
-        // одинаково, и без отметки не видно текущего режима.
-        public static readonly DependencyProperty IsNextProperty =
-            DependencyProperty.RegisterAttached(
-                "IsNext",
-                typeof(bool),
-                typeof(CommandBar),
-                new PropertyMetadata(false));
-
         public static string GetHint(DependencyObject element) => (string)element.GetValue(HintProperty);
 
         public static void SetHint(DependencyObject element, string value) => element.SetValue(HintProperty, value);
@@ -38,9 +29,5 @@ namespace Kite2.App.Controls
         public static Brush GetHintBrush(DependencyObject element) => (Brush)element.GetValue(HintBrushProperty);
 
         public static void SetHintBrush(DependencyObject element, Brush value) => element.SetValue(HintBrushProperty, value);
-
-        public static bool GetIsNext(DependencyObject element) => (bool)element.GetValue(IsNextProperty);
-
-        public static void SetIsNext(DependencyObject element, bool value) => element.SetValue(IsNextProperty, value);
     }
 }

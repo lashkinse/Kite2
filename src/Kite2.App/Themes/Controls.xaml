@@ -2,80 +2,50 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:controls="clr-namespace:Kite2.App.Controls">
 
-    <!-- Кнопка верхней панели. Подпись кнопки задаётся в Content, значок — в Tag.
-         Так описание каждой команды помещается в одну строку разметки, а вид у всех
-         кнопок один: правится здесь, а не в каждой кнопке.
-
-         Цвета задаёт сама кнопка, а не шаблон: подложка и рамка берутся из Background
-         и BorderBrush, а наведение и нажатие меняют эти же свойства. Поэтому главное
-         действие отличается от обычного пятёркой строк, а не вторым шаблоном: два
-         шаблона повторялись построчно, и правка одного рано или поздно забывала о
-         втором. Единственное, что шаблону не под силу, — цвет подсказки: он разный
-         на тёмной и на синей кнопке, и задаётся свойством CommandBar.HintBrush. -->
+    <!-- Кнопка верхней панели. Подпись — в Content, значок — в Tag: описание
+         команды умещается в одну строку, а вид правится здесь один раз.
+         Цвета задаёт сама кнопка (Background/BorderBrush), поэтому главное
+         действие отличается от обычного пятью строками, а не вторым шаблоном. -->
     <Style x:Key="CommandButtonStyle" TargetType="Button">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="12,6" />
-        <!-- Ширина фиксированная: подписи у кнопок разной длины, и при свободной
-             ширине значки разъезжались на разный шаг. Размер подобран по самой
-             длинной подписи «Параметры» вместе с сочетанием клавиш. -->
+        <!-- Фиксированные размеры: при свободной ширине значки разъезжались,
+             а по содержимому значок вставал у самого края. -->
         <Setter Property="Width" Value="88" />
-        <!-- Высота задана явно: по содержимому кнопка получалась впритык,
-             значок стоял у самого верхнего края, и кнопки выглядели приплюснутыми. -->
         <Setter Property="Height" Value="62" />
-        <Setter Property="Margin" Value="0,0" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
-        <!-- Своя рамка фокуса вместо системной: у WPF она рисуется мелким
-             пунктиром поверх тёмной панели и выглядит как опечаткой. -->
+        <!-- Своя рамка фокуса: системная рисуется мелким пунктиром поверх
+             тёмной панели и выглядит как дефект. -->
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="controls:CommandBar.HintBrush" Value="{StaticResource TextOnBarHint}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Grid>
-                        <Border x:Name="Plate"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="{StaticResource Corner}">
-                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <Path Style="{StaticResource CommandIconStyle}"
-                                      Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
-                                      Stroke="{StaticResource TextOnBar}" />
-                                <TextBlock Text="{TemplateBinding Content}"
-                                           Foreground="{StaticResource TextOnBar}"
-                                           FontFamily="{StaticResource UiFont}"
-                                           FontSize="{StaticResource FontSizeSmall}"
-                                           Margin="0,4,0,0"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock Text="{Binding (controls:CommandBar.Hint), RelativeSource={RelativeSource TemplatedParent}}"
-                                           Foreground="{Binding (controls:CommandBar.HintBrush), RelativeSource={RelativeSource TemplatedParent}}"
-                                           FontFamily="{StaticResource UiFont}"
-                                           FontSize="10"
-                                           Margin="0,1,0,0"
-                                           HorizontalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Отметка «сработает следующей»: та же пунктирная рамка, что
-                             вокруг выделения на странице, и стоит на самом краю кнопки:
-                             отступ влево выносил бы её за кнопку сильнее, чем надо. -->
-                        <Rectangle x:Name="NextFrame"
-                                   RadiusX="5"
-                                   RadiusY="5"
-                                   Stroke="{StaticResource SelectionStroke}"
-                                   StrokeThickness="1.5"
-                                   StrokeDashArray="3,2"
-                                   IsHitTestVisible="False"
-                                   Visibility="Collapsed" />
-                    </Grid>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="controls:CommandBar.IsNext" Value="True">
-                            <Setter TargetName="NextFrame" Property="Visibility" Value="Visible" />
-                        </Trigger>
-                    </ControlTemplate.Triggers>
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{StaticResource Corner}">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Path Style="{StaticResource CommandIconStyle}"
+                                  Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                  Stroke="{StaticResource TextOnBar}" />
+                            <TextBlock Text="{TemplateBinding Content}"
+                                       Foreground="{StaticResource TextOnBar}"
+                                       FontFamily="{StaticResource UiFont}"
+                                       FontSize="{StaticResource FontSizeSmall}"
+                                       Margin="0,4,0,0"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding (controls:CommandBar.Hint), RelativeSource={RelativeSource TemplatedParent}}"
+                                       Foreground="{Binding (controls:CommandBar.HintBrush), RelativeSource={RelativeSource TemplatedParent}}"
+                                       FontFamily="{StaticResource UiFont}"
+                                       FontSize="10"
+                                       Margin="0,1,0,0"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -96,8 +66,7 @@
         </Style.Triggers>
     </Style>
 
-    <!-- Главное действие: заливается акцентным цветом, чтобы его находили сразу.
-         Шаблон и размеры те же — отличаются только цвета. -->
+    <!-- Главное действие: заливается акцентным цветом, чтобы его находили сразу. -->
     <Style x:Key="AccentCommandButtonStyle" TargetType="Button" BasedOn="{StaticResource CommandButtonStyle}">
         <Setter Property="Background" Value="{StaticResource Accent}" />
         <Setter Property="controls:CommandBar.HintBrush" Value="{StaticResource TextOnAccentHint}" />
@@ -114,10 +83,8 @@
         </Style.Triggers>
     </Style>
 
-    <!-- Кнопка плавающей панели над страницей: только значок, те же цвета, что у
-         кнопок верхней панели. Подписи здесь не нужны — команды и так работают с
-         выбранной страницей, а сочетание клавиш написано во всплывающей
-         подсказке. -->
+    <!-- Кнопка плавающей панели над страницей: только значок, те же цвета,
+         что у кнопок верхней панели. -->
     <Style x:Key="PageActionButtonStyle" TargetType="Button">
         <Setter Property="Width" Value="34" />
         <Setter Property="Height" Value="34" />
@@ -152,8 +119,6 @@
             <Trigger Property="IsPressed" Value="True">
                 <Setter Property="Background" Value="{StaticResource Header}" />
             </Trigger>
-            <!-- Без выбранной страницы команды не работают, и значки
-                 гаснут: панель не зовёт на пустом месте. -->
             <Trigger Property="IsEnabled" Value="False">
                 <Setter Property="Opacity" Value="0.35" />
                 <Setter Property="Cursor" Value="Arrow" />

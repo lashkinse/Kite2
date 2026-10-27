@@ -1,35 +1,39 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Kite2.ScanProtocol;
 using NAPS2.Images;
 using NAPS2.Images.Gdi;
 using NAPS2.Scan;
 using NAPS2.Scan.Exceptions;
 using NLog;
+
 namespace Kite2.Scan
 {
     // Захват через NAPS2.Sdk в отдельном процессе: сбой драйвера гасит
-    // помощника, а не окно программы. Внутри — каталог источников,
-    // лестница попыток и стенки тишины.
+    // помощника, а не окно программы. Единственный способ захвата — родное
+    // окно драйвера: параметры задаёт там человек, страницы идут потоком.
     internal static class CaptureEngine
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        // Разогрев и приём страницы тянутся десятки секунд: отсечки щедрые.
-        private static readonly TimeSpan FirstPageWait = TimeSpan.FromSeconds(150);
-        private static readonly TimeSpan PageGapWait = TimeSpan.FromSeconds(100);
+        // Стенка тишины: драйвер может зависнуть внутри вызова — следит за
+        // страницами и завершением задачи, а таймер тишины перезапускается.
+        private static readonly TimeSpan QuietWall = TimeSpan.FromMinutes(6);
         private static readonly TimeSpan ListingWait = TimeSpan.FromSeconds(10);
 
-        // Стенка равна попытке целиком: молчаливый драйвер может зависнуть
-        // внутри вызова, таймер тишины этого не видит.
-        private static readonly TimeSpan AttemptWall = TimeSpan.FromSeconds(180);
-        private static readonly TimeSpan NativeUiWall = TimeSpan.FromMinutes(6);
+        // Дескриптор окна программы — владелец диалога драйвера. Задаётся
+        // Program-ом из окружения, а не аргументом: дескриптор — не протокол.
+        internal static long DialogParentValue;
+
+        // Штатный исход: человек отменил скан в окне драйвера — не сбой.
+        internal sealed class ScanCancelledException : InvalidOperationException
+        {
+        }
 
         public static async Task<List<string>> GetSources()
         {
@@ -47,80 +51,48 @@ namespace Kite2.Scan
             CatalogSource source = sources[sourceIndex];
 
             Log.Info("Источник {0}: {1} ({2})", sourceIndex, source.Name, source.Device.Driver);
+            Log.Info("Захват: WIA (родное окно драйвера)");
 
-            var pages = new List<string>();
-            string lastFailure = null;
+            CaptureResult result = await RunCapture(source, directory);
 
-            foreach (ScanAttempt attempt in AttemptsFor(source))
-            {
-                Log.Info("Попытка: {0}", attempt.Title);
+            if (result.Pages.Count > 0)
+                return result.Pages;
 
-                var chapter = await TryCapture(attempt, directory, pages.Count);
-
-                if (chapter.Failure != null)
-                    Log.Warn("Попытка не сработала: {0}", chapter.Failure);
-                else if (chapter.Abandoned)
-                    Log.Warn(
-                        "Попытка не отвечала {0} с и брошена",
-                        (int)(attempt.Wall ?? AttemptWall).TotalSeconds);
-
-                if (chapter.Pages.Count > 0)
-                {
-                    pages.AddRange(chapter.Pages);
-                    return pages;
-                }
-
-                // Окно показывалось человеку и закрылось без страниц — скан
-                // был отменён в нём; дальше идти бессмысленно.
-                if (attempt.NativeUi && !chapter.Abandoned && chapter.Pages.Count == 0
-                    && chapter.Failure == null)
-                {
-                    throw new InvalidOperationException(
-                        "Окно драйвера закрылось без страницы: сканирование в нём отменено. " +
-                        "Нажмите «Сканировать» ещё раз и выполните скан в окне драйвера.");
-                }
-
-                lastFailure = chapter.Failure ?? (chapter.Abandoned
-                    ? string.Format(
-                        CultureInfo.CurrentCulture,
-                        "Попытка «{0}» не отвечала {1} с и была пропущена; ожидается следующая.",
-                        attempt.Title, (int)(attempt.Wall ?? AttemptWall).TotalSeconds)
-                    : null);
-            }
-
-            if (lastFailure == CancelledInDialog)
+            if (result.Failure == ScanExchange.CancelledInDialog)
                 throw new ScanCancelledException();
 
-            throw new InvalidOperationException(lastFailure ?? "Сканер не отдал ни одной страницы.");
+            if (result.Failure != null)
+                throw new InvalidOperationException(result.Failure);
+
+            throw new InvalidOperationException(
+                "Окно драйвера закрылось без страницы: сканирование в нём отменено. " +
+                "Нажмите «Сканировать» ещё раз и выполните скан в окне драйвера.");
         }
 
         private sealed class CatalogSource
         {
-            public int Index;
             public string Name;
             public ScanDevice Device;
             public WiaApiVersion WiaVersion;
         }
 
-        private sealed class ScanAttempt
+        private sealed class CaptureResult
         {
-            public ScanDevice Device;
-            public WiaApiVersion WiaVersion;
-            public PaperSource PaperSource = PaperSource.Auto;
-            public bool NativeUi;
-            public string Title;
-            public TimeSpan? Wall;
+            public readonly List<string> Pages = new List<string>();
+
+            public string Failure;
+
+            // true — тихий драйвер, отсчёт тишины не сбросился ни разу.
+            public bool Abandoned;
         }
 
+        // Варианты WIA-API идут по цепочке: следующий опрашивается, только
+        // если предыдущий ничего не нашёл. Большинство машин отвечает на первом.
         private static async Task<List<CatalogSource>> BuildCatalog(int neededIndex)
         {
             var sources = new List<CatalogSource>();
-            var controller = NewController();
-            int index = 0;
+            var controller = new ScanController(new ScanningContext(new GdiImageContext()) { Logger = Naps2Logging.Instance });
 
-            // Варианты WIA-API идут по цепочке: следующий опрашивается,
-            // только если предыдущий не нашёл ничего. Большинство машин
-            // отвечает на первом заопросе — это и есть главный выигрыш.
             foreach (WiaApiVersion version in new[]
                 { WiaApiVersion.Default, WiaApiVersion.Wia10, WiaApiVersion.Wia20 })
             {
@@ -130,8 +102,7 @@ namespace Kite2.Scan
                     WiaOptions = { WiaApiVersion = version }
                 };
 
-                await CollectDevices(sources, controller, options, index);
-                index = sources.Count;
+                await CollectDevices(sources, controller, options);
 
                 if (neededIndex >= 0 && neededIndex < sources.Count)
                     return sources;
@@ -146,21 +117,20 @@ namespace Kite2.Scan
         }
 
         private static async Task CollectDevices(
-            List<CatalogSource> sources, ScanController controller, ScanOptions options, int startIndex)
+            List<CatalogSource> sources, ScanController controller, ScanOptions options)
         {
-            string label = OptionsLabel(options);
+            string label = "WIA (" + options.WiaOptions.WiaApiVersion + ")";
 
             try
             {
                 Log.Info("Опрос {0}...", label);
 
-                var devices = await ListDevices(controller, options);
+                List<ScanDevice> devices = await ListDevices(controller, options);
 
                 foreach (ScanDevice device in devices.Where(device => sources.All(known => known.Name != device.Name)))
                 {
                     sources.Add(new CatalogSource
                     {
-                        Index = sources.Count,
                         Name = device.Name,
                         Device = device,
                         WiaVersion = options.WiaOptions.WiaApiVersion
@@ -175,12 +145,10 @@ namespace Kite2.Scan
             }
         }
 
-        private static string OptionsLabel(ScanOptions options) =>
-            "WIA (" + options.WiaOptions.WiaApiVersion + ")";
         private static async Task<List<ScanDevice>> ListDevices(ScanController controller, ScanOptions options)
         {
             var listing = controller.GetDeviceList(options);
-            var done = await Task.WhenAny(listing, Task.Delay(ListingWait));
+            Task done = await Task.WhenAny(listing, Task.Delay(ListingWait));
 
             if (done != listing)
                 throw new TimeoutException("Перечисление не ответило за 10 с");
@@ -188,179 +156,108 @@ namespace Kite2.Scan
             return await listing;
         }
 
-        // Порядок: прямой захват, затем автоподатчик, затем родное окно.
-        // Окно — последний резерв: прямые попытки кончились, не сканировав стекло.
-        // Одна попытка — родное окно драйвера: параметры задаёт там человек,
-        // пачку ведёт сам драйвер. Прямые программные вызовы убраны: у Kyocera
-        // они отвечали ошибками (E_FAIL, «нет автоподатчика»), а общение
-        // приложения с настройками за драйвером и так отменено.
-        private static List<ScanAttempt> AttemptsFor(CatalogSource source) =>
-            new List<ScanAttempt> { NativeUiAttempt(source) };
-
-        private static ScanAttempt NativeUiAttempt(CatalogSource source) =>
-            new ScanAttempt
-            {
-                Device = source.Device,
-                WiaVersion = source.WiaVersion,
-                NativeUi = true,
-                Wall = NativeUiWall,
-                Title = "WIA (родное окно драйвера)"
-            };
-
-        internal sealed class AttemptChapter
+        private static async Task<CaptureResult> RunCapture(CatalogSource source, string directory)
         {
-            public readonly List<string> Pages = new List<string>();
+            var result = new CaptureResult();
+            var context = new ScanningContext(new GdiImageContext()) { Logger = Naps2Logging.Instance };
+            var controller = new ScanController(context);
 
-            public string Failure;
+            Task consume = ConsumePages(source, directory, controller, result);
 
-            // true — попытка брошена по стенке тишины.
-            public bool Abandoned;
-        }
-
-        private static async Task<AttemptChapter> TryCapture(
-            ScanAttempt attempt, string directory, int pagesBefore)
-        {
-            var chapter = new AttemptChapter();
-            TimeSpan wall = attempt.Wall ?? AttemptWall;
-
-            var consume = ConsumePages(attempt, directory, pagesBefore, chapter, NewController());
-
-            // Стенка на попытку: если страницы приходят — время идёт заново.
+            // Стенка: если страницы продолжают приходить, отсчёт идёт заново.
             int lastCount = 0;
 
             while (true)
             {
-                Task done = await Task.WhenAny(consume, Task.Delay(wall));
+                Task done = await Task.WhenAny(consume, Task.Delay(QuietWall));
 
                 if (done == consume)
                     break;
 
-                if (chapter.Pages.Count != lastCount)
+                if (result.Pages.Count != lastCount)
                 {
-                    lastCount = chapter.Pages.Count;
+                    lastCount = result.Pages.Count;
                     continue;
                 }
 
-                chapter.Abandoned = true;
-                chapter.Failure ??= string.Format(
+                result.Abandoned = true;
+                result.Failure ??= string.Format(
                     CultureInfo.CurrentCulture,
-                    "Попытка молчала больше {0} с: драйвер не отвечает.",
-                    (int)wall.TotalSeconds);
+                    "Захват молчал больше {0} с: драйвер не отвечает.",
+                    (int)QuietWall.TotalSeconds);
 
                 break;
             }
 
-            return chapter;
+            return result;
         }
 
         private static async Task ConsumePages(
-            ScanAttempt attempt,
-            string directory, int pagesBefore, AttemptChapter chapter, ScanController controller)
+            CatalogSource source, string directory, ScanController controller, CaptureResult result)
         {
             using (var quiet = new CancellationTokenSource())
             {
-                // В родном окне страниц от машинного вызова не бывает: жмётся «Скан».
-                TimeSpan firstPageWait = attempt.NativeUi ? NativeUiWall : FirstPageWait;
-                TimeSpan pageGapWait = attempt.NativeUi ? NativeUiWall : PageGapWait;
-
-                // CancelAfter перезапускает таймер целиком: одна метка отсчитывает
+                // CancelAfter перезапускается целиком: одна метка отсчитывает
                 // тишину и до первой страницы, и между страницами.
-                quiet.CancelAfter(firstPageWait);
+                quiet.CancelAfter(QuietWall);
 
                 try
                 {
                     var options = new ScanOptions
                     {
-                        Device = attempt.Device,
-                        PaperSource = attempt.PaperSource,
-                        // Ни dpi, ни цветности: их задают в окне драйвера.
+                        Device = source.Device,
+                        PaperSource = PaperSource.Auto,
                         PageSize = PageSize.A4,
-                        UseNativeUI = attempt.NativeUi,
-                        // Окно программы — владелец диалога: диалог держится
-                        // поверх окна программы и не мелькает на панели задач.
+                        UseNativeUI = true,
                         DialogParent = new IntPtr(DialogParentValue),
-                        WiaOptions = new WiaOptions { WiaApiVersion = attempt.WiaVersion }
+                        WiaOptions = new WiaOptions { WiaApiVersion = source.WiaVersion }
                     };
 
                     await foreach (var page in controller.Scan(options, quiet.Token))
                     {
-                        // Проснувшийся вызов после броска попытки — страница не нужна.
-                        if (chapter.Abandoned)
+                        // Отброшенная попытка — проснувшиеся страницы не нужны.
+                        if (result.Abandoned)
                             break;
 
                         string path = Path.Combine(
-                            directory,
-                            "scan" + (pagesBefore + chapter.Pages.Count + 1).ToString("D3") + ".bmp");
+                            directory, "scan" + (result.Pages.Count + 1).ToString("D3") + ".bmp");
 
                         using (page)
                             page.Save(path);
 
-                        chapter.Pages.Add(path);
-                        Log.Info("Страница {0}: {1} ({2})", pagesBefore + chapter.Pages.Count, path, attempt.Title);
+                        result.Pages.Add(path);
+                        Log.Info("Страница {0}: {1}", result.Pages.Count, path);
 
-                        quiet.CancelAfter(pageGapWait);
+                        quiet.CancelAfter(QuietWall);
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    Log.Warn("Попытка прервана по тишине, страниц {0}", chapter.Pages.Count);
+                    Log.Warn("Захват прерван по тишине, страниц {0}", result.Pages.Count);
 
-                    if (chapter.Pages.Count == 0)
-                    {
-                        chapter.Failure = attempt.NativeUi
-                            ? string.Format(
-                                CultureInfo.CurrentCulture,
-                                "За {0} мин в окне драйвера страница не была просканирована.",
-                                (int)firstPageWait.TotalMinutes)
-                            : string.Format(
-                                CultureInfo.CurrentCulture,
-                                "Сканер молчит уже {0} с и не отдал ни одной страницы. " +
-                                "Проверьте, включён ли он и заправлена ли бумага в лоток.",
-                                (int)FirstPageWait.TotalSeconds);
-                    }
+                    if (result.Pages.Count == 0)
+                        result.Failure = string.Format(
+                            CultureInfo.CurrentCulture,
+                            "За {0} мин в окне драйвера страница не была просканирована.",
+                            (int)QuietWall.TotalMinutes);
                 }
                 catch (Exception ex)
                 {
-                    chapter.Failure = GetFailureMessage(ex, chapter.Pages.Count > 0);
+                    result.Failure = FailureText(ex, result.Pages.Count > 0);
 
-                    // Отмена человеком в окне драйвера — штатный исход, а не сбой.
+                    // Отмена человеком (и закрытие окна) рвёт передачу — не сбой.
                     if (ex is FileNotFoundException)
                         Log.Info("Отменено человеком в окне драйвера");
                     else
-                        Log.Error("Попытка упала: {0}", ex);
+                        Log.Error("Захват упал: {0}", ex);
                 }
             }
         }
 
-        // Дескриптор окна программы — владелец диалога драйвера. Задаётся
-        // Program-ом из окружения, а не аргументом сканирования: дескриптор
-        // окна — не часть протокола. Диалог с владельцем не может уйти за
-        // окно программы и не имеет собственной строки на панели задач.
-        internal static long DialogParentValue;
-
-        // Штатный исход: человек отменил скан в окне драйвера.
-        internal const string CancelledInDialog = "Сканирование отменено в окне драйвера.";
-
-        // Отменённый человеком захват не сбой: протокол ответа тот же,
-        // но журналы не обязаны расписывать трассировкой.
-        internal sealed class ScanCancelledException : InvalidOperationException
+        private static string FailureText(Exception error, bool hasPages)
         {
-        }
-
-        private static ScanController NewController()
-        {
-            // Журнал NAPS2 — единственное место, где видна причина молчаливой передачи.
-            var context = new ScanningContext(new GdiImageContext()) { Logger = Naps2Logging.Instance };
-
-            return new ScanController(context);
-        }
-
-        private static string GetFailureMessage(Exception error, bool hasPages)
-        {
-            // Отмена в окне драйвера (в т.ч. его закрытие) рвала передачу:
-            // временный файл драйвера исчезал до чтения NAPS2 — это не ошибка.
             if (error is FileNotFoundException)
-                return CancelledInDialog;
+                return ScanExchange.CancelledInDialog;
 
             // Драйвер уже показал свою ошибку сам — приложение не дублирует её.
             if (error is AlreadyHandledDriverException)

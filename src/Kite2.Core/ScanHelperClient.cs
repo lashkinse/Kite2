@@ -11,11 +11,9 @@ using NLog;
 
 namespace Kite2.Core
 {
-    // WIA-драйверы части старых сканеров живут по x86, а приложение x64, поэтому
-    // всю работу со сканером выполняет помощник Kite2.Scan.exe — он живёт
-    // рядом, в том же каталоге, что и сама программа: оба процесса берут сборки
-    // из одного места. Обмен идёт файлом ответа, отмена — закрытием процесса:
-    // зависший драйвер не вернётся сам.
+    // WIA-драйверы части старых сканеров живут по x86, а приложение x64,
+    // поэтому всю работу со сканером ведёт помощник Kite2.Scan.exe, живущий
+    // рядом с программой. Обмен идёт файлом ответа, отмена — файлом-сигналом.
     internal static class ScanHelperClient
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
@@ -80,50 +78,42 @@ namespace Kite2.Core
 
             try
             {
-                    var startInfo = new ProcessStartInfo(helperPath, arguments + " \"" + responsePath + "\"")
+                var startInfo = new ProcessStartInfo(helperPath, arguments + " \"" + responsePath + "\"")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = AppPaths.AppDirectory
+                };
+
+                // Окно программы передаётся помощнику как владелец будущего
+                // диалога WIA-драйвера: дескриптор окна — не часть протокола,
+                // поэтому идёт переменной окружения, а не аргументом.
+                IntPtr mainWindow = Process.GetCurrentProcess().MainWindowHandle;
+
+                if (mainWindow != IntPtr.Zero)
+                    startInfo.EnvironmentVariables[ScanParentEnvironmentKey] =
+                        mainWindow.ToInt64().ToString(CultureInfo.InvariantCulture);
+
+                using (var helper = Process.Start(startInfo))
+                {
+                    Log.Info("Помощник запущен: {0}", arguments);
+
+                    // Право выводить окно на передний план есть только у окна
+                    // переднего плана; помощнику оно передаётся явно.
+                    AllowSetForegroundWindow((uint)helper.Id);
+
+                    using (cancellationToken.Register(() => StopHelper(helper, mainWindow, responsePath)))
                     {
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        WorkingDirectory = AppPaths.AppDirectory
-                    };
-
-                    // Окно программы передаётся помощнику как владелец будущего
-                    // диалога WIA-драйвера: владельцу окно не может уйти за
-                    // окно программы, а панель задач у него не мигает. Дескриптор
-                    // окна — не часть протокола сканирования, поэтому идёт
-                    // переменной окружения, а не аргументом.
-                    IntPtr mainWindow = Process.GetCurrentProcess().MainWindowHandle;
-
-                    if (mainWindow != IntPtr.Zero)
-                        startInfo.EnvironmentVariables[ScanParentEnvironmentKey] =
-                            mainWindow.ToInt64().ToString(CultureInfo.InvariantCulture);
-
-                    using (var helper = Process.Start(startInfo))
-                    {
-                        if (helper == null)
-                            return Failure(Messages.ScanHelperMissing);
-
-                        // Право выводить окно на передний план есть только у окна
-                        // переднего плана; помощнику оно передаётся явно.
-                        AllowSetForegroundWindow((uint)helper.Id);
-
-                        var clock = Stopwatch.StartNew();
-                        Log.Info("Помощник запущен: {0}", arguments);
-
-                        using (cancellationToken.Register(() => StopHelper(helper, mainWindow, responsePath)))
-                        {
-                            helper.WaitForExit();
-                        }
-
-                    clock.Stop();
+                        helper.WaitForExit();
+                    }
 
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        Log.Info("Захват отменён по команде пользователя, помощник работал {0:N1} с", clock.Elapsed.TotalSeconds);
+                        Log.Info("Захват отменён по команде пользователя");
                         return null;
                     }
 
-                    Log.Info("Помощник завершился за {0:N1} с, код {1}", clock.Elapsed.TotalSeconds, helper.ExitCode);
+                    Log.Info("Помощник завершился, код {0}", helper.ExitCode);
 
                     if (!File.Exists(responsePath))
                     {
@@ -143,26 +133,29 @@ namespace Kite2.Core
             }
             finally
             {
+                // Файлы, не успевшие исчезнуть штатно, убираются как мусор.
                 File.Delete(responsePath + ".abort");
-
-                if (File.Exists(responsePath))
-                    File.Delete(responsePath);
+                File.Delete(responsePath);
             }
         }
 
         // Отмена: помощнику уходит файл-сигнал — его фоновый поток сам закроет
-        // окна сессии сканера (хост UI драйвера живёт в чужом процессе, и смерти
-        // помощника этого не отменяет). Если за отведённое время помощник не
-        // вышел — окне-владельце достаётся штатное закрытие, помощник добивается.
+        // окна сессии сканера (хост UI драйвера живёт в чужом процессе, смерти
+        // помощника этого не отменяет). Если за 2,5 с помощник не вышел —
+        // окно-владелец достаётся штатное закрытие, затем помощник добивается.
         private static void StopHelper(Process helper, IntPtr ownerWindow, string responsePath)
         {
             try
             {
                 File.WriteAllText(responsePath + ".abort", "cancel");
 
-                // Дружеский выход: диалог закрывается, сеанс завершается сам.
+                var clock = Stopwatch.StartNew();
+
                 if (helper.WaitForExit(2500))
+                {
+                    Log.Info("Отмена принята, помощник вышел за {0:N1} с", clock.Elapsed.TotalSeconds);
                     return;
+                }
 
                 Log.Info("Окна драйвера при отмене: {0}", OwnedDialogCloser.CloseFor(ownerWindow, helper.Id));
 
